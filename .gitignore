@@ -9,3 +9,6 @@ server/portal.json
 server/portal.json.tmp
 server/uploads/
 server/logs/
+functions/node_modules/
+functions/.env
+.firebase/

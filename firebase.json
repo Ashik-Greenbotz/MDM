@@ -1,0 +1,13 @@
+{
+  "functions": { "source": "functions", "ignore": ["node_modules", ".env.local"] },
+  "hosting": {
+    "public": "dashboard",
+    "cleanUrls": true,
+    "rewrites": [
+      { "source": "/api/**", "function": { "functionId": "api", "region": "asia-southeast1" } },
+      { "source": "/download/**", "function": { "functionId": "api", "region": "asia-southeast1" } }
+    ],
+    "headers": [{ "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }]
+  },
+  "storage": { "rules": "storage.rules" }
+}

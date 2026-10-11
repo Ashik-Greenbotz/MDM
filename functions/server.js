@@ -1,20 +1,20 @@
 // Device portal server: devices check in here, the web portal reads and sends commands.
-// No dependencies, run with: node server.js
-// ponytail: everything kept in memory and saved to JSON files; move to a real database past a few thousand devices.
+// Office PC: no dependencies, run with: node server.js (data in ../server).
+// Cloud: index.js runs it as a Firebase Cloud Function, data in the Firebase Storage bucket.
+// ponytail: everything kept in memory and saved as two JSON files by one instance (maxInstances 1);
+// move to Firestore past a few thousand devices or if more than one instance is ever needed.
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
+const CLOUD = !!process.env.K_SERVICE; // set by Cloud Functions / Cloud Run
 const PORT = Number(process.env.PORT || 8080);
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin1234";
 // Shared secret the devices send; must match server_key in the app's res/values/server.xml.
 const DEVICE_KEY = process.env.DEVICE_KEY || "change-me-device-key";
-const DEVICES_FILE = path.join(__dirname, "devices.json");
-const PORTAL_FILE = path.join(__dirname, "portal.json");
-const UPLOADS = path.join(__dirname, "uploads");
-const LOGS_DIR = path.join(__dirname, "logs");
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "server");
 const DASHBOARD_DIR = path.join(__dirname, "..", "dashboard");
 const STATIC = {
   "/": ["index.html", "text/html; charset=utf-8"], "/login": ["login.html", "text/html; charset=utf-8"],
@@ -28,6 +28,8 @@ const LOW_BATTERY = 20;
 const HISTORY_EVERY_MS = 5 * 60 * 1000, HISTORY_KEEP = 288; // 24 h of 5-minute samples
 // Devices take the server's time zone (fixes terminals shipped on UTC). Override with TIME_ZONE=Asia/Singapore etc.
 const TIME_ZONE = process.env.TIME_ZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+// A Date whose local fields show the wall clock in TIME_ZONE (cloud servers run on UTC).
+const zoned = () => new Date(new Date().toLocaleString("en-US", { timeZone: TIME_ZONE }));
 const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
@@ -44,10 +46,33 @@ const typeOf = d => (COMMANDS[d.type] ? d.type : "android-kiosk");
 const label = d => d.name || d.deviceName || d.id.slice(0, 8);
 const rid = () => crypto.randomBytes(8).toString("hex");
 
-for (const dir of [UPLOADS, path.join(UPLOADS, "apps"), path.join(UPLOADS, "files"), LOGS_DIR]) fs.mkdirSync(dir, { recursive: true });
-const load = (file, empty) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return empty; } };
-let devices = load(DEVICES_FILE, {});
-const portal = Object.assign({ events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], kioskApp: null }, load(PORTAL_FILE, {}));
+// ---- storage: the same keys in the local data folder and in the bucket ----
+// devices.json, portal.json, uploads/apps/<id>.apk, uploads/files/<id>, logs/<deviceId>.txt|.jpg
+const bucket = CLOUD ? require("firebase-admin/storage").getStorage().bucket() : null;
+const local = key => path.join(DATA_DIR, key);
+const store = {
+  async read(key) {
+    try { return CLOUD ? (await bucket.file(key).download())[0] : await fs.promises.readFile(local(key)); } catch { return null; }
+  },
+  async write(key, buf) {
+    if (CLOUD) return bucket.file(key).save(buf, { resumable: false });
+    await fs.promises.writeFile(local(key) + ".tmp", buf);
+    await fs.promises.rename(local(key) + ".tmp", local(key));
+  },
+  remove: key => (CLOUD ? bucket.file(key).delete() : fs.promises.rm(local(key))).catch(() => {}),
+  // Cloud: a Firebase Storage download link, so big APKs never pass through the function (32 MB limit).
+  async downloadUrl(key) {
+    const f = bucket.file(key), [meta] = await f.getMetadata();
+    let token = meta.metadata?.firebaseStorageDownloadTokens?.split(",")[0];
+    if (!token) await f.setMetadata({ metadata: { firebaseStorageDownloadTokens: token = crypto.randomUUID() } });
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(key)}?alt=media&token=${token}`;
+  },
+};
+const appKey = id => `uploads/apps/${id}.apk`, fileKey = id => `uploads/files/${id}`;
+if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs"]) fs.mkdirSync(local(dir), { recursive: true });
+
+let devices = {};
+const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], kioskApp: null };
 // Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
 // ("Add device", kept in portal.pending) and type it on the device to link it.
 const usedCodes = () => new Set([...Object.values(devices).map(d => d.code), ...portal.pending.map(x => x.code)]);
@@ -59,17 +84,19 @@ function newCode() {
     if (!used.has(c)) return c;
   }
 }
-for (const d of Object.values(devices)) if (!d.code) d.code = newCode();
 // A device's site is stored in d.group (the portal calls groups "sites"). Sites can also exist before any device is in them.
 
 let dirty = false;
-const save = (file, data) => fs.writeFile(file + ".tmp", JSON.stringify(data), err => { if (!err) fs.rename(file + ".tmp", file, () => {}); });
-setInterval(() => {
+async function flush() {
   if (!dirty) return;
   dirty = false;
-  save(DEVICES_FILE, devices);
-  save(PORTAL_FILE, portal);
-}, 5000);
+  try {
+    await Promise.all([store.write("devices.json", JSON.stringify(devices)), store.write("portal.json", JSON.stringify(portal))]);
+  } catch (e) {
+    dirty = true;
+    console.error("save failed:", e.message);
+  }
+}
 
 function log(deviceId, kind, text) {
   portal.events.push({ at: Date.now(), deviceId, kind, text });
@@ -82,18 +109,42 @@ const same = (a, b) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 
-// Portal login sessions: random token in an HttpOnly cookie. Lost on server restart (admins sign in again).
-const sessions = new Map();
-const sessionId = req => (/(?:^|;\s*)sid=([a-f0-9]{64})/.exec(req.headers.cookie || "") || [])[1];
+// ---- portal accounts ----
+// The ADMIN_USER / ADMIN_PASSWORD account is always a full admin (can't be locked out). More accounts live in portal.users:
+// { username, name, hash, admin, sites: ["*"] | [site names], modules: [MODULES...], readOnly, disabled, createdAt }
+const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "features"];
+const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
+const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
+const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
+const allSites = u => u.admin || (u.sites || []).includes("*");
+const sees = (u, d) => !!d && (allSites(u) || (u.sites || []).includes(d.group || "")); // "No site" devices: all-sites accounts only
+const siteOk = (u, g) => allSites(u) || (!!g && (u.sites || []).includes(g));
+const can = (u, ...mods) => u.admin || mods.some(m => (u.modules || []).includes(m));
+const publicUser = ({ hash, ...u }) => u;
 
-function isAdmin(req) {
-  const sid = sessionId(req);
-  if (sid && sessions.get(sid) > Date.now()) return true;
-  // Basic auth still accepted for scripts (curl -u admin:password).
+// Login sessions: random token in an HttpOnly cookie -> { exp, user } (user null = the ADMIN_USER account). Lost on restart.
+// The cookie must be called __session: Firebase Hosting drops every other cookie.
+const sessions = new Map();
+const sessionId = req => (/(?:^|;\s*)__session=([a-f0-9]{64})/.exec(req.headers.cookie || "") || [])[1];
+const cookie = (value, maxAge) => `__session=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${CLOUD ? "; Secure" : ""}`;
+// Behind Firebase Hosting every request comes from Google's proxy; the client address is in these headers.
+// Behind the Cloudflare tunnel (start-server.bat) requests come from this PC itself, the client is in CF-Connecting-IP.
+// Only trusted from loopback, so a LAN device can't fake it.
+const ipOf = req => {
+  if (CLOUD) return String(req.headers["fastly-client-ip"] || req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const ip = req.socket.remoteAddress;
+  return /^(::1|127\.|::ffff:127\.)/.test(ip) && req.headers["cf-connecting-ip"] ? String(req.headers["cf-connecting-ip"]) : ip;
+};
+
+// The signed-in account, looked up on every request so edits / disabling / deleting apply at once. null = not signed in.
+function whoIs(req) {
+  const s = sessions.get(sessionId(req));
+  if (s && s.exp > Date.now()) return s.user === null ? ROOT : portal.users.find(u => u.username === s.user && !u.disabled) || null;
+  // Basic auth still accepted for scripts (curl -u admin:password), ADMIN_USER only.
   const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
-  if (!m) return false;
+  if (!m) return null;
   const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":");
-  return same(user, ADMIN_USER) && same(rest.join(":"), ADMIN_PASSWORD);
+  return same(user, ADMIN_USER) && same(rest.join(":"), ADMIN_PASSWORD) ? ROOT : null;
 }
 const isDevice = req => same(req.headers["x-device-key"] || "", DEVICE_KEY);
 
@@ -115,6 +166,9 @@ function send(res, status, body, type = "application/json") {
 }
 
 function readBody(req, limit = 64 * 1024) {
+  // Cloud Functions has already read the body into req.rawBody.
+  if (req.rawBody) return req.rawBody.length > limit ? Promise.reject(new Error("too large")) : Promise.resolve(req.rawBody);
+  if (CLOUD) return Promise.resolve(Buffer.alloc(0));
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -128,9 +182,15 @@ function readBody(req, limit = 64 * 1024) {
 }
 const readJson = async (req, limit) => JSON.parse((await readBody(req, limit)).toString() || "{}");
 
-// Streams an upload to disk, returning its size and sha256 (hex + base64url for Android provisioning).
+const digestInfo = (size, hash) => {
+  const digest = hash.digest();
+  return { size, sha256: digest.toString("hex"), checksum: digest.toString("base64url") };
+};
+
+// Office PC: streams an upload to disk, returning its size and sha256 (hex + base64url for Android provisioning).
 // Any failure (too big, browser cancelled, disk error) deletes the partial file and rejects; it never throws.
-function receiveFile(req, dest) {
+function receiveFile(req, key) {
+  const dest = local(key);
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash("sha256"), out = fs.createWriteStream(dest + ".part");
     let size = 0, failed = false;
@@ -152,22 +212,33 @@ function receiveFile(req, dest) {
     });
     out.on("finish", () => {
       if (failed) return;
-      fs.rename(dest + ".part", dest, err => {
-        if (err) return fail(err);
-        const digest = hash.digest();
-        resolve({ size, sha256: digest.toString("hex"), checksum: digest.toString("base64url") });
-      });
+      fs.rename(dest + ".part", dest, err => (err ? fail(err) : resolve(digestInfo(size, hash))));
     });
     req.pipe(out);
   });
 }
 
-function sendFile(res, file, name) {
-  fs.stat(file, (err, st) => {
+// Cloud: the browser sends the file straight to the bucket (see /api/upload/start), then the function hashes it there.
+async function checkUploaded(key, name) {
+  const f = bucket.file(key), [meta] = await f.getMetadata();
+  if (Number(meta.size) > MAX_UPLOAD) { await store.remove(key); throw new Error(`file too large (max ${MAX_UPLOAD / 1024 / 1024} MB)`); }
+  const hash = crypto.createHash("sha256");
+  await new Promise((resolve, reject) => f.createReadStream().on("data", c => hash.update(c)).on("end", resolve).on("error", reject));
+  await f.setMetadata({ contentType: "application/octet-stream", contentDisposition: disposition(name) });
+  return digestInfo(Number(meta.size), hash);
+}
+
+const disposition = name => `attachment; filename="${String(name).replace(/[^\w.-]/g, "_")}"`;
+async function sendFile(res, key, name) {
+  if (CLOUD) {
+    // ponytail: each download link stays valid until the file is deleted; fine while apps are public anyway.
+    res.writeHead(302, { Location: await store.downloadUrl(key), "Cache-Control": "no-store" });
+    return res.end();
+  }
+  fs.stat(local(key), (err, st) => {
     if (err) return send(res, 404, { error: "not found" });
-    res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": st.size,
-      "Content-Disposition": `attachment; filename="${String(name).replace(/[^\w.-]/g, "_")}"` });
-    fs.createReadStream(file).pipe(res);
+    res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": st.size, "Content-Disposition": disposition(name) });
+    fs.createReadStream(local(key)).pipe(res);
   });
 }
 
@@ -239,7 +310,7 @@ function checkAlerts() {
     if (d.wasOnline && !online) log(d.id, "offline", `${label(d)} went offline`);
     d.wasOnline = online;
     const offline = now - d.lastSeen > OFFLINE_ALERT_MS;
-    setAlert(d, "offline", offline, `${label(d)} offline since ${new Date(d.lastSeen).toLocaleString()}`);
+    setAlert(d, "offline", offline, `${label(d)} offline since ${new Date(d.lastSeen).toLocaleString("en-GB", { timeZone: TIME_ZONE })}`);
     setAlert(d, "battery", !offline && d.battery != null && d.battery < LOW_BATTERY && !d.charging, `${label(d)} battery low (${d.battery}%)`);
   }
   // Keep the last 1000 resolved alerts.
@@ -249,43 +320,63 @@ function checkAlerts() {
     portal.alerts = portal.alerts.filter(a => !drop.has(a));
   }
 }
-setInterval(checkAlerts, 15 * 1000);
 
-// ---- scheduled tasks: run at HH:MM (server's local time) on the chosen weekdays ----
+// ---- scheduled tasks: run at HH:MM (TIME_ZONE) on the chosen weekdays ----
 function runTask(t, by) {
   const n = queue(pick(t.target), commandFrom(t), by);
   t.lastRun = Date.now();
   log(null, "task", `Task "${t.name}" sent ${t.type} to ${n} device${n === 1 ? "" : "s"}`);
   return n;
 }
-setInterval(() => {
-  const now = new Date(), hhmm = now.toTimeString().slice(0, 5), today = now.toDateString();
+function runDueTasks() {
+  const now = zoned(), hhmm = now.toTimeString().slice(0, 5), today = now.toDateString();
   for (const t of portal.tasks) {
     if (!t.enabled || t.time !== hhmm || !t.days.includes(now.getDay()) || t.lastRunDay === today) continue;
     t.lastRunDay = today;
     try { runTask(t, "schedule"); } catch (e) { log(null, "task", `Task "${t.name}" failed: ${e.message}`); }
   }
-}, 20 * 1000);
+}
+
+// Alerts, scheduled tasks and saving, at most every 5 s. The office PC runs it on a timer. In the cloud the
+// function only has CPU while handling a request, so it runs at the start of requests (devices check in every 10 s).
+// ponytail: a task only fires if some request arrives during its minute; add a Cloud Scheduler ping if no device is online then.
+let lastTick = 0;
+async function tick() {
+  if (Date.now() - lastTick < 5000) return;
+  lastTick = Date.now();
+  checkAlerts();
+  runDueTasks();
+  await flush();
+}
 
 // The kiosk app used for QR enrollment: the one picked in the portal, else the first app named "kiosk".
 function kioskApk() {
   const app = portal.apps.find(a => a.id === portal.kioskApp) || portal.apps.find(a => /kiosk/i.test(a.label));
   return app ? { url: `/download/app/${app.id}.apk`, checksum: app.checksum, label: app.label } : null;
 }
-(function importBuiltApk() {
+// Loads the saved data. The office PC also adds the built kiosk APK on first run.
+const ready = (async () => {
+  devices = JSON.parse((await store.read("devices.json")) || "{}");
+  Object.assign(portal, JSON.parse((await store.read("portal.json")) || "{}"));
+  for (const d of Object.values(devices)) if (!d.code) { d.code = newCode(); dirty = true; }
   const built = path.join(__dirname, "..", "Kiosk app phase2.apk");
-  if (portal.apps.length || !fs.existsSync(built)) return;
-  const buf = fs.readFileSync(built), id = rid(), digest = crypto.createHash("sha256").update(buf).digest();
-  fs.writeFileSync(path.join(UPLOADS, "apps", id + ".apk"), buf);
-  portal.apps.push({ id, label: "Kiosk app", size: buf.length, sha256: digest.toString("hex"), checksum: digest.toString("base64url"), at: Date.now() });
+  if (CLOUD || portal.apps.length || !fs.existsSync(built)) return;
+  const buf = fs.readFileSync(built), id = rid();
+  await store.write(appKey(id), buf);
+  portal.apps.push({ id, label: "Kiosk app", ...digestInfo(buf.length, crypto.createHash("sha256").update(buf)), at: Date.now() });
   portal.kioskApp = id;
   dirty = true;
 })();
 
-const server = http.createServer(async (req, res) => {
+// Uploads started in the browser but not finished yet (cloud only): id -> "app" | "file".
+const uploading = new Map();
+
+async function handler(req, res) {
   const url = new URL(req.url, "http://x");
   const p = url.pathname;
   try {
+    await ready;
+    await tick();
     // ---------------- device endpoints (device key) ----------------
     if (req.method === "POST" && p === "/api/report") {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
@@ -297,7 +388,7 @@ const server = http.createServer(async (req, res) => {
       for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
       if (d.info !== undefined && (typeof d.info !== "object" || Array.isArray(d.info))) delete d.info;
       d.lastSeen = Date.now();
-      d.ip = req.socket.remoteAddress;
+      d.ip = ipOf(req);
       if (!d.code) d.code = newCode();
       if (fresh) log(d.id, "enroll", `${label(d)} registered (${typeOf(d)}), Device ID ${d.code}`);
       else if (!wasOnline) log(d.id, "online", `${label(d)} came online`);
@@ -356,7 +447,7 @@ const server = http.createServer(async (req, res) => {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
       const id = String(req.headers["x-device-id"] || "");
       if (!devices[id]) return send(res, 404, { error: "unknown device" });
-      fs.writeFileSync(path.join(LOGS_DIR, id + ".txt"), await readBody(req, 2 * 1024 * 1024));
+      await store.write(`logs/${id}.txt`, await readBody(req, 2 * 1024 * 1024));
       devices[id].logsAt = Date.now();
       log(id, "logs", "Logs uploaded");
       return send(res, 200, { ok: true });
@@ -373,7 +464,7 @@ const server = http.createServer(async (req, res) => {
       } else {
         const jpeg = await readBody(req, 8 * 1024 * 1024);
         if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return send(res, 400, { error: "not a JPEG" });
-        fs.writeFileSync(path.join(LOGS_DIR, id + ".jpg"), jpeg);
+        await store.write(`logs/${id}.jpg`, jpeg);
         d.screenshotAt = Date.now();
         log(id, "screenshot", "Screenshot received");
       }
@@ -384,38 +475,43 @@ const server = http.createServer(async (req, res) => {
     let m = /^\/download\/app\/([a-f0-9]{16})\.apk$/.exec(p);
     if (req.method === "GET" && m) {
       const app = portal.apps.find(a => a.id === m[1]);
-      return app ? sendFile(res, path.join(UPLOADS, "apps", app.id + ".apk"), app.label + ".apk") : send(res, 404, { error: "not found" });
+      return app ? sendFile(res, appKey(app.id), app.label + ".apk") : send(res, 404, { error: "not found" });
     }
     m = /^\/download\/file\/([a-f0-9]{16})$/.exec(p);
     if (req.method === "GET" && m) {
-      if (!isDevice(req) && !isAdmin(req)) return send(res, 401, { error: "login required" });
+      if (!isDevice(req) && !whoIs(req)) return send(res, 401, { error: "login required" });
       const f = portal.files.find(x => x.id === m[1]);
-      return f ? sendFile(res, path.join(UPLOADS, "files", f.id), f.name) : send(res, 404, { error: "not found" });
+      return f ? sendFile(res, fileKey(f.id), f.name) : send(res, 404, { error: "not found" });
     }
 
     // ---------------- login ----------------
     if (req.method === "POST" && p === "/api/login") {
-      const ip = req.socket.remoteAddress;
+      const ip = ipOf(req);
       if (loginBlocked(ip)) return send(res, 429, { error: "Too many attempts, wait a minute" });
       const body = await readJson(req);
-      if (!same(body.user || "", ADMIN_USER) || !same(body.password || "", ADMIN_PASSWORD)) {
+      const name = String(body.user || ""), pw = String(body.password || "");
+      const acct = portal.users.find(u => u.username.toLowerCase() === name.toLowerCase());
+      const user = same(name, ADMIN_USER) && same(pw, ADMIN_PASSWORD) ? null
+        : acct && !acct.disabled && checkPw(pw, acct.hash) ? acct.username : undefined;
+      if (user === undefined) {
         loginFailed(ip);
-        return send(res, 401, { error: "Wrong username or password" });
+        return send(res, 401, { error: acct?.disabled ? "This account is disabled" : "Wrong username or password" });
       }
       failures.delete(ip);
       const sid = crypto.randomBytes(32).toString("hex");
-      sessions.set(sid, Date.now() + SESSION_MS);
-      res.setHeader("Set-Cookie", `sid=${sid}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}`);
+      sessions.set(sid, { exp: Date.now() + SESSION_MS, user });
+      if (acct && user) { acct.lastLogin = Date.now(); dirty = true; }
+      res.setHeader("Set-Cookie", cookie(sid, SESSION_MS / 1000));
       return send(res, 200, { ok: true });
     }
     if (req.method === "POST" && p === "/api/logout") {
       sessions.delete(sessionId(req));
-      res.setHeader("Set-Cookie", "sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
+      res.setHeader("Set-Cookie", cookie("", 0));
       return send(res, 200, { ok: true });
     }
 
     const page = req.method === "GET" && STATIC[p];
-    if (page && (PUBLIC_PAGES.includes(p) || isAdmin(req))) {
+    if (page && (PUBLIC_PAGES.includes(p) || whoIs(req))) {
       return send(res, 200, fs.readFileSync(path.join(DASHBOARD_DIR, page[0])), page[1]);
     }
     if (page) {
@@ -423,62 +519,79 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
-    // ---------------- portal API: admin only ----------------
-    if (!isAdmin(req)) return send(res, 401, { error: "login required" });
+    // ---------------- portal API: signed-in accounts, limited to their sites and modules ----------------
+    const u = whoIs(req);
+    if (!u) return send(res, 401, { error: "login required" });
+    const deny = (error = "Your account doesn't have access to this") => send(res, 403, { error });
+    if (req.method === "POST" && u.readOnly) return deny("This account is view-only");
     const body = req.method === "POST" && p !== "/api/upload" ? await readJson(req) : {};
     const ok = extra => { dirty = true; send(res, 200, { ok: true, ...extra }); };
+    const mine = list => list.filter(d => sees(u, d));
+    const by = u.username;
 
     for (const d of Object.values(devices)) {
       if (d.group && !portal.sites.some(x => x.name === d.group)) portal.sites.push({ name: d.group, createdAt: Date.now() });
     }
     if (req.method === "GET" && p === "/api/state") {
+      const all = allSites(u);
       return send(res, 200, {
         now: Date.now(), commands: COMMANDS,
-        devices: Object.values(devices).map(({ history, token, queue: q, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null })),
-        alerts: portal.alerts.filter(a => !a.resolvedAt || Date.now() - a.resolvedAt < 7 * 86400000),
-        tasks: portal.tasks, tokens: portal.tokens, apps: portal.apps, files: portal.files, kioskApp: portal.kioskApp, sites: portal.sites,
-        pending: portal.pending,
+        me: { ...publicUser(u), allSites: all, modules: u.admin ? MODULES : u.modules || [] },
+        devices: mine(Object.values(devices)).map(({ history, token, queue: q, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null })),
+        alerts: portal.alerts.filter(a => (!a.resolvedAt || Date.now() - a.resolvedAt < 7 * 86400000) && sees(u, devices[a.deviceId])),
+        tasks: can(u, "tasks") ? portal.tasks.filter(t => all || siteOk(u, t.target?.group)) : [],
+        tokens: can(u, "enroll") ? portal.tokens.filter(t => siteOk(u, t.group)) : [],
+        apps: can(u, "apps", "devices", "tasks") ? portal.apps : [], files: can(u, "apps", "devices", "tasks") ? portal.files : [],
+        kioskApp: portal.kioskApp, sites: portal.sites.filter(x => siteOk(u, x.name)),
+        pending: portal.pending.filter(x => siteOk(u, x.group)),
+        users: u.admin ? portal.users.map(publicUser) : undefined, modules: MODULES,
       });
     }
     if (req.method === "GET" && p === "/api/events") {
       const dev = url.searchParams.get("device");
-      const list = dev ? portal.events.filter(e => e.deviceId === dev) : portal.events;
+      // events without a device (sites, uploads...) and those of removed devices: all-sites accounts only
+      const list = portal.events.filter(e => (!dev || e.deviceId === dev) && (allSites(u) || sees(u, devices[e.deviceId])));
       return send(res, 200, { events: list.slice(-1000).reverse() });
     }
     m = /^\/api\/devices\/([\w-]+)\/screenshot\.jpg$/.exec(p);
     if (req.method === "GET" && m) {
-      const file = path.join(LOGS_DIR, m[1] + ".jpg");
-      if (!devices[m[1]] || !fs.existsSync(file)) return send(res, 404, { error: "no screenshot yet" });
-      return send(res, 200, fs.readFileSync(file), "image/jpeg");
+      if (!can(u, "devices") || !sees(u, devices[m[1]])) return deny();
+      const jpeg = devices[m[1]] && await store.read(`logs/${m[1]}.jpg`);
+      return jpeg ? send(res, 200, jpeg, "image/jpeg") : send(res, 404, { error: "no screenshot yet" });
     }
     m = /^\/api\/devices\/([\w-]+)\/(history|logs)$/.exec(p);
     if (req.method === "GET" && m) {
       const d = devices[m[1]];
       if (!d) return send(res, 404, { error: "no such device" });
+      if (!can(u, "devices") || !sees(u, d)) return deny();
       if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [] });
-      const file = path.join(LOGS_DIR, d.id + ".txt");
-      return fs.existsSync(file) ? send(res, 200, fs.readFileSync(file), "text/plain; charset=utf-8") : send(res, 404, { error: "no logs yet" });
+      const logs = await store.read(`logs/${d.id}.txt`);
+      return logs ? send(res, 200, logs, "text/plain; charset=utf-8") : send(res, 404, { error: "no logs yet" });
     }
     if (req.method === "POST" && p === "/api/devices/new") {
+      if (!can(u, "devices", "enroll") || !siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
       const slot = { code: newCode(), name: String(body.name || "").slice(0, 80).trim(), group: String(body.group || "").slice(0, 60).trim(), createdAt: Date.now() };
       portal.pending.push(slot);
       log(null, "enroll", `Device ID ${slot.code} created${slot.name ? " for " + slot.name : ""}, waiting for the device to link`);
       return ok({ code: slot.code });
     }
     if (req.method === "POST" && p === "/api/devices/pending/delete") {
-      portal.pending = portal.pending.filter(x => x.code !== body.code);
+      if (!can(u, "devices", "enroll")) return deny();
+      portal.pending = portal.pending.filter(x => x.code !== body.code || !siteOk(u, x.group));
       return ok();
     }
     m = /^\/api\/devices\/([\w-]+)\/(command|name|group|delete)$/.exec(p);
     if (req.method === "POST" && m) {
       const d = devices[m[1]];
-      if (!d) return send(res, 404, { error: "no such device" });
+      if (!d || !sees(u, d)) return send(res, 404, { error: "no such device" });
+      if (!can(u, "devices")) return deny();
       if (m[2] === "command") {
         const cmd = commandFrom(body);
-        if (!queue([d], cmd, "admin")) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
+        if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
       } else if (m[2] === "name") {
         d.name = String(body.name || "").slice(0, 80).trim();
       } else if (m[2] === "group") {
+        if (!siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
         d.group = String(body.group || "").slice(0, 60).trim();
       } else {
         delete devices[m[1]];
@@ -488,10 +601,12 @@ const server = http.createServer(async (req, res) => {
     }
     // Bulk: same action on many devices.
     if (req.method === "POST" && p === "/api/bulk") {
-      const list = pick(body.target);
+      if (!can(u, "devices", "sites")) return deny();
+      const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
-      if (body.action === "command") return ok({ count: queue(list, commandFrom(body), "admin (bulk)") });
+      if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "group") {
+        if (!siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
         for (const d of list) d.group = String(body.group || "").slice(0, 60).trim();
         return ok({ count: list.length });
       }
@@ -504,14 +619,16 @@ const server = http.createServer(async (req, res) => {
     }
     // Maintenance mode: show the full-screen maintenance image on the chosen devices until turned off.
     if (req.method === "POST" && p === "/api/maintenance") {
-      const list = pick(body.target);
+      if (!can(u, "devices", "sites", "overview")) return deny();
+      const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
       const on = !!body.on;
       for (const d of list) d.maintenance = on;
-      log(null, "maintenance", `Maintenance mode ${on ? "ON" : "off"} for ${list.length} device${list.length === 1 ? "" : "s"}`);
+      log(null, "maintenance", `Maintenance mode ${on ? "ON" : "off"} for ${list.length} device${list.length === 1 ? "" : "s"} by ${by}`);
       return ok({ count: list.length });
     }
     if (req.method === "POST" && p === "/api/sites") {
+      if (!can(u, "sites") || (body.oldName ? !siteOk(u, body.oldName) : !allSites(u))) return deny();
       const name = String(body.name || "").slice(0, 60).trim();
       if (!name) return send(res, 400, { error: "site name required" });
       const site = portal.sites.find(x => x.name.toLowerCase() === name.toLowerCase());
@@ -524,6 +641,7 @@ const server = http.createServer(async (req, res) => {
         for (const d of Object.values(devices)) if (d.group === old.name) d.group = name;
         for (const t of portal.tasks) if (t.target?.group === old.name) t.target.group = name;
         for (const t of portal.tokens) if (t.group === old.name) t.group = name;
+        for (const x of portal.users) x.sites = (x.sites || []).map(s => s === old.name ? name : s);
         Object.assign(old, { name }, fields);
         return ok();
       }
@@ -533,6 +651,8 @@ const server = http.createServer(async (req, res) => {
       return ok();
     }
     if (req.method === "POST" && p === "/api/sites/delete") {
+      if (!can(u, "sites") || !allSites(u)) return deny();
+      for (const x of portal.users) x.sites = (x.sites || []).filter(s => s !== body.name);
       portal.sites = portal.sites.filter(x => x.name !== body.name);
       for (const d of Object.values(devices)) if (d.group === body.name) d.group = "";
       log(null, "site", `Site "${body.name}" deleted`);
@@ -541,12 +661,16 @@ const server = http.createServer(async (req, res) => {
     m = /^\/api\/alerts\/([a-f0-9]{16})\/ack$/.exec(p);
     if (req.method === "POST" && m) {
       const a = portal.alerts.find(x => x.id === m[1]);
-      if (!a) return send(res, 404, { error: "no such alert" });
+      if (!can(u, "alerts", "overview")) return deny();
+      if (!a || !sees(u, devices[a.deviceId])) return send(res, 404, { error: "no such alert" });
       a.ackAt = Date.now();
       if (a.kind === "crash") a.resolvedAt = a.ackAt;
       return ok();
     }
     if (req.method === "POST" && p === "/api/tasks") {
+      if (!can(u, "tasks") || !(allSites(u) || siteOk(u, body.target?.group))) return deny("Pick one of your sites as the target");
+      const old = portal.tasks.find(x => x.id === body.id);
+      if (old && !(allSites(u) || siteOk(u, old.target?.group))) return deny();
       const days = (Array.isArray(body.days) ? body.days : []).map(Number).filter(n => n >= 0 && n <= 6);
       if (!/^\d\d:\d\d$/.test(body.time || "") || !days.length) return send(res, 400, { error: "pick a time and at least one day" });
       const t = { id: /^[a-f0-9]{16}$/.test(body.id || "") ? body.id : rid(), name: String(body.name || body.type).slice(0, 80),
@@ -560,24 +684,27 @@ const server = http.createServer(async (req, res) => {
     m = /^\/api\/tasks\/([a-f0-9]{16})\/(run|delete)$/.exec(p);
     if (req.method === "POST" && m) {
       const t = portal.tasks.find(x => x.id === m[1]);
-      if (!t) return send(res, 404, { error: "no such task" });
-      if (m[2] === "run") return ok({ count: runTask(t, "admin (run now)") });
+      if (!t || !can(u, "tasks") || !(allSites(u) || siteOk(u, t.target?.group))) return send(res, 404, { error: "no such task" });
+      if (m[2] === "run") return ok({ count: runTask(t, by + " (run now)") });
       portal.tasks = portal.tasks.filter(x => x !== t);
       return ok();
     }
     if (req.method === "POST" && p === "/api/tokens") {
+      if (!can(u, "enroll") || !siteOk(u, String(body.group || ""))) return deny("Pick one of your sites");
       const t = { token: crypto.randomBytes(12).toString("base64url"), label: String(body.label || "Enrollment").slice(0, 60),
         group: String(body.group || "").slice(0, 60), mode: body.mode === "monitor" ? "monitor" : "kiosk", createdAt: Date.now(), uses: 0 };
       portal.tokens.push(t);
       return ok({ token: t.token });
     }
     if (req.method === "POST" && p === "/api/tokens/delete") {
-      portal.tokens = portal.tokens.filter(t => t.token !== body.token);
+      if (!can(u, "enroll")) return deny();
+      portal.tokens = portal.tokens.filter(t => t.token !== body.token || !siteOk(u, t.group));
       return ok();
     }
     // QR code contents for Android Enterprise provisioning (factory-reset device: tap the welcome screen 6 times, scan).
     if (req.method === "POST" && p === "/api/qr") {
-      const t = portal.tokens.find(x => x.token === body.token);
+      const t = portal.tokens.find(x => x.token === body.token && siteOk(u, x.group));
+      if (!can(u, "enroll")) return deny();
       const apk = kioskApk();
       if (!t || !apk) return send(res, 400, { error: !apk ? "upload the kiosk app first (Apps page)" : "pick a token" });
       const server = String(body.server || "").replace(/\/$/, "");
@@ -597,36 +724,93 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res, 200, { qr: JSON.stringify(qr) });
     }
-    // Uploads: raw file body, name in the query string.
-    if (req.method === "POST" && p === "/api/upload") {
+    // Uploads. Office PC: POST /api/upload with the raw file body, name in the query string.
+    // Cloud (requests max 32 MB): POST /api/upload/start gives a bucket upload link, the browser PUTs the file there,
+    // then POST /api/upload/finish {id} hashes it and adds it to the list.
+    if (req.method === "POST" && /^\/api\/upload(\/start|\/finish)?$/.test(p)) {
+      if (!can(u, "apps")) return deny();
       const kind = url.searchParams.get("kind"), name = String(url.searchParams.get("name") || "file").slice(0, 120);
-      const id = rid();
-      if (kind === "app") {
-        const info = await receiveFile(req, path.join(UPLOADS, "apps", id + ".apk"));
-        portal.apps.push({ id, label: String(url.searchParams.get("label") || name.replace(/\.apk$/i, "")).slice(0, 80), ...info, at: Date.now() });
-        log(null, "upload", `App "${name}" uploaded`);
-      } else if (kind === "file") {
-        const info = await receiveFile(req, path.join(UPLOADS, "files", id));
-        portal.files.push({ id, name, ...info, at: Date.now() });
-        log(null, "upload", `File "${name}" uploaded`);
-      } else return send(res, 400, { error: "kind must be app or file" });
+      if (kind !== "app" && kind !== "file") return send(res, 400, { error: "kind must be app or file" });
+      const keyOf = id => (kind === "app" ? appKey(id) : fileKey(id));
+      let id = rid(), info;
+      if (p === "/api/upload/start") {
+        if (!CLOUD) return send(res, 200, {}); // the office PC takes the file directly
+        const [uploadUrl] = await bucket.file(keyOf(id)).createResumableUpload({ origin: req.headers.origin });
+        uploading.set(id, kind);
+        return send(res, 200, { id, uploadUrl });
+      }
+      if (p === "/api/upload/finish") {
+        if (uploading.get(body.id) !== kind) return send(res, 400, { error: "upload not found, try again" });
+        uploading.delete(id = body.id);
+        info = await checkUploaded(keyOf(id), kind === "app" ? name.replace(/\.apk$/i, "") + ".apk" : name);
+      } else {
+        if (CLOUD) return send(res, 400, { error: "use /api/upload/start" });
+        info = await receiveFile(req, keyOf(id));
+      }
+      if (kind === "app") portal.apps.push({ id, label: String(url.searchParams.get("label") || name.replace(/\.apk$/i, "")).slice(0, 80), ...info, at: Date.now() });
+      else portal.files.push({ id, name, ...info, at: Date.now() });
+      log(null, "upload", `${kind === "app" ? "App" : "File"} "${name}" uploaded`);
       return ok({ id });
     }
     m = /^\/api\/(apps|files)\/([a-f0-9]{16})\/(delete|kiosk)$/.exec(p);
     if (req.method === "POST" && m) {
+      if (!can(u, "apps")) return deny();
       if (m[3] === "kiosk" && m[1] === "apps") { portal.kioskApp = m[2]; return ok(); }
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
-      fs.rm(path.join(UPLOADS, m[1], m[2] + (m[1] === "apps" ? ".apk" : "")), () => {});
+      store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
+      return ok();
+    }
+    // ---------------- accounts (admins only) ----------------
+    if (req.method === "POST" && p === "/api/users") {
+      if (!u.admin) return deny();
+      const username = String(body.username || "").trim();
+      if (!/^[\w.@-]{2,40}$/.test(username)) return send(res, 400, { error: "Username: 2–40 letters, digits, . _ @ -" });
+      if (username.toLowerCase() === ADMIN_USER.toLowerCase()) return send(res, 400, { error: "That username is reserved" });
+      const old = portal.users.find(x => x.username.toLowerCase() === username.toLowerCase());
+      if (body.isNew && old) return send(res, 400, { error: "That username is taken" });
+      if (!body.isNew && !old) return send(res, 404, { error: "no such account" });
+      const pw = String(body.password || "");
+      if ((body.isNew || pw) && pw.length < 8) return send(res, 400, { error: "Password: at least 8 characters" });
+      const sites = Array.isArray(body.sites) ? body.sites.map(String).filter(s => s === "*" || portal.sites.some(x => x.name === s)) : [];
+      const acct = Object.assign(old || { username, createdAt: Date.now() }, {
+        name: String(body.name || "").slice(0, 80).trim(), admin: !!body.admin, readOnly: !!body.readOnly && !body.admin, disabled: !!body.disabled,
+        sites: sites.includes("*") ? ["*"] : sites,
+        modules: (Array.isArray(body.modules) ? body.modules : []).filter(x => MODULES.includes(x)),
+      });
+      if (pw) {
+        acct.hash = hashPw(pw);
+        for (const [sid, s] of sessions) if (s.user === acct.username) sessions.delete(sid); // new password signs them out everywhere
+      }
+      if (!old) portal.users.push(acct);
+      log(null, "user", `Account "${acct.username}" ${old ? "updated" : "created"} by ${by}`);
+      return ok();
+    }
+    if (req.method === "POST" && p === "/api/users/delete") {
+      if (!u.admin) return deny();
+      if (body.username === u.username) return send(res, 400, { error: "You can't delete your own account" });
+      const before = portal.users.length;
+      portal.users = portal.users.filter(x => x.username !== body.username);
+      if (portal.users.length === before) return send(res, 404, { error: "no such account" });
+      log(null, "user", `Account "${body.username}" deleted by ${by}`);
       return ok();
     }
     send(res, 404, { error: "not found" });
   } catch (e) {
     if (!res.headersSent) send(res, 400, { error: String(e.message || e) });
   }
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`Device portal running. Open http://localhost:${PORT}  (login: ${ADMIN_USER})`);
-  if (!process.env.ADMIN_PASSWORD) console.log("WARNING: default admin password in use, set ADMIN_PASSWORD");
-  if (!process.env.DEVICE_KEY) console.log("WARNING: default device key in use, set DEVICE_KEY (and server_key in the app)");
-});
+// Save before the process stops (Ctrl+C on the PC, Cloud Run shutting the instance down).
+for (const sig of ["SIGINT", "SIGTERM"]) process.once(sig, () => flush().finally(() => process.exit(0)));
+
+if (require.main === module) {
+  ready.then(() => {
+    setInterval(tick, 1000); // tick itself waits 5 s between runs
+    http.createServer(handler).listen(PORT, () => {
+      console.log(`Device portal running. Open http://localhost:${PORT}  (login: ${ADMIN_USER})`);
+      if (!process.env.ADMIN_PASSWORD) console.log("WARNING: default admin password in use, set ADMIN_PASSWORD");
+      if (!process.env.DEVICE_KEY) console.log("WARNING: default device key in use, set DEVICE_KEY (and server_key in the app)");
+    });
+  });
+}
+module.exports = { handler };

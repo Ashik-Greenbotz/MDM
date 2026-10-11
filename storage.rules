@@ -1,0 +1,9 @@
+rules_version = '2';
+// Only the portal function (admin access) reads and writes the bucket. Download links it hands out carry their own token.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

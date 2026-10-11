@@ -19,6 +19,8 @@ import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
@@ -275,12 +277,18 @@ public class KioskActivity extends Activity {
                     public void onCapabilitiesChanged(Network n, NetworkCapabilities caps) {
                         // VALIDATED = Android actually reached the internet, not just joined Wi-Fi.
                         boolean ok = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-                        runOnUiThread(() -> showOnline(status, ok));
+                        runOnUiThread(() -> {
+                            showOnline(status, ok);
+                            showNet(caps, n);
+                        });
                     }
 
                     @Override
                     public void onLost(Network n) {
-                        runOnUiThread(() -> showOnline(status, false));
+                        runOnUiThread(() -> {
+                            showOnline(status, false);
+                            findViewById(R.id.netInfo).setVisibility(View.GONE);
+                        });
                     }
                 });
     }
@@ -297,6 +305,50 @@ public class KioskActivity extends Activity {
         status.setText(online ? "●  Online" : "●  Offline · tap to connect Wi-Fi");
         status.setTextColor(online ? 0xFF1E8E3E : 0xFFD93025);
         status.setBackground(rounded(online ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
+    }
+
+    // Line under the status pill: Wi-Fi icon + network name, or Ethernet icon + IP address.
+    private void showNet(NetworkCapabilities caps, Network n) {
+        TextView net = findViewById(R.id.netInfo);
+        int icon = 0;
+        String text = null;
+        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+            icon = R.drawable.ic_wifi;
+            String ssid = wifiName();
+            text = ssid.isEmpty() ? "Wi-Fi" : ssid;
+        } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+            icon = R.drawable.ic_ethernet;
+            String ip = ipv4(n);
+            text = ip.isEmpty() ? "Ethernet" : ip;
+        }
+        if (text == null) {
+            net.setVisibility(View.GONE);
+            return;
+        }
+        net.setText(text);
+        net.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
+        net.setVisibility(View.VISIBLE);
+    }
+
+    private String wifiName() {
+        WifiManager wm = getApplicationContext().getSystemService(WifiManager.class);
+        if (wm == null || wm.getConnectionInfo() == null) return "";
+        String s = wm.getConnectionInfo().getSSID();
+        if (s == null) return "";
+        s = s.replace("\"", "").trim();
+        return s.equals("<unknown ssid>") || s.equals("0x") ? "" : s;
+    }
+
+    private String ipv4(Network n) {
+        LinkProperties lp = getSystemService(ConnectivityManager.class).getLinkProperties(n);
+        if (lp != null) {
+            for (LinkAddress la : lp.getLinkAddresses()) {
+                if (la.getAddress() instanceof java.net.Inet4Address && !la.getAddress().isLoopbackAddress()) {
+                    return la.getAddress().getHostAddress();
+                }
+            }
+        }
+        return "";
     }
 
     // Own Wi-Fi list instead of the Settings panel, which links on to the rest of Settings.
