@@ -205,9 +205,20 @@ public class KioskActivity extends Activity {
         handler.postDelayed(openSingleApp, SINGLE_APP_DELAY_MS);
     }
 
+    // The pinned app becomes the lock task itself (not a task on top of this screen), so Back on it does nothing.
     private void openSingleApp() {
         Intent launch = singleAppIntent();
-        if (launch != null) startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        if (launch == null) return;
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (!isOwner() || !isPinned(this)) {
+            startActivity(launch);
+            return;
+        }
+        try {
+            stopLockTask();
+        } catch (RuntimeException ignored) {
+        }
+        startActivity(launch, ActivityOptions.makeBasic().setLockTaskEnabled(true).toBundle());
     }
 
     private String appLabel(String pkg) {
@@ -643,7 +654,13 @@ public class KioskActivity extends Activity {
 
     // Also used by the portal's "Pin app" / "Unpin app" commands.
     static void setSingleApp(Context ctx, String pkg) {
+        String old = ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_SINGLE_APP, "");
         ctx.getSharedPreferences("kiosk", MODE_PRIVATE).edit().putString(PREF_SINGLE_APP, pkg == null ? "" : pkg).commit();
+        // Unpinning: drop the old app out of lock task now; lock() puts the allowed-apps list back when this screen resumes.
+        DevicePolicyManager dpm = ctx.getSystemService(DevicePolicyManager.class);
+        if (!old.isEmpty() && !old.equals(pkg) && dpm.isDeviceOwnerApp(ctx.getPackageName())) {
+            dpm.setLockTaskPackages(new ComponentName(ctx, AdminReceiver.class), new String[]{ctx.getPackageName()});
+        }
         DeviceService.event(ctx, pkg == null || pkg.isEmpty() ? "App unpinned" : "App pinned: " + pkg);
     }
 
