@@ -16,7 +16,15 @@ const DASHBOARD_DIR = path.join(__dirname, "..", "dashboard");
 const STATIC = { "/": ["index.html", "text/html; charset=utf-8"], "/login": ["login.html", "text/html; charset=utf-8"],
   "/logo.png": ["logo.png", "image/png"] };
 const SESSION_MS = 12 * 60 * 60 * 1000;
-const COMMANDS = ["unlock", "lock"];
+// Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
+const COMMANDS = {
+  "android-kiosk": ["unlock", "lock", "lockscreen", "reboot", "ring"],
+  android: ["lockscreen", "reboot", "ring"],
+  telpo: ["lockscreen", "reboot", "ring"],
+  windows: ["reboot"],
+  iot: ["reboot"],
+};
+const typeOf = d => (COMMANDS[d.type] ? d.type : "android-kiosk");
 
 let devices = {};
 try { devices = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch { /* first run */ }
@@ -77,8 +85,8 @@ function readJson(req) {
 }
 
 // Fields a tablet may set about itself.
-const REPORT_FIELDS = ["deviceName", "model", "serial", "battery", "charging", "kioskLocked",
-  "lat", "lng", "accuracy", "locationTime", "appVersion"];
+const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
+  "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info"];
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
@@ -90,6 +98,7 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.id !== "string" || !/^[\w-]{8,64}$/.test(body.id)) return send(res, 400, { error: "bad id" });
       const d = devices[body.id] || (devices[body.id] = { id: body.id });
       for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
+      if (d.info !== undefined && (typeof d.info !== "object" || Array.isArray(d.info))) delete d.info;
       d.lastSeen = Date.now();
       d.ip = req.socket.remoteAddress;
       const command = d.command || null;
@@ -134,7 +143,8 @@ const server = http.createServer(async (req, res) => {
     // Everything else is the dashboard API: admin only.
     if (!isAdmin(req)) return send(res, 401, { error: "login required" });
     if (req.method === "GET" && url.pathname === "/api/devices") {
-      return send(res, 200, { now: Date.now(), devices: Object.values(devices) });
+      return send(res, 200, { now: Date.now(), commands: COMMANDS,
+        devices: Object.values(devices).map(d => ({ ...d, type: typeOf(d) })) });
     }
     const m = /^\/api\/devices\/([\w-]+)\/(command|name|delete)$/.exec(url.pathname);
     if (req.method === "POST" && m) {
@@ -142,7 +152,7 @@ const server = http.createServer(async (req, res) => {
       if (!d) return send(res, 404, { error: "no such device" });
       const body = await readJson(req);
       if (m[2] === "command") {
-        if (!COMMANDS.includes(body.type)) return send(res, 400, { error: "unknown command" });
+        if (!COMMANDS[typeOf(d)].includes(body.type)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${body.type}` });
         d.command = { type: body.type, at: Date.now() };
       } else if (m[2] === "name") {
         d.name = String(body.name || "").slice(0, 80).trim();

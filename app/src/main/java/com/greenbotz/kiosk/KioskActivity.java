@@ -25,6 +25,7 @@ import android.net.Uri;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -68,6 +69,12 @@ public class KioskActivity extends Activity {
     private boolean online;
     private boolean remoteUnlockPending;
     static final String EXTRA_REMOTE_UNLOCK = "remote_unlock";
+    // "kiosk" locks the device to this app; "monitor" only reports to the dashboard (phones, Telpo terminals).
+    static final String PREF_MODE = "mode";
+
+    static boolean monitorOnly(Context ctx) {
+        return "monitor".equals(ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_MODE, "kiosk"));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,6 +84,10 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
+        // Mode is picked once, on the first launch by setup-tablet.bat; after that only the admin menu changes it.
+        if (!prefs().contains(PREF_MODE)) {
+            prefs().edit().putString(PREF_MODE, "monitor".equals(getIntent().getStringExtra("mode")) ? "monitor" : "kiosk").commit(); // commit: must survive an early crash
+        }
         setSystemWallpaperOnce();
         watchInternet();
         DeviceService.start(this);
@@ -87,6 +98,10 @@ public class KioskActivity extends Activity {
     protected void onResume() {
         super.onResume();
         renderApps();
+        if (monitorOnly(this)) {
+            unlock();
+            return;
+        }
         if (remoteUnlockPending) {
             remoteUnlockPending = false;
             exitKiosk();
@@ -175,7 +190,7 @@ public class KioskActivity extends Activity {
         if (isFinishing()) return;
         TreeMap<String, ScanResult> bySsid = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         for (ScanResult r : wm.getScanResults()) {
-            String ssid = r.getWifiSsid() == null ? "" : r.getWifiSsid().toString().replace("\"", "");
+            String ssid = r.SSID == null ? "" : r.SSID.replace("\"", ""); // getWifiSsid() is Android 13+
             if (ssid.isEmpty() || ssid.equals("<unknown ssid>")) continue;
             ScanResult seen = bySsid.get(ssid);
             if (seen == null || r.level > seen.level) bySsid.put(ssid, r);
@@ -388,7 +403,8 @@ public class KioskActivity extends Activity {
     }
 
     private void showAdminMenu() {
-        String[] items = {"Exit kiosk", "Change password", "Uninstall kiosk app", "Choose allowed apps", "Server address"};
+        String[] items = {"Exit kiosk", "Change password", "Uninstall kiosk app", "Choose allowed apps", "Server address",
+                monitorOnly(this) ? "Switch to kiosk mode" : "Switch to monitor-only (no lock)"};
         new AlertDialog.Builder(this)
                 .setTitle("Admin")
                 .setItems(items, (d, which) -> {
@@ -402,6 +418,11 @@ public class KioskActivity extends Activity {
                     }
                     if (which == 4) {
                         changeServer();
+                        return;
+                    }
+                    if (which == 5) {
+                        prefs().edit().putString(PREF_MODE, monitorOnly(this) ? "kiosk" : "monitor").apply();
+                        recreate();
                         return;
                     }
                     if (which == 2) {
@@ -500,7 +521,7 @@ public class KioskActivity extends Activity {
     static void scheduleRelock(Context ctx, long until) {
         Intent open = new Intent(ctx, KioskActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         // Android 14+: the creator must opt in for the alarm to start an activity from the background.
-        Bundle opts = ActivityOptions.makeBasic().setPendingIntentCreatorBackgroundActivityStartMode(
+        Bundle opts = Build.VERSION.SDK_INT < 34 ? null : ActivityOptions.makeBasic().setPendingIntentCreatorBackgroundActivityStartMode(
                 ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle();
         PendingIntent pi = PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_IMMUTABLE, opts);
         ctx.getSystemService(AlarmManager.class).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, until, pi);

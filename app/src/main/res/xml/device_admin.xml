@@ -1,3 +1,6 @@
 <device-admin>
-    <uses-policies />
+    <uses-policies>
+        <!-- dashboard "Lock screen" command (dpm.lockNow) -->
+        <force-lock />
+    </uses-policies>
 </device-admin>

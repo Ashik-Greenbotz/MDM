@@ -12,6 +12,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.BatteryManager;
@@ -114,7 +118,7 @@ public class DeviceService extends Service {
         LocationManager lm = getSystemService(LocationManager.class);
         try {
             for (String p : new String[]{LocationManager.FUSED_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
-                if (!lm.hasProvider(p)) continue;
+                if (!lm.getAllProviders().contains(p)) continue; // hasProvider() is Android 12+
                 Location l = lm.getLastKnownLocation(p);
                 if (l != null && (lastLocation == null || l.getTime() > lastLocation.getTime())) lastLocation = l;
                 lm.requestLocationUpdates(p, 60 * 1000, 0, locationListener, Looper.getMainLooper());
@@ -141,6 +145,9 @@ public class DeviceService extends Service {
             long unlockUntil = getSharedPreferences("kiosk", MODE_PRIVATE).getLong(KioskActivity.PREF_UNLOCK_UNTIL, 0);
             JSONObject d = new JSONObject();
             d.put("id", deviceId());
+            boolean monitor = KioskActivity.monitorOnly(this);
+            d.put("type", !monitor ? "android-kiosk" : Build.MANUFACTURER.toLowerCase().contains("telpo") ? "telpo" : "android");
+            d.put("os", "Android " + Build.VERSION.RELEASE);
             d.put("deviceName", Settings.Global.getString(getContentResolver(), Settings.Global.DEVICE_NAME));
             d.put("model", Build.MODEL);
             try {
@@ -149,7 +156,8 @@ public class DeviceService extends Service {
             }
             d.put("battery", bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
             d.put("charging", bm.isCharging());
-            d.put("kioskLocked", System.currentTimeMillis() >= unlockUntil);
+            d.put("kioskLocked", !monitor && System.currentTimeMillis() >= unlockUntil);
+            d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
             Location loc = lastLocation;
             if (loc != null) {
@@ -180,7 +188,11 @@ public class DeviceService extends Service {
             }
             if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
             try (InputStream in = c.getInputStream()) {
-                return new JSONObject(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                // InputStream.readAllBytes() is Android 13+.
+                java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                byte[] chunk = new byte[4096];
+                for (int n; (n = in.read(chunk)) > 0; ) buf.write(chunk, 0, n);
+                return new JSONObject(buf.toString("UTF-8"));
             }
         } finally {
             c.disconnect();
@@ -188,10 +200,30 @@ public class DeviceService extends Service {
     }
 
     private void runCommand(String type) {
+        DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
+        try {
+            if (type.equals("lockscreen")) dpm.lockNow();
+            if (type.equals("reboot")) dpm.reboot(new ComponentName(this, AdminReceiver.class));
+            if (type.equals("ring")) ring();
+        } catch (SecurityException e) {
+            Log.w(TAG, type + " needs device owner", e);
+        }
         Intent open = new Intent(this, KioskActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (type.equals("unlock")) open.putExtra(KioskActivity.EXTRA_REMOTE_UNLOCK, true);
         // Device owner apps may start activities from the background. Opening the kiosk screen locks it.
         if (type.equals("unlock") || type.equals("lock")) startActivity(open);
         handler.postDelayed(() -> net.execute(this::report), 3000);
+    }
+
+    // "Find my device": alarm sound at full volume for 20 seconds.
+    private void ring() {
+        AudioManager am = getSystemService(AudioManager.class);
+        am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);
+        Ringtone r = RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
+        if (r == null) return;
+        r.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
+        r.setLooping(true);
+        r.play();
+        handler.postDelayed(r::stop, 20 * 1000);
     }
 }

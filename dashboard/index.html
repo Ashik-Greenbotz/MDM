@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kiosk Dashboard</title>
+<title>Device Dashboard</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
@@ -47,6 +47,16 @@
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
   .toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .toolbar select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+  .type { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 5px; font-size: 11px; font-weight: 600;
+    background: var(--hover); color: var(--muted); vertical-align: 1px; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); padding: 20px;
+    width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  dialog h2 { margin: 0 0 12px; font-size: 18px; }
+  dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 16px; }
+  dialog dt { color: var(--muted); } dialog dd { margin: 0; overflow-wrap: anywhere; }
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
   .toolbar input { flex: 1; min-width: 160px; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--bg); color: var(--text); }
   .table-wrap { overflow: auto; max-height: calc(100vh - 290px); min-height: 200px; }
@@ -102,8 +112,8 @@
 <header>
   <img src="/logo.png" alt="">
   <div>
-    <h1>Kiosk Dashboard</h1>
-    <div class="sub">Interlock Group · tablets across all sites</div>
+    <h1>Device Dashboard</h1>
+    <div class="sub">Interlock Group · every device across all sites</div>
   </div>
   <div class="grow"></div>
   <span class="live" id="live"><i></i><span id="liveText">Connecting…</span></span>
@@ -115,11 +125,12 @@
   <div class="grid">
     <div class="card">
       <div class="toolbar">
-        <input id="search" type="search" placeholder="Search by name, model or serial…">
+        <input id="search" type="search" placeholder="Search by name, model, serial or IP…">
+        <select id="type" aria-label="Device type"></select>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Device</th><th>Status</th><th>Kiosk</th><th>Battery</th><th>Last seen</th><th></th></tr></thead>
+          <thead><tr><th>Device</th><th>Status</th><th>State</th><th>Battery</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
         <div class="empty" id="empty" hidden></div>
@@ -129,10 +140,11 @@
   </div>
 </div>
 <div id="toasts"></div>
+<dialog id="details"><div id="detailsBody"></div><form method="dialog"><button class="btn">Close</button></form></dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const ONLINE_MS = 60 * 1000;  // tablets check in every 10s
+const ONLINE_MS = 90 * 1000;  // tablets check in every 10s, PCs and IoT agents every 30s
 const LOW_BATTERY = 20;
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -140,7 +152,17 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const map = L.map("map").setView([1.3521, 103.8198], 11);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
 
-let devices = [], markers = {}, selected = null, skew = 0, fitted = false, filter = "all";
+let devices = [], commands = {}, markers = {}, selected = null, skew = 0, fitted = false, filter = "all";
+const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", iot: "IoT" };
+const CMD = {
+  unlock: ["Unlock (2 min)", d => `Unlocking ${label(d)} for 2 minutes…`],
+  lock: ["Lock to kiosk", d => `Locking ${label(d)}…`],
+  lockscreen: ["Lock screen", d => `Locking the screen of ${label(d)}…`],
+  ring: ["Ring (find device)", d => `Ringing ${label(d)} for 20 seconds…`],
+  reboot: ["Restart", d => `Restarting ${label(d)}…`],
+};
+$("type").innerHTML = `<option value="">All types</option>` + Object.entries(TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+const fmtUptime = s => s == null ? "–" : s < 3600 ? Math.round(s / 60) + " min" : s < 86400 ? Math.round(s / 3600) + " h" : Math.round(s / 86400) + " days";
 
 const now = () => Date.now() + skew;  // server clock, so "last seen" is right even if this PC's clock is off
 const isOnline = d => d.lastSeen && now() - d.lastSeen < ONLINE_MS;
@@ -182,6 +204,7 @@ async function refresh() {
   try {
     const r = await api("/api/devices");
     skew = r.now - Date.now();
+    commands = r.commands || {};
     devices = r.devices.sort((a, b) => label(a).localeCompare(label(b)));
     $("live").classList.remove("down");
     $("liveText").textContent = "Live · updated " + new Date().toLocaleTimeString();
@@ -197,24 +220,26 @@ function render() {
     `<button class="stat ${f.cls} ${filter === k ? "active" : ""}" data-filter="${k}">
        <div class="n">${devices.filter(f.test).length}</div><div class="l">${f.label}</div></button>`).join("");
 
-  const q = $("search").value.trim().toLowerCase();
-  const shown = devices.filter(FILTERS[filter].test).filter(d =>
-    !q || [label(d), d.model, d.serial, d.deviceName].some(v => String(v ?? "").toLowerCase().includes(q)));
+  const q = $("search").value.trim().toLowerCase(), type = $("type").value;
+  const shown = devices.filter(FILTERS[filter].test).filter(d => !type || d.type === type).filter(d =>
+    !q || [label(d), d.model, d.serial, d.deviceName, d.localIp, d.ip].some(v => String(v ?? "").toLowerCase().includes(q)));
 
   $("rows").innerHTML = shown.map(d => {
     const on = isOnline(d), low = d.battery != null && d.battery < LOW_BATTERY;
+    const kioskType = d.type === "android-kiosk";
     const kiosk = d.command
-      ? `<span class="pill neutral">Sending ${esc(d.command.type)}…</span>`
+      ? `<span class="pill neutral">Sending ${esc(CMD[d.command.type]?.[0] || d.command.type)}…</span>`
+      : !kioskType ? `<span class="meta">${d.uptime != null ? "Up " + fmtUptime(d.uptime) : "Monitored"}</span>`
       : d.kioskLocked === false ? `<span class="pill warn"><i></i>Unlocked</span>` : `<span class="pill ok"><i></i>Locked</span>`;
     return `<tr data-id="${esc(d.id)}" class="${d.id === selected ? "sel" : ""}">
-      <td><div class="name">${esc(label(d))}</div><div class="meta">${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
+      <td><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
       <td><span class="pill ${on ? "ok" : "bad"}"><i></i>${on ? "Online" : "Offline"}</span></td>
       <td>${kiosk}</td>
       <td>${d.battery == null ? "–" : `<span class="batt ${low ? "low" : ""}"><span class="bar"><b style="width:${d.battery}%"></b></span>${d.battery}%${d.charging ? " ⚡" : ""}</span>`}</td>
       <td><span title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</span></td>
       <td><div class="actions">
-        <button class="btn primary" data-cmd="unlock" title="Unlock for 2 minutes">Unlock</button>
-        <button class="btn" data-cmd="lock">Lock</button>
+        ${kioskType ? `<button class="btn primary" data-cmd="unlock" title="Unlock for 2 minutes">Unlock</button>
+        <button class="btn" data-cmd="lock">Lock</button>` : `<button class="btn" data-details>Details</button>`}
         <button class="btn ghost" data-menu aria-label="More">⋯</button>
       </div></td>
     </tr>`;
@@ -222,8 +247,8 @@ function render() {
 
   $("empty").hidden = shown.length > 0;
   $("empty").textContent = devices.length === 0
-    ? "No tablets yet. They appear here as soon as the kiosk app checks in."
-    : "No tablets match this filter.";
+    ? "No devices yet. They appear here as soon as the kiosk app or a device agent checks in."
+    : "No devices match this filter.";
 
   const seen = new Set();
   for (const d of devices) {
@@ -246,10 +271,11 @@ function render() {
 }
 
 async function command(d, type) {
-  if (!isOnline(d) && !confirm(`${label(d)} is offline. Send anyway? It runs when the tablet reconnects.`)) return;
+  if (!isOnline(d) && !confirm(`${label(d)} is offline. Send anyway? It runs when the device reconnects.`)) return;
+  if (type === "reboot" && !confirm(`Restart ${label(d)}?`)) return;
   try {
     await api(`/api/devices/${d.id}/command`, { type });
-    toast(type === "unlock" ? `Unlocking ${label(d)} for 2 minutes…` : `Locking ${label(d)}…`);
+    toast(CMD[type][1](d));
   } catch (e) { toast("Failed: " + e.message, true); }
   refresh();
 }
@@ -259,7 +285,9 @@ function openMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = `<button data-act="locate">Show on map</button><button data-act="rename">Rename</button>
+  m.innerHTML = (commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c))
+      .map(c => `<button data-cmd="${c}">${CMD[c][0]}</button>`).join("") +
+    `<hr><button data-act="details">Details</button><button data-act="locate">Show on map</button><button data-act="rename">Rename</button>
     <button data-act="delete" class="danger">Remove from list</button>`;
   document.body.append(m);
   const r = btn.getBoundingClientRect();
@@ -268,13 +296,15 @@ function openMenu(btn, d) {
   m.onclick = async e => {
     const act = e.target.dataset.act;
     closeMenu();
+    if (e.target.dataset.cmd) return command(d, e.target.dataset.cmd);
     try {
+      if (act === "details") return showDetails(d);
       if (act === "locate") locate(d);
       if (act === "rename") {
         const name = prompt("Device name (e.g. site name):", label(d));
         if (name && name.trim()) { await api(`/api/devices/${d.id}/name`, { name }); toast("Renamed"); }
       }
-      if (act === "delete" && confirm(`Remove ${label(d)} from the list? It comes back if the tablet checks in again.`)) {
+      if (act === "delete" && confirm(`Remove ${label(d)} from the list? It comes back if the device checks in again.`)) {
         await api(`/api/devices/${d.id}/delete`, {});
         toast("Removed");
       }
@@ -283,8 +313,22 @@ function openMenu(btn, d) {
   };
 }
 
+function showDetails(d) {
+  const rows = {
+    Type: TYPES[d.type] || d.type, Status: isOnline(d) ? "Online" : "Offline", "Last seen": d.lastSeen && new Date(d.lastSeen).toLocaleString(),
+    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP": d.localIp, "Seen from IP": d.ip,
+    Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
+    Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m)`,
+    "Last command": d.lastCommand && `${CMD[d.lastCommand]?.[0] || d.lastCommand} · ${ago(d.lastCommandAt)}`,
+    ...(d.info || {}), "Device ID": d.id,
+  };
+  $("detailsBody").innerHTML = `<h2>${esc(label(d))}</h2><dl>` +
+    Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + "</dl>";
+  $("details").showModal();
+}
+
 function locate(d) {
-  if (!markers[d.id]) { toast("No location from this tablet yet", true); return; }
+  if (!markers[d.id]) { toast("No location from this device", true); return; }
   map.setView(markers[d.id].getLatLng(), 16);
   markers[d.id].openPopup();
 }
@@ -296,6 +340,7 @@ $("rows").onclick = e => {
   selected = d.id;
   const cmd = e.target.closest("[data-cmd]"), menu = e.target.closest("[data-menu]");
   if (cmd) command(d, cmd.dataset.cmd);
+  else if (e.target.closest("[data-details]")) showDetails(d);
   else if (menu) { e.stopPropagation(); openMenu(menu, d); }
   else locate(d);
   render();
@@ -304,7 +349,7 @@ $("stats").onclick = e => {
   const b = e.target.closest("[data-filter]");
   if (b) { filter = b.dataset.filter; render(); }
 };
-$("search").oninput = render;
+$("search").oninput = $("type").onchange = render;
 document.addEventListener("click", e => { if (!e.target.closest(".menu")) closeMenu(); });
 $("logout").onclick = async () => { await fetch("/api/logout", { method: "POST" }); location.href = "/login"; };
 
