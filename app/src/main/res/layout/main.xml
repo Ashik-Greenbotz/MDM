@@ -92,7 +92,7 @@
         </ScrollView>
     </LinearLayout>
 
-    <!-- Single-app kiosk: shown for a few seconds before the app reopens -->
+    <!-- App pinning: shown for a few seconds before the app reopens -->
     <TextView
         android:id="@+id/single"
         android:layout_width="wrap_content"

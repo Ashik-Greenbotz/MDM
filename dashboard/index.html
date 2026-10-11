@@ -201,7 +201,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "Pin app…", unpin: "Unpin app",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", unpin: "Unpin app",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PAGES = [
@@ -592,19 +592,24 @@ function pickSingleApp(list) {
   const common = [...(sets[0] || new Map())].filter(([pkg]) => sets.every(m => m.has(pkg)));
   if (!common.length) return toast(list.length > 1 ? "These devices have no app in common" : "This device hasn't reported its apps yet (update the kiosk app)", true);
   const cur = list.length === 1 ? list[0].singleApp || "" : "";
+  const anyPinned = list.some(d => d.singleApp);
   dialog(`<h2>App pinning</h2>
     <p class="meta">${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}: the pinned app runs full screen, starts on boot and reopens by itself.</p>
     <select id="saPick" style="width:100%">${options(common.map(([p, n]) => [p, n]), cur)}</select>
     <p class="meta"><b>Manual override</b> (works offline): tap the bottom-left corner 6 times → PIN <b>9499</b> → the app is unpinned and the admin menu opens.
-      Or use <b>Unpin app</b> here.</p>`,
-    "Pin app", () => command(list, "singleapp", { package: $("saPick").value, appName: $("saPick").selectedOptions[0].text }));
+      Or use <b>Unpin app</b> here.</p>
+    <p class="meta">Now: ${list.map(d => esc(label(d)) + " – " + (d.singleApp ? "📌 " + esc(appName(d, d.singleApp)) : "not pinned")).slice(0, 5).join("<br>")}${list.length > 5 ? "<br>…" : ""}</p>`,
+    "📌 Pin app", () => command(list, "singleapp", { package: $("saPick").value, appName: $("saPick").selectedOptions[0].text }),
+    anyPinned ? ["Unpin app", () => command(list, "unpin"), "danger"] : null);
 }
 
-function dialog(html, okText, onOk) {
+// extra: optional second action, [label, handler, cssClass].
+function dialog(html, okText, onOk, extra) {
   const d = $("dlg");
   d.innerHTML = `<form method="dialog">${html}<div class="foot"><button class="btn" value="cancel" formnovalidate>${okText ? "Cancel" : "Close"}</button>
+    ${extra ? `<button class="btn ${extra[2] || ""}" value="extra" formnovalidate>${esc(extra[0])}</button>` : ""}
     ${okText ? `<button class="btn primary" value="ok">${esc(okText)}</button>` : ""}</div></form>`;
-  d.onclose = () => { if (d.returnValue === "ok") onOk(); };
+  d.onclose = () => { if (d.returnValue === "ok") onOk(); if (d.returnValue === "extra") extra[1](); };
   d.returnValue = "";
   d.showModal();
 }

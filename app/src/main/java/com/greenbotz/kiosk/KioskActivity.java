@@ -27,6 +27,7 @@ import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -461,7 +462,12 @@ public class KioskActivity extends Activity {
             dpm.setStatusBarDisabled(admin, true);
         }
         // Without device owner this falls back to screen pinning (user confirms, can escape).
-        startLockTask();
+        try {
+            startLockTask();
+        } catch (IllegalArgumentException e) {
+            // "Invalid task, not in foreground": another app came up first; onResume locks next time.
+            Log.w("Kiosk", "startLockTask", e);
+        }
     }
 
     private void unlock() {
@@ -526,8 +532,8 @@ public class KioskActivity extends Activity {
     private void showAdminMenu() {
         String[] items = {"Exit kiosk", "Change password", "Uninstall kiosk app", "Choose allowed apps", "Server address",
                 monitorOnly(this) ? "Switch to kiosk mode" : "Switch to monitor-only (no lock)",
-                prefs().getString(PREF_SINGLE_APP, "").isEmpty() ? "App pinning: pin an app…"
-                        : "App pinning: unpin " + appLabel(prefs().getString(PREF_SINGLE_APP, "")),
+                prefs().getString(PREF_SINGLE_APP, "").isEmpty() ? "App pinning…"
+                        : "App pinning… (" + appLabel(prefs().getString(PREF_SINGLE_APP, "")) + ")",
                 "Link device ID"};
         new AlertDialog.Builder(this)
                 .setTitle("Admin")
@@ -549,13 +555,7 @@ public class KioskActivity extends Activity {
                         return;
                     }
                     if (which == 6) {
-                        if (prefs().getString(PREF_SINGLE_APP, "").isEmpty()) {
-                            chooseSingleApp();
-                        } else {
-                            setSingleApp(this, "");
-                            Toast.makeText(this, "App unpinned", Toast.LENGTH_SHORT).show();
-                            recreate();
-                        }
+                        chooseSingleApp();
                         return;
                     }
                     if (which == 5) {
@@ -586,16 +586,29 @@ public class KioskActivity extends Activity {
         }
         java.util.List<String> labels = new java.util.ArrayList<>(byLabel.keySet()), pkgs = new java.util.ArrayList<>(byLabel.values());
         int current = pkgs.indexOf(prefs().getString(PREF_SINGLE_APP, ""));
-        new AlertDialog.Builder(this)
-                .setTitle("Pin an app (runs full screen)")
-                .setSingleChoiceItems(labels.toArray(new String[0]), current, (d, i) -> {
-                    setSingleApp(this, pkgs.get(i));
-                    d.dismiss();
+        int[] chosen = {current};
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle("App pinning")
+                .setSingleChoiceItems(labels.toArray(new String[0]), current, (d, i) -> chosen[0] = i)
+                .setPositiveButton("Pin app", (d, w) -> {
+                    if (chosen[0] < 0) {
+                        Toast.makeText(this, "Pick an app first", Toast.LENGTH_SHORT).show();
+                        scheduleSingleApp();
+                        return;
+                    }
+                    setSingleApp(this, pkgs.get(chosen[0]));
                     if (monitorOnly(this)) prefs().edit().putString(PREF_MODE, "kiosk").apply();
                     recreate();
                 })
-                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
-                .show();
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp());
+        if (current >= 0) {
+            b.setNeutralButton("Unpin app", (d, w) -> {
+                setSingleApp(this, "");
+                Toast.makeText(this, "App unpinned", Toast.LENGTH_SHORT).show();
+                recreate();
+            });
+        }
+        b.show();
     }
 
     private void linkDeviceId() {
