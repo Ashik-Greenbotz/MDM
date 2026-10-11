@@ -140,6 +140,10 @@ public class KioskActivity extends Activity {
         prefs().edit().remove(PREF_UNLOCK_UNTIL).apply();
         lock();
         hideSystemBars();
+        if (MaintenanceActivity.on(this)) {
+            startActivity(new Intent(this, MaintenanceActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
         if (overridePending) {
             overridePending = false;
             handler.removeCallbacks(openSingleApp);

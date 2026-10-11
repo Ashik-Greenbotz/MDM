@@ -330,7 +330,7 @@ const server = http.createServer(async (req, res) => {
         log(d.id, "delivered", `${command.type} delivered`);
       }
       dirty = true;
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE });
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -501,6 +501,15 @@ const server = http.createServer(async (req, res) => {
         return ok({ count: list.length });
       }
       return send(res, 400, { error: "unknown action" });
+    }
+    // Maintenance mode: show the full-screen maintenance image on the chosen devices until turned off.
+    if (req.method === "POST" && p === "/api/maintenance") {
+      const list = pick(body.target);
+      if (!list.length) return send(res, 400, { error: "no devices selected" });
+      const on = !!body.on;
+      for (const d of list) d.maintenance = on;
+      log(null, "maintenance", `Maintenance mode ${on ? "ON" : "off"} for ${list.length} device${list.length === 1 ? "" : "s"}`);
+      return ok({ count: list.length });
     }
     if (req.method === "POST" && p === "/api/sites") {
       const name = String(body.name || "").slice(0, 60).trim();

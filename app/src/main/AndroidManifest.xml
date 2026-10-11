@@ -84,6 +84,14 @@
         </service>
 
         <!-- Portal screenshots on Android 9/10: one-time screen capture permission -->
+        <!-- Full-screen maintenance image, pushed from the portal -->
+        <activity
+            android:name=".MaintenanceActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:lockTaskMode="if_whitelisted"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+
         <activity
             android:name=".ScreenshotActivity"
             android:exported="false"

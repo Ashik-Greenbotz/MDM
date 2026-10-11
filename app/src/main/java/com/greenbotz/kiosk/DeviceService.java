@@ -67,6 +67,9 @@ public class DeviceService extends Service {
     private static final String PREF_DEVICE_ID = "device_id";
     static final String PREF_TOKEN = "token";
     static final String PREF_CODE = "code";
+    static final String PREF_MAINTENANCE = "maintenance";
+    // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
+    static volatile boolean maintenanceShowing;
     private static final String PREF_EVENTS = "events", PREF_CRASH = "crash";
     private static boolean crashHandlerSet;
 
@@ -262,6 +265,13 @@ public class DeviceService extends Service {
             if (d.has("launcherApps")) sentApps = apps.toString();
             String code = reply.optString("code");
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
+            boolean maint = reply.optBoolean("maintenance");
+            if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) prefs.edit().putBoolean(PREF_MAINTENANCE, maint).commit();
+            // Keep the maintenance screen up (also covers reboots and an app coming to the front).
+            if (maint && !maintenanceShowing && !KioskActivity.monitorOnly(this)) {
+                handler.post(() -> startActivity(new Intent(this, MaintenanceActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
+            }
             String tz = reply.optString("timeZone");
             if (!tz.isEmpty() && !tz.equals(java.util.TimeZone.getDefault().getID())) handler.post(() -> setTimeZone(tz));
             JSONObject cmd = reply.optJSONObject("command");
