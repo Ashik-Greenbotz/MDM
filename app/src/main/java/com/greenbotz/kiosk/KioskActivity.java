@@ -162,6 +162,9 @@ public class KioskActivity extends Activity {
                     if (OVERRIDE_PIN.equals(pin.getText().toString())) {
                         setSingleApp(this, "");
                         DeviceService.event(this, "Manual override used on the device");
+                        // Put the allowed apps (and Home button) back; setSingleApp cleared them from lock task.
+                        lock();
+                        renderApps();
                         PinOverlay.sync(this);
                         scheduleSingleApp();
                         showAdminMenu();
