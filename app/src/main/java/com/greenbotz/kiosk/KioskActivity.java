@@ -17,6 +17,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -29,6 +30,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -135,10 +137,18 @@ public class KioskActivity extends Activity {
                 });
     }
 
+    private static GradientDrawable rounded(int color, float radius) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(color);
+        g.setCornerRadius(radius);
+        return g;
+    }
+
     private void showOnline(TextView status, boolean online) {
         this.online = online;
-        status.setText(online ? "● Online" : "● Offline (tap to connect Wi-Fi)");
-        status.setTextColor(online ? 0xFF2E7D32 : 0xFFC62828);
+        status.setText(online ? "●  Online" : "●  Offline · tap to connect Wi-Fi");
+        status.setTextColor(online ? 0xFF1E8E3E : 0xFFD93025);
+        status.setBackground(rounded(online ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
     }
 
     // Own Wi-Fi list instead of the Settings panel, which links on to the rest of Settings.
@@ -231,24 +241,45 @@ public class KioskActivity extends Activity {
         GridLayout grid = findViewById(R.id.apps);
         grid.removeAllViews();
         PackageManager pm = getPackageManager();
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        float dp = getResources().getDisplayMetrics().density;
         for (String pkg : allowedApps()) {
             Intent launch = pm.getLaunchIntentForPackage(pkg);
             if (launch == null) continue; // uninstalled since it was picked
             try {
                 ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
                 Drawable icon = pm.getApplicationIcon(info);
-                int size = pad * 4;
-                icon.setBounds(0, 0, size, size);
+                icon.setBounds(0, 0, (int) (64 * dp), (int) (64 * dp));
                 TextView tile = new TextView(this);
                 tile.setText(pm.getApplicationLabel(info));
                 tile.setCompoundDrawables(null, icon, null, null);
+                tile.setCompoundDrawablePadding((int) (10 * dp));
                 tile.setGravity(Gravity.CENTER);
-                tile.setPadding(pad, pad, pad, pad);
+                tile.setTextColor(0xFF1D2129);
+                tile.setTextSize(14);
+                tile.setMaxLines(2);
+                tile.setEllipsize(TextUtils.TruncateAt.END);
+                tile.setPadding((int) (8 * dp), (int) (18 * dp), (int) (8 * dp), (int) (14 * dp));
+                tile.setBackground(rounded(0xFFFFFFFF, 20 * dp));
+                tile.setElevation(2 * dp);
                 tile.setOnClickListener(v -> startActivity(launch));
-                grid.addView(tile);
+                // Equal-width columns: width 0 + weight 1.
+                GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
+                        GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, 1f));
+                lp.width = 0;
+                int m = (int) (6 * dp);
+                lp.setMargins(m, m, m, m);
+                grid.addView(tile, lp);
             } catch (PackageManager.NameNotFoundException ignored) {
             }
+        }
+        if (grid.getChildCount() == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("No apps available");
+            empty.setTextColor(0xFF6B7280);
+            empty.setPadding(0, (int) (24 * dp), 0, (int) (24 * dp));
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
+                    GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(0, 4, GridLayout.CENTER));
+            grid.addView(empty, lp);
         }
     }
 

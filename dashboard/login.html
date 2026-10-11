@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Kiosk Dashboard</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2129; --muted: #6b7280; --line: #e3e6ea;
+    --accent: #f28c00; --accent-ink: #ffffff; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111317; --card: #1b1e24; --text: #e8eaed; --muted: #9aa0a6; --line: #2c3038; --bad: #ef7070; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 32px 28px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+  .logo { display: block; width: 120px; height: 120px; object-fit: contain; margin: -8px auto 4px; border-radius: 12px; background: #fff; }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 4px; }
+  p.sub { text-align: center; color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+  input { width: 100%; font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg); color: var(--text); margin-bottom: 16px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  button { width: 100%; font: inherit; font-weight: 600; padding: 12px; border: 0; border-radius: 10px;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  .err { color: var(--bad); font-size: 14px; min-height: 1.5em; margin: -6px 0 10px; }
+</style>
+</head>
+<body>
+<form class="card" id="form">
+  <img class="logo" src="/logo.png" alt="Interlock Group">
+  <h1>Kiosk Dashboard</h1>
+  <p class="sub">Sign in to manage your tablets</p>
+  <label for="user">Username</label>
+  <input id="user" autocomplete="username" required autofocus>
+  <label for="password">Password</label>
+  <input id="password" type="password" autocomplete="current-password" required>
+  <div class="err" id="err" role="alert"></div>
+  <button id="btn">Sign in</button>
+</form>
+<script>
+document.getElementById("form").onsubmit = async e => {
+  e.preventDefault();
+  const btn = document.getElementById("btn"), err = document.getElementById("err");
+  btn.disabled = true; err.textContent = "";
+  try {
+    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: document.getElementById("user").value.trim(), password: document.getElementById("password").value }) });
+    if (r.ok) { location.href = "/"; return; }
+    err.textContent = (await r.json().catch(() => ({}))).error || "Sign-in failed";
+  } catch { err.textContent = "Cannot reach the server"; }
+  btn.disabled = false;
+};
+</script>
+</body>
+</html>

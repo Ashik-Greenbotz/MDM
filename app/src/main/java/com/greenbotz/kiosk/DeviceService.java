@@ -103,7 +103,8 @@ public class DeviceService extends Service {
         DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
         if (!dpm.isDeviceOwnerApp(getPackageName())) return;
         ComponentName admin = new ComponentName(this, AdminReceiver.class);
-        for (String p : new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION}) {
+        for (String p : new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                Manifest.permission.READ_PHONE_STATE /* Build.getSerial() */}) {
             dpm.setPermissionGrantState(admin, getPackageName(), p, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
         }
         dpm.setLocationEnabled(admin, true);
@@ -143,7 +144,7 @@ public class DeviceService extends Service {
             d.put("deviceName", Settings.Global.getString(getContentResolver(), Settings.Global.DEVICE_NAME));
             d.put("model", Build.MODEL);
             try {
-                d.put("serial", Build.getSerial()); // allowed for device owner only
+                d.put("serial", Build.getSerial());
             } catch (SecurityException ignored) {
             }
             d.put("battery", bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
