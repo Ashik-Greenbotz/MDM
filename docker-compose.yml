@@ -1,0 +1,18 @@
+# On the VM: put this file and a .env (see .env.example) in the same directory, then:
+#   docker compose pull && docker compose up -d
+services:
+  portal:
+    image: ghcr.io/ashik-greenbotz/mdm:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set a strong ADMIN_PASSWORD in .env}
+      DEVICE_KEY: ${DEVICE_KEY:?set a random DEVICE_KEY in .env}
+      TIME_ZONE: ${TIME_ZONE:-Asia/Singapore}
+    volumes:
+      - portal-data:/app/server
+
+volumes:
+  portal-data:

@@ -1,0 +1,17 @@
+.git
+.github
+app
+agents
+gradle
+/*.apk
+/*.jpg
+/*.png
+*.bat
+node_modules
+functions/node_modules
+functions/.env
+functions/package.json
+functions/package-lock.json
+functions/index.js
+server
+*.md
