@@ -555,7 +555,7 @@ function deviceMenu(btn, d) {
   m.className = "menu";
   m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
     `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
-     <button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
+     <button data-act="logs">Download logs</button><button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
   const r = btn.getBoundingClientRect();
   m.style.top = Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8) + "px";
@@ -574,6 +574,11 @@ document.addEventListener("click", e => { if (!e.target.closest(".menu")) closeM
 function deviceAction(d, a) {
   if (a === "open") location.hash = "#/device/" + encodeURIComponent(d.id);
   if (a === "map") openMap(d);
+  if (a === "logs") api(`/api/devices/${d.id}/logs`).then(text => {
+    const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type: "text/plain" })), download: `${d.code || d.id}-logs.txt` });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }).catch(() => toast(`No logs from ${label(d)} yet. Use "Get logs" first.`, true));
   if (a === "rename") {
     const name = prompt("Device name (e.g. site + location):", label(d));
     if (name && name.trim()) act(() => api(`/api/devices/${d.id}/name`, { name }), "Renamed");
@@ -746,7 +751,7 @@ VIEWS.device = async (id, first) => {
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
         </div>
       </div>
-      <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button></h3><pre class="log" id="dLogs">Loading…</pre></div>`;
+      <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download logs</button></h3><pre class="log" id="dLogs">Loading…</pre></div>`;
     $("view").onclick = e => {
       if (e.target.id === "dShot") return screenshot(dev(id), false);
       const b = e.target.closest("[data-a],[data-cmd]");
@@ -754,6 +759,7 @@ VIEWS.device = async (id, first) => {
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
     };
     $("dLogBtn").onclick = () => command([dev(id)], "logs");
+    $("dLogDl").onclick = () => deviceAction(dev(id), "logs");
   }
   $("dTitle").innerHTML = `<span class="code" style="font-size:16px">${esc(d.code || "")}</span> ${esc(label(d))}`;
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
@@ -1003,11 +1009,14 @@ VIEWS.apps = (arg, first) => {
         <div class="card"><h3>Upload file</h3><form class="pad row" id="fForm">
           <input type="file" id="fFile" required><button class="btn primary">Upload</button></form></div>
       </div>
-      <div class="card"><h3>Apps</h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
-      <div class="card"><h3>Files</h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody id="fRows"></tbody></table></div></div>`;
+      <div class="card"><h3>Apps<span class="grow"></span><button class="btn" data-dlall="apps">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
+      <div class="card"><h3>Files<span class="grow"></span><button class="btn" data-dlall="files">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody id="fRows"></tbody></table></div></div>`;
     $("aForm").onsubmit = e => { e.preventDefault(); const f = $("aFile").files[0]; toast("Uploading…"); act(() => upload("app", f, $("aLabel").value).then(() => e.target.reset()), "App uploaded"); };
     $("fForm").onsubmit = e => { e.preventDefault(); const f = $("fFile").files[0]; toast("Uploading…"); act(() => upload("file", f).then(() => e.target.reset()), "File uploaded"); };
     $("view").onclick = e => {
+      const all = e.target.closest("[data-dlall]")?.dataset.dlall;
+      // ponytail: one download per item (browser may ask once to allow multiple downloads); server-side zip if lists get long
+      if (all) $(all === "apps" ? "aRows" : "fRows").querySelectorAll("a[download]").forEach((a, i) => setTimeout(() => a.click(), i * 400));
       const b = e.target.closest("[data-x]");
       if (!b) return;
       const [kind, id] = [b.dataset.kind, b.dataset.id];
@@ -1019,9 +1028,11 @@ VIEWS.apps = (arg, first) => {
   $("aRows").innerHTML = S.apps.slice().reverse().map(a => `<tr><td class="name">${esc(a.label)}</td><td>${fmtSize(a.size)}</td><td class="meta">${ago(a.at)}</td>
       <td>${S.kioskApp === a.id ? `<span class="pill ok">Used for QR enrollment</span>` : `<button class="btn ghost" data-x="kiosk" data-kind="apps" data-id="${a.id}">Use for QR</button>`}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="apps" data-id="${a.id}">Install on devices…</button>
+      <a class="btn" href="/download/app/${a.id}.apk" download>⬇ Download</a>
       <button class="btn ghost" data-x="del" data-kind="apps" data-id="${a.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No apps uploaded</td></tr>`;
   $("fRows").innerHTML = S.files.slice().reverse().map(f => `<tr><td class="name">${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td class="meta">${ago(f.at)}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="files" data-id="${f.id}">Send to devices…</button>
+      <a class="btn" href="/download/file/${f.id}" download>⬇ Download</a>
       <button class="btn ghost" data-x="del" data-kind="files" data-id="${f.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="4" class="empty">No files uploaded</td></tr>`;
 };
 
