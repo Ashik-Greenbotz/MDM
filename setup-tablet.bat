@@ -16,6 +16,8 @@ rem Fails harmlessly if it is already device owner; fails for real if an account
 set MODE=kiosk
 if /i "%~1"=="monitor" set MODE=monitor
 echo Mode: %MODE%
+rem Lets the App pinning override corner (6 taps bottom-left) sit on top of the pinned app.
+adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow
 adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode %MODE%
 echo.
 echo Done. The tablet should now show the kiosk screen and appear on the dashboard within a minute.

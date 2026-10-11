@@ -72,6 +72,26 @@ public class KioskActivity extends Activity {
     static final String EXTRA_REMOTE_UNLOCK = "remote_unlock";
     // "kiosk" locks the device to this app; "monitor" only reports to the dashboard (phones, Telpo terminals).
     static final String PREF_MODE = "mode";
+    // App pinning: package that runs full screen; the kiosk screen only shows briefly to reopen it.
+    static final String PREF_SINGLE_APP = "single_app";
+    // Manual override while an app is pinned: 6 taps bottom-left + this PIN. Checked on the device, so it works offline.
+    // ponytail: one fixed PIN for every device; make it per-device / settable from the portal if it leaks.
+    private static final String OVERRIDE_PIN = "9499";
+    static final String EXTRA_OVERRIDE = "override";
+    private boolean overridePending;
+
+    static boolean isPinned(Context ctx) {
+        SharedPreferences p = ctx.getSharedPreferences("kiosk", MODE_PRIVATE);
+        return !monitorOnly(ctx) && !p.getString(PREF_SINGLE_APP, "").isEmpty()
+                && System.currentTimeMillis() >= p.getLong(PREF_UNLOCK_UNTIL, 0);
+    }
+    private static final long SINGLE_APP_DELAY_MS = 5000;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable openSingleApp = this::openSingleApp;
+    // Device ID arrives from the server in the background; show it as soon as it's saved.
+    private final SharedPreferences.OnSharedPreferenceChangeListener codeListener = (p, key) -> {
+        if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
+    };
 
     static boolean monitorOnly(Context ctx) {
         return "monitor".equals(ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_MODE, "kiosk"));
@@ -85,6 +105,11 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
+        findViewById(R.id.overrideCorner).setOnClickListener(v -> {
+            handler.removeCallbacks(openSingleApp);
+            if (isPinned(this) && PinOverlay.tap()) askOverridePin();
+        });
+        overridePending = getIntent().getBooleanExtra(EXTRA_OVERRIDE, false);
         // Mode is picked once, on the first launch by setup-tablet.bat; after that only the admin menu changes it.
         if (!prefs().contains(PREF_MODE)) {
             prefs().edit().putString(PREF_MODE, "monitor".equals(getIntent().getStringExtra("mode")) ? "monitor" : "kiosk").commit(); // commit: must survive an early crash
@@ -99,6 +124,8 @@ public class KioskActivity extends Activity {
     protected void onResume() {
         super.onResume();
         renderApps();
+        showDeviceCode();
+        prefs().registerOnSharedPreferenceChangeListener(codeListener);
         if (monitorOnly(this)) {
             unlock();
             return;
@@ -112,6 +139,82 @@ public class KioskActivity extends Activity {
         prefs().edit().remove(PREF_UNLOCK_UNTIL).apply();
         lock();
         hideSystemBars();
+        if (overridePending) {
+            overridePending = false;
+            handler.removeCallbacks(openSingleApp);
+            askOverridePin();
+        } else {
+            scheduleSingleApp();
+        }
+        PinOverlay.sync(this);
+    }
+
+    private void askOverridePin() {
+        EditText pin = new EditText(this);
+        pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        pin.setHint("Override PIN");
+        new AlertDialog.Builder(this)
+                .setTitle("Manual override")
+                .setMessage("Unpins " + appLabel(prefs().getString(PREF_SINGLE_APP, "")) + " and opens the admin menu.")
+                .setView(pin)
+                .setPositiveButton("OK", (d, w) -> {
+                    if (OVERRIDE_PIN.equals(pin.getText().toString())) {
+                        setSingleApp(this, "");
+                        DeviceService.event(this, "Manual override used on the device");
+                        PinOverlay.sync(this);
+                        scheduleSingleApp();
+                        showAdminMenu();
+                    } else {
+                        Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show();
+                        scheduleSingleApp();
+                    }
+                })
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
+                .show();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(openSingleApp);
+        prefs().unregisterOnSharedPreferenceChangeListener(codeListener);
+    }
+
+    private void showDeviceCode() {
+        String code = prefs().getString(DeviceService.PREF_CODE, "");
+        ((TextView) findViewById(R.id.deviceCode)).setText(code.isEmpty() ? "" : "Device ID  " + code);
+    }
+
+    private Intent singleAppIntent() {
+        String pkg = prefs().getString(PREF_SINGLE_APP, "");
+        return pkg.isEmpty() ? null : getPackageManager().getLaunchIntentForPackage(pkg);
+    }
+
+    // Shows "Opening X in 5 s" and then opens it. The delay is the admin's way in: 6 corner taps cancel it.
+    private void scheduleSingleApp() {
+        TextView banner = findViewById(R.id.single);
+        Intent launch = singleAppIntent();
+        handler.removeCallbacks(openSingleApp);
+        if (launch == null) {
+            banner.setVisibility(View.GONE);
+            return;
+        }
+        banner.setText("\uD83D\uDCCC Opening " + appLabel(prefs().getString(PREF_SINGLE_APP, "")) + "…");
+        banner.setVisibility(View.VISIBLE);
+        handler.postDelayed(openSingleApp, SINGLE_APP_DELAY_MS);
+    }
+
+    private void openSingleApp() {
+        Intent launch = singleAppIntent();
+        if (launch != null) startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+
+    private String appLabel(String pkg) {
+        try {
+            return getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0)).toString();
+        } catch (PackageManager.NameNotFoundException e) {
+            return pkg;
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -262,7 +365,10 @@ public class KioskActivity extends Activity {
     }
 
     private Set<String> allowedApps() {
-        return new TreeSet<>(prefs().getStringSet(PREF_APPS, Collections.emptySet()));
+        Set<String> apps = new TreeSet<>(prefs().getStringSet(PREF_APPS, Collections.emptySet()));
+        String single = prefs().getString(PREF_SINGLE_APP, "");
+        if (!single.isEmpty()) apps.add(single);
+        return apps;
     }
 
     private void renderApps() {
@@ -382,6 +488,7 @@ public class KioskActivity extends Activity {
     }
 
     private void onCornerTap() {
+        handler.removeCallbacks(openSingleApp); // admin is trying to get in: stay on this screen
         long now = SystemClock.elapsedRealtime();
         if (now - firstTapAt > TAP_WINDOW_MS) {
             firstTapAt = now;
@@ -409,15 +516,19 @@ public class KioskActivity extends Activity {
                         showAdminMenu();
                     } else {
                         Toast.makeText(this, "Wrong password", Toast.LENGTH_SHORT).show();
+                        scheduleSingleApp();
                     }
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
                 .show();
     }
 
     private void showAdminMenu() {
         String[] items = {"Exit kiosk", "Change password", "Uninstall kiosk app", "Choose allowed apps", "Server address",
-                monitorOnly(this) ? "Switch to kiosk mode" : "Switch to monitor-only (no lock)"};
+                monitorOnly(this) ? "Switch to kiosk mode" : "Switch to monitor-only (no lock)",
+                prefs().getString(PREF_SINGLE_APP, "").isEmpty() ? "App pinning: pin an app…"
+                        : "App pinning: unpin " + appLabel(prefs().getString(PREF_SINGLE_APP, "")),
+                "Link device ID"};
         new AlertDialog.Builder(this)
                 .setTitle("Admin")
                 .setItems(items, (d, which) -> {
@@ -431,6 +542,20 @@ public class KioskActivity extends Activity {
                     }
                     if (which == 4) {
                         changeServer();
+                        return;
+                    }
+                    if (which == 7) {
+                        linkDeviceId();
+                        return;
+                    }
+                    if (which == 6) {
+                        if (prefs().getString(PREF_SINGLE_APP, "").isEmpty()) {
+                            chooseSingleApp();
+                        } else {
+                            setSingleApp(this, "");
+                            Toast.makeText(this, "App unpinned", Toast.LENGTH_SHORT).show();
+                            recreate();
+                        }
                         return;
                     }
                     if (which == 5) {
@@ -448,8 +573,64 @@ public class KioskActivity extends Activity {
                     }
                     exitKiosk();
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
                 .show();
+    }
+
+    private void chooseSingleApp() {
+        PackageManager pm = getPackageManager();
+        TreeMap<String, String> byLabel = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (ResolveInfo ri : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
+            String pkg = ri.activityInfo.packageName;
+            if (!pkg.equals(getPackageName())) byLabel.put(ri.loadLabel(pm).toString(), pkg);
+        }
+        java.util.List<String> labels = new java.util.ArrayList<>(byLabel.keySet()), pkgs = new java.util.ArrayList<>(byLabel.values());
+        int current = pkgs.indexOf(prefs().getString(PREF_SINGLE_APP, ""));
+        new AlertDialog.Builder(this)
+                .setTitle("Pin an app (runs full screen)")
+                .setSingleChoiceItems(labels.toArray(new String[0]), current, (d, i) -> {
+                    setSingleApp(this, pkgs.get(i));
+                    d.dismiss();
+                    if (monitorOnly(this)) prefs().edit().putString(PREF_MODE, "kiosk").apply();
+                    recreate();
+                })
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
+                .show();
+    }
+
+    private void linkDeviceId() {
+        EditText code = new EditText(this);
+        code.setInputType(InputType.TYPE_CLASS_NUMBER);
+        code.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(4)});
+        code.setHint("4-digit ID from the portal");
+        code.setText(prefs().getString(DeviceService.PREF_CODE, ""));
+        new AlertDialog.Builder(this)
+                .setTitle("Link device ID")
+                .setMessage("Create the ID in the portal (Devices → Add device), then type it here.")
+                .setView(code)
+                .setPositiveButton("Link", (d, w) -> {
+                    String c = code.getText().toString().trim();
+                    new Thread(() -> {
+                        String msg;
+                        try {
+                            org.json.JSONObject r = DeviceService.link(this, c);
+                            msg = r.optBoolean("ok") ? "Linked as " + r.optString("name") + " (ID " + r.optString("code") + ")" : r.optString("error", "Failed");
+                        } catch (Exception e) {
+                            msg = "Can't reach the server: " + e.getMessage();
+                        }
+                        String m = msg;
+                        runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("Link device ID").setMessage(m)
+                                .setPositiveButton("OK", (x, y) -> scheduleSingleApp()).show());
+                    }).start();
+                })
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
+                .show();
+    }
+
+    // Also used by the portal's "Pin app" / "Unpin app" commands.
+    static void setSingleApp(Context ctx, String pkg) {
+        ctx.getSharedPreferences("kiosk", MODE_PRIVATE).edit().putString(PREF_SINGLE_APP, pkg == null ? "" : pkg).commit();
+        DeviceService.event(ctx, pkg == null || pkg.isEmpty() ? "App unpinned" : "App pinned: " + pkg);
     }
 
     // Shared by the admin menu and the dashboard's remote "Unlock" command.
@@ -471,6 +652,7 @@ public class KioskActivity extends Activity {
         if (intent.getBooleanExtra(EXTRA_REMOTE_UNLOCK, false)) {
             remoteUnlockPending = true;
         }
+        if (intent.getBooleanExtra(EXTRA_OVERRIDE, false)) overridePending = true;
     }
 
     private void changeServer() {

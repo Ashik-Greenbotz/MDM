@@ -27,6 +27,8 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Portal commands: app install (OTA) and "Send file" (storage permission only needed on Android 9) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- App pinning manual override corner on top of the pinned app (granted over ADB by setup-tablet.bat) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <!-- Lets DeviceService.isTelpo() see Telpo's service on Android 11+ -->

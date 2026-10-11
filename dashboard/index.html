@@ -47,7 +47,7 @@
   nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   nav a .c { margin-left: auto; font-size: 12px; color: var(--muted); }
   nav a .c.bad { color: var(--bad); font-weight: 700; }
-  main { padding: 20px; max-width: 1500px; width: 100%; }
+  main { padding: 20px; max-width: 1500px; width: 100%; min-width: 0; }
   main h2 { margin: 0 0 4px; font-size: 20px; }
   main .lead { color: var(--muted); margin: 0 0 16px; }
   @media (max-width: 800px) {
@@ -122,6 +122,23 @@
   .qr { background: #fff; padding: 12px; border-radius: 12px; display: inline-block; }
   .qr svg { display: block; width: 280px; height: 280px; }
   .feat td:first-child { white-space: normal; }
+  .code { font: 700 13px/1 ui-monospace, Consolas, monospace; letter-spacing: .08em; padding: 3px 7px; border-radius: 6px;
+    background: var(--accent-soft); color: var(--accent); }
+  tr.pending td { color: var(--muted); }
+  .bigcode { font: 700 54px/1 ui-monospace, Consolas, monospace; letter-spacing: .15em; text-align: center; color: var(--accent);
+    background: var(--accent-soft); border-radius: 12px; padding: 18px; margin: 10px 0; }
+  .donut-wrap { display: flex; align-items: center; gap: 28px; padding: 18px; flex-wrap: wrap; }
+  .donut { width: 180px; height: 180px; flex: none; }
+  .donut text { fill: var(--text); }
+  .legend2 { display: grid; gap: 10px; font-size: 14px; }
+  .legend2 i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+  .hbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); min-width: 120px; }
+  .hbar b { background: var(--ok); } .hbar s { background: var(--bad); text-decoration: none; }
+  .alarm { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px; border-radius: 12px;
+    background: var(--bad); color: #fff; font-weight: 600; animation: pulse 1.2s ease-in-out infinite; }
+  .alarm .grow { flex: 1; }
+  .alarm .btn { background: #fff; color: var(--bad); border-color: #fff; }
+  @keyframes pulse { 50% { opacity: .78; } }
 
   dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); padding: 20px;
     width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
@@ -155,13 +172,14 @@
   </div>
   <div class="grow"></div>
   <span class="live" id="live"><i></i><span id="liveText">Connecting…</span></span>
+  <button class="btn" id="soundBtn" title="Alarm sound when a device goes offline">🔊</button>
   <button class="btn" id="mapBtn" title="Live location of all devices">🗺 Map</button>
   <a class="btn bell" href="#/alerts" title="Open alerts">🔔<b id="bellN" hidden></b></a>
   <button class="btn" id="logout">Sign out</button>
 </header>
 <div class="layout">
   <nav id="nav"></nav>
-  <main id="view"></main>
+  <main><div id="alarmBar"></div><div id="view"></div></main>
 </div>
 <div id="toasts"></div>
 <dialog id="mapDlg">
@@ -183,7 +201,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "Pin app…", unpin: "Unpin app",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PAGES = [
@@ -192,7 +210,7 @@ const PAGES = [
   ["activity", "📝", "Activity log"], ["features", "✅", "Features"],
 ];
 
-let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], commands: {} };
+let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
 const now = () => Date.now() + skew;  // server clock, so "last seen" is right even if this PC's clock is off
 const isOnline = d => d.lastSeen && now() - d.lastSeen < ONLINE_MS;
@@ -218,9 +236,12 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const stateCell = d => d.pending ? `<span class="pill neutral">Sending ${esc(CMD[d.pending] || d.pending)}…</span>`
+const withUnpin = (d, cmds) => d.singleApp ? cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]) : cmds;
+const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
+const stateCell = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
   : d.type !== "android-kiosk" ? `<span class="meta">${d.uptime != null ? "Up " + fmtUptime(d.uptime) : "Monitored"}</span>`
-  : d.kioskLocked === false ? `<span class="pill warn"><i></i>Unlocked</span>` : `<span class="pill ok"><i></i>Locked</span>`;
+  : d.kioskLocked === false ? `<span class="pill warn"><i></i>Unlocked</span>`
+  : d.singleApp ? `<span class="pill ok" title="App pinned"><i></i>📌 ${esc(appName(d, d.singleApp))}</span>` : `<span class="pill ok"><i></i>Locked</span>`;
 const options = (list, sel) => list.map(([v, t]) => `<option value="${esc(v)}" ${v === sel ? "selected" : ""}>${esc(t)}</option>`).join("");
 const groupName = g => g || "No site";
 
@@ -265,9 +286,57 @@ async function refresh() {
   $("bellN").hidden = !n;
   $("bellN").textContent = n;
   renderNav();
+  renderAlarm();
   route(true);
   if ($("mapDlg").open) drawMap();
 }
+
+// ---------------- offline alarm ----------------
+// Sounds while any offline alert is open and not acknowledged; again for every new one. Browsers only allow sound
+// after the user has clicked somewhere on the page once, so the first click (any click) unlocks it.
+let audio, soundOn = true, lastAlarmAt = 0, alarmIds = "";
+try { soundOn = localStorage.getItem("alarmSound") !== "off"; } catch {}
+const offlineAlerts = () => S.alerts.filter(a => a.kind === "offline" && !a.resolvedAt && !a.ackAt);
+function beep() {
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const t0 = audio.currentTime;
+    for (let i = 0; i < 6; i++) {          // three two-tone "dee-daa" pulses, ~2 s
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = "square";
+      o.frequency.value = i % 2 ? 660 : 880;
+      g.gain.setValueAtTime(0.0001, t0 + i * 0.33);
+      g.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.33 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.33 + 0.3);
+      o.connect(g).connect(audio.destination);
+      o.start(t0 + i * 0.33);
+      o.stop(t0 + i * 0.33 + 0.32);
+    }
+  } catch {}
+}
+document.addEventListener("click", () => { try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {} }, { once: true });
+function renderAlarm() {
+  const list = offlineAlerts();
+  $("soundBtn").textContent = soundOn ? "🔊" : "🔇";
+  $("soundBtn").title = soundOn ? "Alarm sound on (click to mute)" : "Alarm sound muted (click to turn on)";
+  if (!list.length) { $("alarmBar").innerHTML = ""; alarmIds = ""; return; }
+  const names = list.map(a => dev(a.deviceId)).filter(Boolean).map(label);
+  $("alarmBar").innerHTML = `<div class="alarm">🚨<span class="grow">${list.length} device${list.length > 1 ? "s" : ""} offline: ${esc(names.slice(0, 5).join(", "))}${names.length > 5 ? " +" + (names.length - 5) + " more" : ""}</span>
+    <a class="btn" href="#/devices" data-status="offline" id="alarmShow">Show</a><button class="btn" id="alarmAck">Acknowledge (stop alarm)</button></div>`;
+  $("alarmShow").onclick = () => { filters = { q: "", type: "", group: "", status: "offline" }; };
+  $("alarmAck").onclick = () => act(() => Promise.all(offlineAlerts().map(a => api(`/api/alerts/${a.id}/ack`, {}))), "Alarm acknowledged");
+  const ids = list.map(a => a.id).join();
+  const isNew = ids !== alarmIds && list.some(a => !alarmIds.includes(a.id));
+  alarmIds = ids;
+  if (soundOn && (isNew || Date.now() - lastAlarmAt > 30000)) { lastAlarmAt = Date.now(); beep(); }
+}
+$("soundBtn").onclick = () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem("alarmSound", soundOn ? "on" : "off"); } catch {}
+  if (soundOn) beep();
+  renderAlarm();
+};
 
 function renderNav() {
   const cur = (location.hash.slice(2) || "overview").split("/")[0];
@@ -306,19 +375,29 @@ VIEWS.overview = () => {
       <a class="stat bad" href="#/alerts"><div class="n">${openAlerts().length}</div><div class="l">Open alerts</div></a>
     </div>
     <div class="cols">
+      <div class="card"><h3>Online / offline</h3>${donut(on.length, ds.length - on.length)}</div>
+      <div class="card"><h3>Sites</h3><table><tbody>${groups().map(g => {
+        const list = ds.filter(d => (d.group || "") === g), o = list.filter(isOnline).length;
+        return `<tr class="click" data-group="${esc(g)}"><td>${esc(groupName(g))}</td>
+          <td style="width:45%">${list.length ? `<div class="hbar"><b style="width:${100 * o / list.length}%"></b><s style="width:${100 * (list.length - o) / list.length}%"></s></div>` : `<span class="meta">empty</span>`}</td>
+          <td class="meta">${o} / ${list.length}</td></tr>`;
+      }).join("") || `<tr><td class="empty">No sites yet</td></tr>`}</tbody></table></div>
+      <div class="card"><h3>Offline devices</h3><table><tbody>${ds.filter(d => !isOnline(d)).sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 8).map(d =>
+        `<tr class="click" data-dev="${esc(d.id)}"><td><span class="code">${esc(d.code || "")}</span></td><td class="name">${esc(label(d))}</td><td class="meta">${esc(d.group || "")}</td><td class="meta">since ${ago(d.lastSeen)}</td></tr>`).join("")
+        || `<tr><td class="empty">All devices online 🎉</td></tr>`}</tbody></table></div>
+    </div>
+    <div class="cols">
       <div class="card"><h3>By device type</h3><table><tbody>${byType.map(([t, n]) => {
         const o = ds.filter(d => d.type === t && isOnline(d)).length;
         return `<tr class="click" data-type="${esc(t)}"><td>${esc(TYPES[t] || t)}</td><td>${n} device${n > 1 ? "s" : ""}</td><td><span class="pill ok">${o} online</span></td></tr>`;
       }).join("") || `<tr><td class="empty">No devices yet</td></tr>`}</tbody></table></div>
-      <div class="card"><h3>By site<span class="grow"></span><a href="#/sites" class="meta">All sites →</a></h3><table><tbody>${groups().map(g => {
-        const list = ds.filter(d => (d.group || "") === g), o = list.filter(isOnline).length;
-        return `<tr class="click" data-group="${esc(g)}"><td>${esc(groupName(g))}</td><td>${list.length} device${list.length === 1 ? "" : "s"}</td><td>${!list.length ? `<span class="pill neutral">empty</span>` : o === list.length ? `<span class="pill ok">all online</span>` : `<span class="pill bad">${list.length - o} offline</span>`}</td></tr>`;
-      }).join("") || `<tr><td class="empty">No sites yet. <a href="#/sites">Add one</a></td></tr>`}</tbody></table></div>
       <div class="card"><h3>Open alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3>
         <table><tbody>${recentAlerts.map(a => `<tr><td>${alertIcon(a)}</td><td class="wrap">${esc(a.text)}</td><td class="meta">${ago(a.at)}</td></tr>`).join("")
         || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
     </div>`;
   $("view").onclick = e => {
+    const dv = e.target.closest("[data-dev]");
+    if (dv) { location.hash = "#/device/" + encodeURIComponent(dv.dataset.dev); return; }
     const t = e.target.closest("[data-type],[data-group],[data-status]");
     if (!t) return;
     filters = { q: "", type: t.dataset.type || "", group: t.dataset.group ?? "", status: t.dataset.status || "" };
@@ -326,6 +405,18 @@ VIEWS.overview = () => {
     location.hash = "#/devices";
   };
 };
+
+function donut(on, off) {
+  const total = on + off, r = 70, c = 2 * Math.PI * r, pct = total ? Math.round(100 * on / total) : 0;
+  const onLen = total ? c * on / total : 0;
+  return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 180 180">
+      <circle cx="90" cy="90" r="${r}" fill="none" stroke="${total ? css("--bad") : css("--line")}" stroke-width="22"/>
+      <circle cx="90" cy="90" r="${r}" fill="none" stroke="${css("--ok")}" stroke-width="22" stroke-dasharray="${onLen} ${c}" transform="rotate(-90 90 90)"/>
+      <text x="90" y="88" text-anchor="middle" font-size="34" font-weight="700">${pct}%</text>
+      <text x="90" y="112" text-anchor="middle" font-size="13" opacity=".65">online</text></svg>
+    <div class="legend2"><div><i style="background:${css("--ok")}"></i><b>${on}</b> online</div>
+      <div><i style="background:${css("--bad")}"></i><b>${off}</b> offline</div><div class="meta">${total} devices in total</div></div></div>`;
+}
 
 const STATUS = {
   "": ["All statuses", () => true], online: ["Online", isOnline], offline: ["Offline", d => !isOnline(d)],
@@ -337,21 +428,22 @@ function shownDevices() {
   return S.devices.filter(STATUS[filters.status][1])
     .filter(d => !filters.type || d.type === filters.type)
     .filter(d => !filters.group || (filters.group === "__none" ? !d.group : d.group === filters.group))
-    .filter(d => !q || [label(d), d.model, d.serial, d.deviceName, d.localIp, d.ip, d.group].some(v => String(v ?? "").toLowerCase().includes(q)));
+    .filter(d => !q || [d.code, label(d), d.model, d.serial, d.deviceName, d.localIp, d.ip, d.group].some(v => String(v ?? "").toLowerCase().includes(q)));
 }
 
 VIEWS.devices = (arg, first) => {
   if (first) {
     $("view").innerHTML = `
-      <h2>Devices</h2><p class="lead">Tick devices to control many at once. Click a row for full details, health and logs.</p>
+      <div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Devices</h2><button class="btn primary" id="addDev">+ Add device</button></div>
+      <p class="lead">Each device has a 4-digit Device ID, shown on its screen. Tick devices to control many at once. Click a row for details, health and logs.</p>
       <div class="card">
         <div class="toolbar">
-          <input type="search" id="q" placeholder="Search name, model, serial, IP, site…" value="${esc(filters.q)}">
+          <input type="search" id="q" placeholder="Search Device ID, name, model, serial, IP, site…" value="${esc(filters.q)}">
           <select id="fType"></select><select id="fGroup"></select><select id="fStatus"></select>
         </div>
         <div id="bulk"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
+          <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
             <th>Battery</th><th>Memory</th><th>Storage</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
       </div>`;
@@ -359,6 +451,7 @@ VIEWS.devices = (arg, first) => {
     for (const [id, key] of [["fType", "type"], ["fGroup", "group"], ["fStatus", "status"]]) $(id).onchange = e => { filters[key] = e.target.value; VIEWS.devices(); };
     $("all").onchange = e => { for (const d of shownDevices()) e.target.checked ? picked.add(d.id) : picked.delete(d.id); VIEWS.devices(); };
     $("rows").onclick = rowClick;
+    $("addDev").onclick = addDevice;
   }
   $("fType").innerHTML = options([["", "All types"], ...Object.entries(TYPES)], filters.type);
   $("fGroup").innerHTML = options([["", "All sites"], ...groups().filter(Boolean).map(g => [g, g]), ["__none", "No site"]], filters.group);
@@ -366,20 +459,46 @@ VIEWS.devices = (arg, first) => {
   const list = shownDevices();
   $("rows").innerHTML = list.map(d => `<tr class="click ${picked.has(d.id) ? "sel" : ""}" data-id="${esc(d.id)}">
       <td><input type="checkbox" data-pick ${picked.has(d.id) ? "checked" : ""} aria-label="Select"></td>
+      <td><span class="code">${esc(d.code || "")}</span></td>
       <td><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
       <td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>
       <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
       <td>${meter(d.ram, 80, 92)}</td><td>${meter(d.disk, 85, 95)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
-        <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`).join("");
-  $("empty").hidden = list.length > 0;
+        <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`).join("") +
+    (filters.status || filters.type ? "" : S.pending.filter(x => !filters.group || (filters.group === "__none" ? !x.group : x.group === filters.group))
+      .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
+      <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
+      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="5"></td>
+      <td><button class="btn ghost" data-unpend="${esc(x.code)}">Cancel</button></td></tr>`).join(""));
+  $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
   $("all").checked = list.length > 0 && list.every(d => picked.has(d.id));
   renderBulk();
 };
 
+const q2 = () => filters.q.toLowerCase();
+function addDevice() {
+  dialog(`<h2>Add device</h2>
+    <div style="display:grid;grid-template-columns:max-content 1fr;gap:10px 14px;align-items:center">
+      <label class="meta">Name</label><input id="adName" placeholder="e.g. Lobby intercom" autofocus>
+      <label class="meta">Site</label><select id="adSite">${options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], filters.group && filters.group !== "__none" ? filters.group : "")}</select></div>
+    <p class="meta">You get a 4-digit Device ID. On the device: tap the top-right corner 6 times → admin password → <b>Link device ID</b> → type the ID.</p>`,
+    "Create Device ID", async () => {
+      try {
+        const r = await api("/api/devices/new", { name: $("adName").value, group: $("adSite").value });
+        await refresh();
+        dialog(`<h2>Device ID created</h2><div class="bigcode">${esc(r.code)}</div>
+          <p>On the device: tap the top-right corner <b>6 times</b> → admin password → <b>Link device ID</b> → type <b>${esc(r.code)}</b>.</p>
+          <p class="meta">It appears here as soon as it links.</p>`);
+      } catch (e) { toast("Failed: " + e.message, true); }
+    });
+}
+
 function rowClick(e) {
+  const un = e.target.closest("[data-unpend]");
+  if (un) { if (confirm(`Cancel Device ID ${un.dataset.unpend}?`)) act(() => api("/api/devices/pending/delete", { code: un.dataset.unpend }), "Cancelled"); return; }
   const tr = e.target.closest("tr[data-id]");
   if (!tr) return;
   const d = dev(tr.dataset.id);
@@ -393,7 +512,7 @@ function rowClick(e) {
 function renderBulk() {
   const sel = [...picked].map(dev).filter(Boolean);
   if (!sel.length) { $("bulk").innerHTML = ""; return; }
-  const cmds = [...new Set(sel.flatMap(d => S.commands[d.type] || []))];
+  const cmds = [...new Set(sel.flatMap(d => withUnpin({ singleApp: 1 }, S.commands[d.type] || [])))];
   $("bulk").innerHTML = `<div class="bulk"><b>${sel.length} selected</b>
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
@@ -410,7 +529,7 @@ function deviceMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = (S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
+  m.innerHTML = withUnpin(d, S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
     `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
      <button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
@@ -445,14 +564,17 @@ function deviceAction(d, a) {
 async function command(list, type, extra = {}) {
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
+  if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
+  if (type === "unpin") return command(list, "singleapp", { package: "", appName: "unpin" });
   const names = list.length === 1 ? label(list[0]) : list.length + " devices";
+  const what = type === "singleapp" && extra.package === "" ? "Unpin app" : CMD[type].replace("…", "");
   if (type === "reboot" && !confirm(`Restart ${names}?`)) return;
   if (list.length === 1 && !isOnline(list[0]) && !confirm(`${names} is offline. Send anyway? It runs when the device reconnects.`)) return;
-  if (list.length > 1 && !confirm(`Send "${CMD[type].replace("…", "")}" to ${names}?`)) return;
+  if (list.length > 1 && !confirm(`Send "${what}" to ${names}?`)) return;
   await act(() => list.length === 1
       ? api(`/api/devices/${list[0].id}/command`, { type, ...extra })
       : api("/api/bulk", { target: { ids: list.map(d => d.id) }, action: "command", type, ...extra }),
-    r => `${CMD[type].replace("…", "")} sent to ${r.count ?? 1} device${(r.count ?? 1) === 1 ? "" : "s"}`);
+    r => `${what} sent to ${r.count ?? 1} device${(r.count ?? 1) === 1 ? "" : "s"}`);
 }
 
 function pickUpload(kind, list, type) {
@@ -464,9 +586,23 @@ function pickUpload(kind, list, type) {
     "Send", () => command(list, type, kind === "apps" ? { appId: $("upPick").value } : { fileId: $("upPick").value }));
 }
 
+// Apps installed on all the chosen devices (each device reports its own list).
+function pickSingleApp(list) {
+  const sets = list.map(d => new Map(d.launcherApps || []));
+  const common = [...(sets[0] || new Map())].filter(([pkg]) => sets.every(m => m.has(pkg)));
+  if (!common.length) return toast(list.length > 1 ? "These devices have no app in common" : "This device hasn't reported its apps yet (update the kiosk app)", true);
+  const cur = list.length === 1 ? list[0].singleApp || "" : "";
+  dialog(`<h2>App pinning</h2>
+    <p class="meta">${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}: the pinned app runs full screen, starts on boot and reopens by itself.</p>
+    <select id="saPick" style="width:100%">${options(common.map(([p, n]) => [p, n]), cur)}</select>
+    <p class="meta"><b>Manual override</b> (works offline): tap the bottom-left corner 6 times → PIN <b>9499</b> → the app is unpinned and the admin menu opens.
+      Or use <b>Unpin app</b> here.</p>`,
+    "Pin app", () => command(list, "singleapp", { package: $("saPick").value, appName: $("saPick").selectedOptions[0].text }));
+}
+
 function dialog(html, okText, onOk) {
   const d = $("dlg");
-  d.innerHTML = `<form method="dialog">${html}<div class="foot"><button class="btn" value="cancel" formnovalidate>Cancel</button>
+  d.innerHTML = `<form method="dialog">${html}<div class="foot"><button class="btn" value="cancel" formnovalidate>${okText ? "Cancel" : "Close"}</button>
     ${okText ? `<button class="btn primary" value="ok">${esc(okText)}</button>` : ""}</div></form>`;
   d.onclose = () => { if (d.returnValue === "ok") onOk(); };
   d.returnValue = "";
@@ -483,12 +619,13 @@ VIEWS.device = async (id, first) => {
   const d = dev(id);
   if (!d) { $("view").innerHTML = `<p class="empty">Device not found. <a href="#/devices">Back to devices</a></p>`; return; }
   const rows = {
-    Type: TYPES[d.type] || d.type, Site: d.group || "–", Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
+    "Device ID": d.code, Type: TYPES[d.type] || d.type, Site: d.group || "–",
+    "App pinning": d.type === "android-kiosk" && (d.singleApp ? "📌 " + appName(d, d.singleApp) : "Not pinned"), Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
     Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP": d.localIp, "Seen from IP": d.ip,
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
     Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
     Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
-    ...(d.info || {}), "First seen": d.firstSeen && new Date(d.firstSeen).toLocaleString(), "Device ID": d.id,
+    ...(d.info || {}), "First seen": d.firstSeen && new Date(d.firstSeen).toLocaleString(), "Internal ID": d.id,
   };
   const cmds = S.commands[d.type] || [];
   if (first) {
@@ -514,9 +651,9 @@ VIEWS.device = async (id, first) => {
     };
     $("dLogBtn").onclick = () => command([dev(id)], "logs");
   }
-  $("dTitle").textContent = label(d);
+  $("dTitle").innerHTML = `<span class="code" style="font-size:16px">${esc(d.code || "")}</span> ${esc(label(d))}`;
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
-  $("dCmds").innerHTML = cmds.map(c => `<button class="btn ${c === "unlock" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dCmds").innerHTML = withUnpin(d, cmds).map(c => `<button class="btn ${c === "unlock" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
   $("dKv").innerHTML = Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   const [hist, ev, logs] = await Promise.all([
     api(`/api/devices/${d.id}/history`).catch(() => ({ history: [] })),
@@ -619,7 +756,7 @@ VIEWS.alerts = () => {
       ${dev(a.deviceId) ? `<a class="meta" href="#/device/${encodeURIComponent(a.deviceId)}">Open device →</a>` : ""}</td>
       <td class="meta">${new Date(a.at).toLocaleString()}</td>
       <td>${a.resolvedAt ? `<span class="pill ok">Resolved</span>` : a.ackAt ? `<span class="pill neutral">Acknowledged</span>` : `<button class="btn" data-ack="${a.id}">Acknowledge</button>`}</td></tr>`;
-  $("view").innerHTML = `<h2>Alerts</h2><p class="lead">Raised automatically: device offline for over 5 minutes, battery under ${LOW_BATTERY}%, or the app crashed.
+  $("view").innerHTML = `<h2>Alerts</h2><p class="lead">Raised automatically: device offline for over 2 minutes (with an alarm sound), battery under ${LOW_BATTERY}%, or the app crashed.
     Offline and battery alerts clear themselves when the problem is fixed.</p>
     <div class="card"><h3>Open (${open.length})</h3><table><tbody>${open.map(row).join("") || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
     <div class="card"><h3>Resolved · last 7 days</h3><table><tbody>${done.map(row).join("") || `<tr><td class="empty">None</td></tr>`}</tbody></table></div>`;
@@ -797,7 +934,7 @@ VIEWS.activity = async (arg, first) => {
 
 // Honest status of every feature on the roadmap.
 const FEATURES = [
-  ["App pinning (kiosk mode)", "done", "Lock tablets to chosen apps; 6 taps + password for admin"],
+  ["App pinning (kiosk mode)", "done", "Lock tablets to chosen apps, or pin one app full screen; manual override: 6 taps bottom-left + PIN"],
   ["Device lock / unlock", "done", "Unlock for 2 minutes, lock to kiosk, lock screen"],
   ["Online / offline status", "done", "Live, devices check in every 10 s"],
   ["Remote reboot", "done", "Android (device owner), Windows, Linux, IoT"],
@@ -808,8 +945,9 @@ const FEATURES = [
   ["Device health (battery, memory, storage)", "done", "Plus temperature and Wi-Fi signal; 24-hour chart. Android doesn't let apps read CPU load (Windows agent does)"],
   ["Basic logs", "done", "Activity log for every device and the whole portal"],
   ["Remote logs & debug", "done", "Get logs pulls the app log and last crash from a device"],
-  ["Alerts (battery, offline, crash)", "done", "Raised and cleared automatically"],
-  ["Offline alerts", "partial", "Shown in the portal; email / WhatsApp notifications not yet"],
+  ["Alerts (battery, offline, crash)", "done", "Raised and cleared automatically; alarm sound in the portal when a device goes offline"],
+  ["4-digit Device IDs", "done", "Create in the portal, type on the device to link; shown on the device's home screen"],
+  ["Offline alerts", "partial", "Red banner + alarm sound in the portal; email / WhatsApp notifications not yet"],
   ["Device grouping (sites)", "done", "Add sites, put devices in them, control a whole site"],
   ["Bulk control", "done", "Tick devices or pick a site, send any command"],
   ["Scheduled tasks", "done", "Command at a time on chosen days"],

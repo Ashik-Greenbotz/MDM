@@ -53,6 +53,17 @@
                     android:format24Hour="EEEE, d MMMM"
                     android:textColor="#6B7280"
                     android:textSize="14sp" />
+
+                <!-- 4-digit Device ID from the portal -->
+                <TextView
+                    android:id="@+id/deviceCode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFamily="monospace"
+                    android:textColor="#1D2129"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
 
@@ -80,6 +91,27 @@
                 android:padding="12dp" />
         </ScrollView>
     </LinearLayout>
+
+    <!-- Single-app kiosk: shown for a few seconds before the app reopens -->
+    <TextView
+        android:id="@+id/single"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="48dp"
+        android:background="#E61D2129"
+        android:paddingHorizontal="22dp"
+        android:paddingVertical="12dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <!-- App pinning manual override: tap 6 times within 3 seconds, then the override PIN -->
+    <View
+        android:id="@+id/overrideCorner"
+        android:layout_width="70dp"
+        android:layout_height="70dp"
+        android:layout_gravity="bottom|start" />
 
     <!-- Invisible admin hotspot: tap 6 times within 3 seconds -->
     <View

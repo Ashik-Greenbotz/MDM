@@ -66,6 +66,7 @@ public class DeviceService extends Service {
     static final String PREF_SERVER = "server_url";
     private static final String PREF_DEVICE_ID = "device_id";
     static final String PREF_TOKEN = "token";
+    static final String PREF_CODE = "code";
     private static final String PREF_EVENTS = "events", PREF_CRASH = "crash";
     private static boolean crashHandlerSet;
 
@@ -123,6 +124,7 @@ public class DeviceService extends Service {
             @Override
             public void run() {
                 net.execute(DeviceService.this::report);
+                PinOverlay.sync(DeviceService.this);
                 handler.postDelayed(this, REPORT_MS);
             }
         });
@@ -230,6 +232,10 @@ public class DeviceService extends Service {
             boolean monitor = KioskActivity.monitorOnly(this);
             d.put("type", !monitor ? "android-kiosk" : isTelpo() ? "telpo" : "android");
             d.put("mode", monitor ? "monitor" : "kiosk");
+            d.put("singleApp", prefs.getString(KioskActivity.PREF_SINGLE_APP, ""));
+            // Installed apps, so the portal can offer them for app pinning. Sent when the list changes.
+            JSONArray apps = launcherApps();
+            if (!apps.toString().equals(sentApps)) d.put("launcherApps", apps);
             d.put("os", "Android " + Build.VERSION.RELEASE);
             d.put("deviceName", Settings.Global.getString(getContentResolver(), Settings.Global.DEVICE_NAME));
             d.put("model", Build.MODEL);
@@ -252,6 +258,11 @@ public class DeviceService extends Service {
             }
             JSONObject reply = post(serverUrl(this) + "/api/report", d);
             clearSent(events, crash);
+            if (d.has("launcherApps")) sentApps = apps.toString();
+            String code = reply.optString("code");
+            if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
+            String tz = reply.optString("timeZone");
+            if (!tz.isEmpty() && !tz.equals(java.util.TimeZone.getDefault().getID())) handler.post(() -> setTimeZone(tz));
             JSONObject cmd = reply.optJSONObject("command");
             if (cmd != null) handler.post(() -> runCommand(cmd));
         } catch (Exception e) {
@@ -271,6 +282,18 @@ public class DeviceService extends Service {
         e.commit();
     }
     private static SharedPreferences appPrefs;
+    private String sentApps;
+
+    private JSONArray launcherApps() {
+        android.content.pm.PackageManager pm = getPackageManager();
+        java.util.TreeMap<String, String> byLabel = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
+            if (!ri.activityInfo.packageName.equals(getPackageName())) byLabel.put(ri.loadLabel(pm).toString(), ri.activityInfo.packageName);
+        }
+        JSONArray a = new JSONArray();
+        for (java.util.Map.Entry<String, String> e : byLabel.entrySet()) a.put(new JSONArray().put(e.getValue()).put(e.getKey()));
+        return a;
+    }
 
     // RAM / storage used (%), battery temperature and Wi-Fi signal. Android doesn't let apps read CPU load.
     @SuppressWarnings("deprecation")
@@ -295,6 +318,33 @@ public class DeviceService extends Service {
         info.put("Storage", String.format(java.util.Locale.US, "%.1f of %.1f GB free", fs.getAvailableBytes() / 1e9, fs.getTotalBytes() / 1e9));
         info.put("Mode", KioskActivity.monitorOnly(this) ? "Monitor only" : "Kiosk");
         d.put("info", info);
+    }
+
+    // Admin typed a 4-digit Device ID created in the portal. Runs off the main thread; returns the server's reply.
+    static JSONObject link(Context ctx, String code) throws Exception {
+        SharedPreferences p = ctx.getSharedPreferences("kiosk", MODE_PRIVATE);
+        JSONObject body = new JSONObject().put("id", p.getString(PREF_DEVICE_ID, "")).put("code", code);
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(ctx) + "/api/link").openConnection();
+        try {
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("X-Device-Key", ctx.getString(R.string.server_key));
+            try (OutputStream out = c.getOutputStream()) {
+                out.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            InputStream in = c.getResponseCode() < 400 ? c.getInputStream() : c.getErrorStream();
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] chunk = new byte[4096];
+            for (int n; (n = in.read(chunk)) > 0; ) buf.write(chunk, 0, n);
+            JSONObject reply = new JSONObject(buf.toString("UTF-8"));
+            if (reply.optBoolean("ok")) p.edit().putString(PREF_CODE, reply.getString("code")).apply();
+            return reply;
+        } finally {
+            c.disconnect();
+        }
     }
 
     private JSONObject post(String url, JSONObject body) throws Exception {
@@ -348,6 +398,16 @@ public class DeviceService extends Service {
         }
         Intent open = new Intent(this, KioskActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (type.equals("unlock")) open.putExtra(KioskActivity.EXTRA_REMOTE_UNLOCK, true);
+        if (type.equals("singleapp")) {
+            String pkg = cmd.optString("package");
+            if (!pkg.isEmpty() && getPackageManager().getLaunchIntentForPackage(pkg) == null) {
+                event(this, "Can't pin " + pkg + ": not installed");
+                return;
+            }
+            KioskActivity.setSingleApp(this, pkg);
+            sentApps = null;
+            startActivity(open); // reopen the kiosk screen, which locks and starts the app
+        }
         // Device owner apps may start activities from the background. Opening the kiosk screen locks it.
         if (type.equals("unlock") || type.equals("lock")) startActivity(open);
         handler.postDelayed(() -> net.execute(this::report), 3000);
@@ -468,6 +528,21 @@ public class DeviceService extends Service {
             if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
         } finally {
             c.disconnect();
+        }
+    }
+
+    // Device owner only. Automatic time zone has to be off or Android ignores the change.
+    @SuppressWarnings("deprecation")
+    private void setTimeZone(String tz) {
+        DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
+        ComponentName admin = new ComponentName(this, AdminReceiver.class);
+        if (!dpm.isDeviceOwnerApp(getPackageName()) || !java.util.Arrays.asList(java.util.TimeZone.getAvailableIDs()).contains(tz)) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 30) dpm.setAutoTimeZoneEnabled(admin, false);
+            else dpm.setGlobalSetting(admin, Settings.Global.AUTO_TIME_ZONE, "0");
+            if (dpm.setTimeZone(admin, tz)) event(this, "Time zone set to " + tz);
+        } catch (Exception e) {
+            Log.w(TAG, "time zone", e);
         }
     }
 

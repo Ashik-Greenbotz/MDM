@@ -23,15 +23,17 @@ const STATIC = {
 const PUBLIC_PAGES = ["/login", "/logo.png", "/manifest.json"];
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const ONLINE_MS = 90 * 1000;
-const OFFLINE_ALERT_MS = 5 * 60 * 1000;
+const OFFLINE_ALERT_MS = 2 * 60 * 1000; // a restart takes about a minute, so no alarm for that
 const LOW_BATTERY = 20;
 const HISTORY_EVERY_MS = 5 * 60 * 1000, HISTORY_KEEP = 288; // 24 h of 5-minute samples
+// Devices take the server's time zone (fixes terminals shipped on UTC). Override with TIME_ZONE=Asia/Singapore etc.
+const TIME_ZONE = process.env.TIME_ZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
 const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
 const ANDROID = ["lockscreen", "reboot", "ring", "install", "file", "logs"];
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot"],
@@ -45,7 +47,19 @@ const rid = () => crypto.randomBytes(8).toString("hex");
 for (const dir of [UPLOADS, path.join(UPLOADS, "apps"), path.join(UPLOADS, "files"), LOGS_DIR]) fs.mkdirSync(dir, { recursive: true });
 const load = (file, empty) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return empty; } };
 let devices = load(DEVICES_FILE, {});
-const portal = Object.assign({ events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], kioskApp: null }, load(PORTAL_FILE, {}));
+const portal = Object.assign({ events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], kioskApp: null }, load(PORTAL_FILE, {}));
+// Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
+// ("Add device", kept in portal.pending) and type it on the device to link it.
+const usedCodes = () => new Set([...Object.values(devices).map(d => d.code), ...portal.pending.map(x => x.code)]);
+function newCode() {
+  const used = usedCodes();
+  if (used.size >= 9000) throw new Error("all 4-digit IDs are in use");
+  for (;;) {
+    const c = String(1000 + crypto.randomInt(9000));
+    if (!used.has(c)) return c;
+  }
+}
+for (const d of Object.values(devices)) if (!d.code) d.code = newCode();
 // A device's site is stored in d.group (the portal calls groups "sites"). Sites can also exist before any device is in them.
 
 let dirty = false;
@@ -160,7 +174,7 @@ function sendFile(res, file, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
@@ -197,6 +211,11 @@ function commandFrom(body) {
     const f = portal.files.find(x => x.id === body.fileId);
     if (!f) throw new Error("pick an uploaded file");
     return { type, url: `/download/file/${f.id}`, sha256: f.sha256, name: f.name };
+  }
+  if (type === "singleapp") {
+    const pkg = String(body.package || "");
+    if (pkg && !/^[\w.]{3,200}$/.test(pkg)) throw new Error("bad app");
+    return { type, package: pkg, name: pkg ? body.appName || pkg : "off" };
   }
   if (!Object.values(COMMANDS).flat().includes(type)) throw new Error("unknown command");
   return { type };
@@ -279,7 +298,8 @@ const server = http.createServer(async (req, res) => {
       if (d.info !== undefined && (typeof d.info !== "object" || Array.isArray(d.info))) delete d.info;
       d.lastSeen = Date.now();
       d.ip = req.socket.remoteAddress;
-      if (fresh) log(d.id, "enroll", `${label(d)} registered (${typeOf(d)})`);
+      if (!d.code) d.code = newCode();
+      if (fresh) log(d.id, "enroll", `${label(d)} registered (${typeOf(d)}), Device ID ${d.code}`);
       else if (!wasOnline) log(d.id, "online", `${label(d)} came online`);
       d.wasOnline = true;
       // Enrollment token (from the QR code or typed on the device): puts the device in the token's group once.
@@ -310,7 +330,27 @@ const server = http.createServer(async (req, res) => {
         log(d.id, "delivered", `${command.type} delivered`);
       }
       dirty = true;
-      return send(res, 200, { command });
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE });
+    }
+    // Device side of "Add device": the admin typed a 4-digit ID on the device.
+    if (req.method === "POST" && p === "/api/link") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const body = await readJson(req);
+      const d = devices[body.id], code = String(body.code || "");
+      if (!d) return send(res, 404, { error: "This device hasn't checked in yet. Check the server address and Wi-Fi." });
+      if (!/^\d{4}$/.test(code)) return send(res, 400, { error: "The Device ID is 4 digits" });
+      if (d.code === code) return send(res, 200, { ok: true, code, name: label(d) });
+      const owner = Object.values(devices).find(x => x.code === code);
+      if (owner) return send(res, 409, { error: `ID ${code} already belongs to ${label(owner)}` });
+      const slot = portal.pending.find(x => x.code === code);
+      if (!slot) return send(res, 404, { error: `ID ${code} not found. Create it in the portal first: Devices → Add device.` });
+      portal.pending = portal.pending.filter(x => x !== slot);
+      d.code = code;
+      if (slot.name) d.name = slot.name;
+      if (slot.group) d.group = slot.group;
+      log(d.id, "enroll", `${label(d)} linked with Device ID ${code}`);
+      dirty = true;
+      return send(res, 200, { ok: true, code, name: label(d) });
     }
     if (req.method === "POST" && p === "/api/device-logs") {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
@@ -378,6 +418,7 @@ const server = http.createServer(async (req, res) => {
         devices: Object.values(devices).map(({ history, token, queue: q, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null })),
         alerts: portal.alerts.filter(a => !a.resolvedAt || Date.now() - a.resolvedAt < 7 * 86400000),
         tasks: portal.tasks, tokens: portal.tokens, apps: portal.apps, files: portal.files, kioskApp: portal.kioskApp, sites: portal.sites,
+        pending: portal.pending,
       });
     }
     if (req.method === "GET" && p === "/api/events") {
@@ -392,6 +433,16 @@ const server = http.createServer(async (req, res) => {
       if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [] });
       const file = path.join(LOGS_DIR, d.id + ".txt");
       return fs.existsSync(file) ? send(res, 200, fs.readFileSync(file), "text/plain; charset=utf-8") : send(res, 404, { error: "no logs yet" });
+    }
+    if (req.method === "POST" && p === "/api/devices/new") {
+      const slot = { code: newCode(), name: String(body.name || "").slice(0, 80).trim(), group: String(body.group || "").slice(0, 60).trim(), createdAt: Date.now() };
+      portal.pending.push(slot);
+      log(null, "enroll", `Device ID ${slot.code} created${slot.name ? " for " + slot.name : ""}, waiting for the device to link`);
+      return ok({ code: slot.code });
+    }
+    if (req.method === "POST" && p === "/api/devices/pending/delete") {
+      portal.pending = portal.pending.filter(x => x.code !== body.code);
+      return ok();
     }
     m = /^\/api\/devices\/([\w-]+)\/(command|name|group|delete)$/.exec(p);
     if (req.method === "POST" && m) {
