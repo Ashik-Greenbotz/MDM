@@ -488,8 +488,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
       <td>${meter(d.ram, 80, 92)}</td><td>${meter(d.disk, 85, 95)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
-      <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
-        ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
+      <td><div class="row">
         <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`;
 const q2 = () => filters.q.toLowerCase();
 function addDevice() {
@@ -542,7 +541,7 @@ function deviceMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
+  m.innerHTML = withUnpin(S.commands[d.type] || []).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
     `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
      <button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
