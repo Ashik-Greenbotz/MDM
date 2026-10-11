@@ -6,33 +6,86 @@
 <title>Device Portal · Sign in</title>
 <style>
   :root {
-    --bg: #f4f5f7; --card: #ffffff; --text: #1d2129; --muted: #6b7280; --line: #e3e6ea;
-    --accent: #f28c00; --accent-ink: #ffffff; --bad: #c62828;
+    --bg: #f5f5f7; --card: rgba(255,255,255,.72); --text: #1d1d1f; --muted: #6e6e73; --line: rgba(0,0,0,.1); --field: rgba(0,0,0,.04);
+    --accent: #f28c00; --accent2: #ffb340; --accent-ink: #ffffff; --bad: #e5383b;
+    --b1: rgba(242,140,0,.45); --b2: rgba(64,120,255,.32); --b3: rgba(255,90,140,.28); --grid: rgba(0,0,0,.05);
+    --ease: cubic-bezier(.2,.8,.2,1); color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #111317; --card: #1b1e24; --text: #e8eaed; --muted: #9aa0a6; --line: #2c3038; --bad: #ef7070; }
+  :root[data-theme="dark"] {
+    --bg: #050507; --card: rgba(22,22,26,.6); --text: #f5f5f7; --muted: #8e8e96; --line: rgba(255,255,255,.1); --field: rgba(255,255,255,.05);
+    --bad: #ff6b6b; --b1: rgba(242,140,0,.38); --b2: rgba(80,110,255,.32); --b3: rgba(200,60,255,.22); --grid: rgba(255,255,255,.045); color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; align-content: center; padding: 16px;
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
-  .card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    padding: 32px 28px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-  .logo { display: block; width: 120px; height: 120px; object-fit: contain; margin: -8px auto 4px; border-radius: 12px; background: #fff; }
-  h1 { font-size: 20px; text-align: center; margin: 0 0 4px; }
-  p.sub { text-align: center; color: var(--muted); margin: 0 0 24px; font-size: 14px; }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 6px; }
-  input { width: 100%; font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px;
-    background: var(--bg); color: var(--text); margin-bottom: 16px; }
-  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
-  button { width: 100%; font: inherit; font-weight: 600; padding: 12px; border: 0; border-radius: 10px;
-    background: var(--accent); color: var(--accent-ink); cursor: pointer; }
-  button:disabled { opacity: .6; cursor: default; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; align-content: center; padding: 16px; overflow-x: hidden;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI Variable", "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -.01em; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--text); }
+  /* aurora: three blurred orbs drifting behind a faint tech grid */
+  .bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .bg i { position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%; filter: blur(70px); opacity: .9; }
+  .bg i:nth-child(1) { background: var(--b1); top: -20vmax; left: -15vmax; animation: orb1 18s ease-in-out infinite alternate; }
+  .bg i:nth-child(2) { background: var(--b2); bottom: -25vmax; right: -15vmax; animation: orb2 22s ease-in-out infinite alternate; }
+  .bg i:nth-child(3) { background: var(--b3); top: 30%; left: 45%; width: 35vmax; height: 35vmax; animation: orb3 16s ease-in-out infinite alternate; }
+  .bg::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 44px 44px; mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%); -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%); }
+  @keyframes orb1 { to { transform: translate(18vmax, 12vmax) scale(1.15); } }
+  @keyframes orb2 { to { transform: translate(-20vmax, -10vmax) scale(1.1); } }
+  @keyframes orb3 { to { transform: translate(-25vmax, 10vmax) scale(.85); } }
+
+  .card { position: relative; width: 100%; max-width: 390px; background: var(--card); border: 1px solid var(--line); border-radius: 28px;
+    padding: 36px 30px 30px; box-shadow: 0 30px 80px rgba(0,0,0,.18); backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
+    animation: enter .9s var(--ease) both; }
+  .card > * { animation: rise .7s var(--ease) both; }
+  .card > :nth-child(2) { animation-delay: .12s; } .card > :nth-child(3) { animation-delay: .18s; } .card > :nth-child(n+4) { animation-delay: .26s; }
+  .card.shake { animation: shake .45s var(--ease); }
+  @keyframes enter { from { opacity: 0; transform: translateY(30px) scale(.96); filter: blur(8px); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+  @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+  .logo-wrap { position: relative; width: 112px; height: 112px; margin: -4px auto 14px; }
+  .logo-wrap::before { content: ""; position: absolute; inset: -6px; border-radius: 30px; background: conic-gradient(from 0deg, var(--accent), var(--accent2), #4078ff, var(--accent));
+    filter: blur(14px); opacity: .55; animation: spin 6s linear infinite; }
+  .logo { position: relative; display: block; width: 112px; height: 112px; object-fit: contain; border-radius: 26px; background: #fff; animation: float 5s ease-in-out infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes float { 50% { transform: translateY(-5px); } }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.03em; text-align: center; margin: 0 0 4px;
+    background: linear-gradient(90deg, var(--text) 20%, var(--accent) 50%, var(--text) 80%); background-size: 200% auto;
+    -webkit-background-clip: text; background-clip: text; color: transparent; animation: rise .7s var(--ease) both .12s, sheen 6s linear infinite 1s; }
+  @keyframes sheen { to { background-position: -200% center; } }
+  p.sub { text-align: center; color: var(--muted); margin: 0 0 26px; font-size: 14px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 7px; }
+  input { width: 100%; font: inherit; padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--field); color: var(--text);
+    margin-bottom: 18px; transition: border-color .25s, box-shadow .25s, background .25s; }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(242,140,0,.18), 0 0 24px rgba(242,140,0,.15); }
+  button#btn { position: relative; overflow: hidden; width: 100%; font: inherit; font-weight: 600; padding: 14px; border: 0; border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--accent-ink); cursor: pointer;
+    box-shadow: 0 10px 30px rgba(242,140,0,.35); transition: transform .2s var(--ease), box-shadow .3s var(--ease); }
+  button#btn::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,.45) 50%, transparent 70%); transform: translateX(-100%); }
+  button#btn:hover { transform: translateY(-1px); box-shadow: 0 14px 38px rgba(242,140,0,.5); }
+  button#btn:hover::after { transform: translateX(100%); transition: transform .8s var(--ease); }
+  button#btn:active { transform: scale(.98); }
+  button#btn:disabled { cursor: default; }
+  button#btn .dot { display: none; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff;
+    border-radius: 50%; animation: spin .8s linear infinite; }
+  button#btn:disabled .dot { display: inline-block; }
   .err { color: var(--bad); font-size: 14px; min-height: 1.5em; margin: -6px 0 10px; }
+  .theme { position: fixed; top: 16px; right: 16px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line); background: var(--card);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font-size: 18px; cursor: pointer; transition: transform .3s var(--ease); }
+  .theming, .theming * { transition: background-color .45s var(--ease), color .45s var(--ease), border-color .45s var(--ease) !important; }
+  .theme:hover { transform: rotate(20deg) scale(1.08); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; animation: rise .7s var(--ease) both .4s; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
+<script>
+  const themePref = () => { try { return localStorage.getItem("theme") || "auto"; } catch { return "auto"; } };
+  const applyTheme = () => document.documentElement.dataset.theme =
+    themePref() === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : themePref();
+  applyTheme();
+</script>
 </head>
 <body>
+<div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+<button class="theme" id="theme" type="button" aria-label="Change theme"></button>
 <form class="card" id="form">
-  <img class="logo" src="/logo.png" alt="Interlock Group">
+  <div class="logo-wrap"><img class="logo" src="/logo.png" alt="Interlock Group"></div>
   <h1>Device Portal</h1>
   <p class="sub">Sign in to manage your tablets</p>
   <label for="user">Username</label>
@@ -40,10 +93,26 @@
   <label for="password">Password</label>
   <input id="password" type="password" autocomplete="current-password" required>
   <div class="err" id="err" role="alert"></div>
-  <button id="btn">Sign in</button>
+  <button id="btn"><span class="dot"></span>Sign in</button>
 </form>
 <footer style="color:var(--muted);font-size:12px;text-align:center;margin-top:16px">2026 © Interlock Security Systems · Developed by Ashik</footer>
 <script>
+const THEME_ICON = { auto: "🌓", light: "☀️", dark: "🌙" };
+function themeBtn(b, after) {
+  const show = () => { b.textContent = THEME_ICON[themePref()]; b.title = "Theme: " + themePref() + " (click to change)"; };
+  b.onclick = () => {
+    const next = { auto: "light", light: "dark", dark: "auto" }[themePref()];
+    try { localStorage.setItem("theme", next); } catch {}
+    document.documentElement.classList.add("theming");
+    applyTheme(); show(); after?.();
+    setTimeout(() => document.documentElement.classList.remove("theming"), 500);
+  };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applyTheme(); after?.(); });
+  show();
+}
+themeBtn(document.getElementById("theme"));
+const card = document.getElementById("form");
+const shake = () => { card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake"); };
 document.getElementById("form").onsubmit = async e => {
   e.preventDefault();
   const btn = document.getElementById("btn"), err = document.getElementById("err");
@@ -54,6 +123,7 @@ document.getElementById("form").onsubmit = async e => {
     if (r.ok) { location.href = "/"; return; }
     err.textContent = (await r.json().catch(() => ({}))).error || "Sign-in failed";
   } catch { err.textContent = "Cannot reach the server"; }
+  shake();
   btn.disabled = false;
 };
 </script>
