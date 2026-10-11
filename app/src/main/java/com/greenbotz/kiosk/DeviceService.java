@@ -48,7 +48,13 @@ public class DeviceService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService net = Executors.newSingleThreadExecutor();
     private Location lastLocation;
-    private final LocationListener locationListener = loc -> lastLocation = loc;
+    // Not a lambda: before Android 11 the other three methods have no default and calling them crashes.
+    private final LocationListener locationListener = new LocationListener() {
+        @Override public void onLocationChanged(Location loc) { lastLocation = loc; }
+        @Override public void onProviderEnabled(String provider) { }
+        @Override public void onProviderDisabled(String provider) { }
+        @Override public void onStatusChanged(String provider, int status, android.os.Bundle extras) { }
+    };
 
     static void start(Context ctx) {
         try {
@@ -73,7 +79,8 @@ public class DeviceService extends Service {
                 .setContentTitle("Device monitoring active")
                 .build();
         grantLocation();
-        startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+        if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+        else startForeground(1, n);
         startLocation();
         handler.post(new Runnable() {
             @Override
@@ -111,7 +118,14 @@ public class DeviceService extends Service {
                 Manifest.permission.READ_PHONE_STATE /* Build.getSerial() */}) {
             dpm.setPermissionGrantState(admin, getPackageName(), p, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
         }
-        dpm.setLocationEnabled(admin, true);
+        enableLocation(dpm, admin);
+    }
+
+    // setLocationEnabled() is Android 11+; older versions take the secure setting (allowed for device owners until 11).
+    @SuppressWarnings("deprecation")
+    static void enableLocation(DevicePolicyManager dpm, ComponentName admin) {
+        if (Build.VERSION.SDK_INT >= 30) dpm.setLocationEnabled(admin, true);
+        else dpm.setSecureSetting(admin, Settings.Secure.LOCATION_MODE, String.valueOf(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY));
     }
 
     private void startLocation() {
@@ -125,6 +139,17 @@ public class DeviceService extends Service {
             }
         } catch (SecurityException e) {
             Log.w(TAG, "no location permission (not device owner?)", e);
+        }
+    }
+
+    // Some Telpo models report the chip maker (e.g. QUALCOMM) as manufacturer; Telpo's own service is on all of them.
+    private boolean isTelpo() {
+        if (Build.MANUFACTURER.toLowerCase().contains("telpo")) return true;
+        try {
+            getPackageManager().getPackageInfo("com.telpo.omcservice", 0);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -146,7 +171,7 @@ public class DeviceService extends Service {
             JSONObject d = new JSONObject();
             d.put("id", deviceId());
             boolean monitor = KioskActivity.monitorOnly(this);
-            d.put("type", !monitor ? "android-kiosk" : Build.MANUFACTURER.toLowerCase().contains("telpo") ? "telpo" : "android");
+            d.put("type", !monitor ? "android-kiosk" : isTelpo() ? "telpo" : "android");
             d.put("os", "Android " + Build.VERSION.RELEASE);
             d.put("deviceName", Settings.Global.getString(getContentResolver(), Settings.Global.DEVICE_NAME));
             d.put("model", Build.MODEL);
@@ -154,7 +179,8 @@ public class DeviceService extends Service {
                 d.put("serial", Build.getSerial());
             } catch (SecurityException ignored) {
             }
-            d.put("battery", bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
+            int battery = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            if (battery >= 0) d.put("battery", battery); // mains-powered terminals report Integer.MIN_VALUE
             d.put("charging", bm.isCharging());
             d.put("kioskLocked", !monitor && System.currentTimeMillis() >= unlockUntil);
             d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);

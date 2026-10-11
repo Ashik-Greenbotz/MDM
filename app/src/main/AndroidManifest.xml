@@ -26,6 +26,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
+    <!-- Lets DeviceService.isTelpo() see Telpo's service on Android 11+ -->
+    <queries>
+        <package android:name="com.telpo.omcservice" />
+    </queries>
+
     <application
         android:label="Kiosk"
         android:usesCleartextTraffic="true"

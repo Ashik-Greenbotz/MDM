@@ -33,6 +33,7 @@ import android.os.SystemClock;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -110,9 +111,19 @@ public class KioskActivity extends Activity {
         // Opening this screen always locks, ending any "Exit kiosk" time early.
         prefs().edit().remove(PREF_UNLOCK_UNTIL).apply();
         lock();
-        WindowInsetsController c = getWindow().getInsetsController();
-        c.hide(WindowInsets.Type.systemBars());
-        c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        hideSystemBars();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void hideSystemBars() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = getWindow().getInsetsController();
+            c.hide(WindowInsets.Type.systemBars());
+            c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN);
+        }
     }
 
     @Override
@@ -177,7 +188,7 @@ public class KioskActivity extends Activity {
         for (String p : new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES}) {
             dpm.setPermissionGrantState(admin, getPackageName(), p, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
         }
-        dpm.setLocationEnabled(admin, true);
+        DeviceService.enableLocation(dpm, admin);
         WifiManager wm = getSystemService(WifiManager.class);
         if (!wm.isWifiEnabled()) wm.setWifiEnabled(true);
         wm.startScan();
@@ -228,13 +239,15 @@ public class KioskActivity extends Activity {
     private void connectWifi(WifiManager wm, String ssid, String caps, String password) {
         WifiConfiguration c = new WifiConfiguration();
         c.SSID = "\"" + ssid + "\"";
-        if (password == null) {
-            c.setSecurityParams(WifiConfiguration.SECURITY_TYPE_OPEN);
+        boolean wpa3Only = caps.contains("SAE") && !caps.contains("PSK");
+        if (Build.VERSION.SDK_INT >= 30) {
+            c.setSecurityParams(password == null ? WifiConfiguration.SECURITY_TYPE_OPEN
+                    : wpa3Only ? WifiConfiguration.SECURITY_TYPE_SAE : WifiConfiguration.SECURITY_TYPE_PSK);
         } else {
-            boolean wpa3Only = caps.contains("SAE") && !caps.contains("PSK");
-            c.setSecurityParams(wpa3Only ? WifiConfiguration.SECURITY_TYPE_SAE : WifiConfiguration.SECURITY_TYPE_PSK);
-            c.preSharedKey = "\"" + password + "\"";
+            // Android 9/10: WPA3-only networks are not supported here.
+            c.allowedKeyManagement.set(password == null ? WifiConfiguration.KeyMgmt.NONE : WifiConfiguration.KeyMgmt.WPA_PSK);
         }
+        if (password != null) c.preSharedKey = "\"" + password + "\"";
         int id = wm.addNetwork(c);
         if (id == -1 || !wm.enableNetwork(id, true)) {
             Toast.makeText(this, "Could not connect to " + ssid, Toast.LENGTH_LONG).show();
