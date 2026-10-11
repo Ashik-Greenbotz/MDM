@@ -8,11 +8,19 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 2. Sign in at **http://localhost:8080** (default `admin` / `admin1234`, set in `start-server.bat`).
    Other PCs on the same network: `http://192.168.68.50:8080`.
 
-## Dashboard
-- Tiles at the top: total / online / offline / unlocked / low battery. Click one to filter the list.
-- Per tablet: **Unlock** (2 minutes), **Lock**, and the **⋯** menu (show on map, rename, remove).
-- Map shows each tablet's last GPS position (green = online, red = offline).
-- Tablets check in every 10 seconds; "Offline" means no check-in for over a minute.
+## Portal pages
+- **Overview**: totals, devices per type and per site, open alerts. **🗺 Map** (top bar) opens satellite view of all devices.
+- **Devices**: search/filter, tick devices for bulk commands, click a row for details, 24 h health chart, activity and logs.
+- **Sites**: **+ Add site**, add devices to a site, send a command to a whole site.
+- **Alerts**: offline > 5 min, battery < 20 %, app crash (raised and cleared automatically).
+- **Scheduled tasks**: a command at a set time on chosen days (e.g. restart a site every night).
+- **Apps & files**: upload an .apk (up to 2 GB) and install it silently on devices (OTA); send files to Download/Kiosk.
+- **Enroll devices**: tokens (put new devices in a site + mode) and QR codes for factory-reset Android devices.
+- **Activity log**, **Features** (status of every planned feature).
+- On a phone: open the portal and "Add to Home screen" to use it like an app.
+
+Commands by device type: kiosk tablets (unlock, lock, lock screen, ring, restart, install app, send file, get logs),
+other Android / Telpo (same minus unlock/lock), Windows / Linux / IoT agents (restart).
 
 ## Adding a tablet
 1. On the tablet: remove all accounts, turn on USB debugging, connect by USB, tap **Allow**.
@@ -32,4 +40,5 @@ If the server moves, change it per tablet: 6 taps top-right → password → **S
 ## Before moving to the own server / cloud
 - Change `ADMIN_PASSWORD` and `DEVICE_KEY` (and `server_key` in `app/src/main/res/values/server.xml`, then rebuild).
 - Put the server behind **https** (plain http is only acceptable on the local network).
-- Remote screen share is not built yet.
+- Remote screen control (VNC), screen recording, remote ADB and the secure tunnel are the next phase.
+- Agents: `agents/agent.ps1` (Windows), `agents/agent.sh` (Linux), `agents/esp32.ino` (IoT).

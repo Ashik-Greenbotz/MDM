@@ -23,6 +23,9 @@ while ($true) {
       id = $id; type = "windows"; deviceName = $env:COMPUTERNAME; model = "$($cs.Manufacturer) $($cs.Model)"
       serial = $serial; os = $os.Caption; localIp = $ip
       uptime = [int]((Get-Date) - $os.LastBootUpTime).TotalSeconds
+      cpu = [int](Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+      ram = [int](100 * ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize)
+      disk = [int](100 * ($disk.Size - $disk.FreeSpace) / $disk.Size)
       info = @{
         "Free disk C:" = "{0:N1} GB" -f ($disk.FreeSpace / 1GB)
         "Free memory" = "{0:N1} GB" -f ($os.FreePhysicalMemory / 1MB)

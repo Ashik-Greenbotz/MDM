@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Device Dashboard</title>
+<title>Device Portal</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#f28c00">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
-    --bg: #f4f5f7; --card: #ffffff; --text: #1d2129; --muted: #6b7280; --line: #e6e8eb; --hover: #f8f9fa;
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2129; --muted: #6b7280; --line: #e6e8eb; --hover: #f3f4f6;
     --accent: #f28c00; --accent-soft: #fff3e0; --accent-ink: #ffffff;
     --ok: #1e8e3e; --ok-soft: #e6f4ea; --bad: #d93025; --bad-soft: #fce8e6; --warn: #b06000; --warn-soft: #fef7e0;
     --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04);
@@ -21,153 +23,184 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
-  button { font: inherit; cursor: pointer; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: var(--accent); }
 
   header { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 12px; padding: 10px 20px;
     background: var(--card); border-bottom: 1px solid var(--line); }
   header img { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; background: #fff; }
-  header h1 { font-size: 17px; margin: 0; }
+  header h1 { font-size: 17px; margin: 0; white-space: nowrap; }
   header .sub { color: var(--muted); font-size: 12px; }
   header .grow { flex: 1; }
   .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
   .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
   .live.down i { background: var(--bad); }
+  .bell { position: relative; }
+  .bell b { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--bad); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 
-  .wrap { padding: 20px; max-width: 1600px; margin: 0 auto; }
-  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: calc(100vh - 61px); }
+  nav { background: var(--card); border-right: 1px solid var(--line); padding: 12px 8px; }
+  nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: var(--text); text-decoration: none; }
+  nav a:hover { background: var(--hover); }
+  nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  nav a .c { margin-left: auto; font-size: 12px; color: var(--muted); }
+  nav a .c.bad { color: var(--bad); font-weight: 700; }
+  main { padding: 20px; max-width: 1500px; width: 100%; }
+  main h2 { margin: 0 0 4px; font-size: 20px; }
+  main .lead { color: var(--muted); margin: 0 0 16px; }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+    nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px; gap: 2px; }
+    nav a { white-space: nowrap; padding: 7px 10px; } nav a .c { display: none; }
+    main { padding: 16px; } header { padding: 10px 16px; gap: 8px; } header .sub, #liveText { display: none; }
+    header .btn { padding: 6px 9px; }
+  }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow);
-    text-align: left; color: inherit; }
-  .stat.active { outline: 2px solid var(--accent); }
+    text-align: left; text-decoration: none; color: inherit; display: block; }
+  .stat:hover { border-color: var(--accent); }
   .stat .n { font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
   .stat .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
   .stat.ok .n { color: var(--ok); } .stat.bad .n { color: var(--bad); } .stat.warn .n { color: var(--warn); }
 
-  .grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
-  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
-  .toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .toolbar select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
-  .type { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 5px; font-size: 11px; font-weight: 600;
-    background: var(--hover); color: var(--muted); vertical-align: 1px; }
-  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); padding: 20px;
-    width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
-  dialog::backdrop { background: rgba(0,0,0,.35); }
-  dialog h2 { margin: 0 0 12px; font-size: 18px; }
-  dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 16px; }
-  dialog dt { color: var(--muted); } dialog dd { margin: 0; overflow-wrap: anywhere; }
-  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
-  .toolbar input { flex: 1; min-width: 160px; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--bg); color: var(--text); }
-  .table-wrap { overflow: auto; max-height: calc(100vh - 290px); min-height: 200px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px; }
+  .card > h3 { margin: 0; padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  .card > h3 .grow { flex: 1; }
+  .pad { padding: 16px; }
+  .toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; align-items: center; }
+  .toolbar input[type=search] { flex: 1; min-width: 160px; }
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .table-wrap { overflow: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; vertical-align: middle; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; vertical-align: middle; }
   th { position: sticky; top: 0; background: var(--card); color: var(--muted); font-size: 12px; font-weight: 600;
     text-transform: uppercase; letter-spacing: .04em; z-index: 1; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover { background: var(--hover); }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr.click { cursor: pointer; }
+  tbody tr.click:hover { background: var(--hover); }
   tbody tr.sel { background: var(--accent-soft); }
+  td.wrap { white-space: normal; }
+  td .row { flex-wrap: nowrap; }
+  @media (max-width: 480px) { header h1 { display: none; } }
   .name { font-weight: 600; }
   .meta { color: var(--muted); font-size: 12px; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .type { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 5px; font-size: 11px; font-weight: 600;
+    background: var(--hover); color: var(--muted); vertical-align: 1px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
   .pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .pill.ok { color: var(--ok); background: var(--ok-soft); }
   .pill.bad { color: var(--bad); background: var(--bad-soft); }
   .pill.warn { color: var(--warn); background: var(--warn-soft); }
   .pill.neutral { color: var(--muted); background: var(--hover); }
-  .batt { display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
-  .batt .bar { width: 36px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
-  .batt .bar b { display: block; height: 100%; background: var(--ok); }
-  .batt.low .bar b { background: var(--bad); }
-  .actions { display: flex; gap: 6px; }
-  .btn { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13px; }
+  .meter { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .meter .bar { width: 34px; height: 7px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .meter .bar b { display: block; height: 100%; background: var(--ok); }
+  .meter.warn .bar b { background: var(--warn); } .meter.bad .bar b { background: var(--bad); }
+  .btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); font-size: 13px; white-space: nowrap; }
   .btn:hover { background: var(--hover); }
+  .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.danger { color: var(--bad); }
   .btn.ghost { border-color: transparent; color: var(--muted); }
-  .empty { padding: 48px 16px; text-align: center; color: var(--muted); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+  .bulk { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; background: var(--accent-soft); border-bottom: 1px solid var(--line); }
+  form.grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+  form.grid label { color: var(--muted); }
+  @media (max-width: 600px) { form.grid { grid-template-columns: 1fr; } }
+  .days label { margin-right: 8px; white-space: nowrap; color: var(--text) !important; }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+  dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+  .chart { width: 100%; height: 160px; display: block; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); padding: 0 16px 12px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; }
+  pre.log { margin: 0; padding: 12px 16px; max-height: 480px; overflow: auto; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+  .qr { background: #fff; padding: 12px; border-radius: 12px; display: inline-block; }
+  .qr svg { display: block; width: 280px; height: 280px; }
+  .feat td:first-child { white-space: normal; }
 
-  #map { height: calc(100vh - 210px); min-height: 360px; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); padding: 20px;
+    width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog h2 { margin: 0 0 14px; font-size: 18px; }
+  dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #mapDlg { width: min(1300px, calc(100vw - 24px)); height: min(860px, calc(100vh - 24px)); padding: 0; overflow: hidden; }
+  #mapDlg .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  #mapDlg .bar h2 { margin: 0; flex: 1; font-size: 16px; }
+  #map { height: calc(100% - 53px); }
   .leaflet-popup-content { font: 13px/1.45 system-ui, sans-serif; }
-  .leaflet-popup-content .name { font-size: 14px; }
 
   .menu { position: fixed; z-index: 2000; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 4px; min-width: 150px; }
-  .menu button { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 0; background: none; color: var(--text); border-radius: 6px; }
+    box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 4px; min-width: 170px; }
+  .menu button { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 0; background: none; border-radius: 6px; }
   .menu button:hover { background: var(--hover); }
   .menu button.danger { color: var(--bad); }
-
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
   #toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 3000; display: grid; gap: 8px; }
-  .toast { background: #1d2129; color: #fff; padding: 10px 16px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.2);
-    font-size: 14px; animation: in .2s ease-out; }
+  .toast { background: #1d2129; color: #fff; padding: 10px 16px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.2); animation: in .2s ease-out; }
   .toast.err { background: var(--bad); }
   @keyframes in { from { opacity: 0; transform: translateY(8px); } }
-  header h1, .btn { white-space: nowrap; }
-  @media (max-width: 600px) {
-    header { padding: 10px 16px; } .wrap { padding: 16px; } header .sub, #liveText { display: none; }
-    .table-wrap { min-height: 0; }
-  }
 </style>
 </head>
 <body>
 <header>
   <img src="/logo.png" alt="">
   <div>
-    <h1>Device Dashboard</h1>
+    <h1>Device Portal</h1>
     <div class="sub">Interlock Group · every device across all sites</div>
   </div>
   <div class="grow"></div>
   <span class="live" id="live"><i></i><span id="liveText">Connecting…</span></span>
+  <button class="btn" id="mapBtn" title="Live location of all devices">🗺 Map</button>
+  <a class="btn bell" href="#/alerts" title="Open alerts">🔔<b id="bellN" hidden></b></a>
   <button class="btn" id="logout">Sign out</button>
 </header>
-
-<div class="wrap">
-  <div class="stats" id="stats"></div>
-  <div class="grid">
-    <div class="card">
-      <div class="toolbar">
-        <input id="search" type="search" placeholder="Search by name, model, serial or IP…">
-        <select id="type" aria-label="Device type"></select>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Device</th><th>Status</th><th>State</th><th>Battery</th><th>Last seen</th><th></th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-        <div class="empty" id="empty" hidden></div>
-      </div>
-    </div>
-    <div class="card"><div id="map"></div></div>
-  </div>
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="view"></main>
 </div>
 <div id="toasts"></div>
-<dialog id="details"><div id="detailsBody"></div><form method="dialog"><button class="btn">Close</button></form></dialog>
+<dialog id="mapDlg">
+  <div class="bar"><h2>Device locations</h2><span class="meta">🟢 online · 🔴 offline</span>
+    <form method="dialog"><button class="btn">Close</button></form></div>
+  <div id="map"></div>
+</dialog>
+<dialog id="dlg"></dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
 const ONLINE_MS = 90 * 1000;  // tablets check in every 10s, PCs and IoT agents every 30s
 const LOW_BATTERY = 20;
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
-const map = L.map("map").setView([1.3521, 103.8198], 11);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
-
-let devices = [], commands = {}, markers = {}, selected = null, skew = 0, fitted = false, filter = "all";
-const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", iot: "IoT" };
+const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
-  unlock: ["Unlock (2 min)", d => `Unlocking ${label(d)} for 2 minutes…`],
-  lock: ["Lock to kiosk", d => `Locking ${label(d)}…`],
-  lockscreen: ["Lock screen", d => `Locking the screen of ${label(d)}…`],
-  ring: ["Ring (find device)", d => `Ringing ${label(d)} for 20 seconds…`],
-  reboot: ["Restart", d => `Restarting ${label(d)}…`],
+  unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs",
 };
-$("type").innerHTML = `<option value="">All types</option>` + Object.entries(TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
-const fmtUptime = s => s == null ? "–" : s < 3600 ? Math.round(s / 60) + " min" : s < 86400 ? Math.round(s / 3600) + " h" : Math.round(s / 86400) + " days";
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const PAGES = [
+  ["overview", "📊", "Overview"], ["devices", "📱", "Devices"], ["sites", "📍", "Sites"], ["alerts", "🔔", "Alerts"],
+  ["tasks", "⏰", "Scheduled tasks"], ["apps", "📦", "Apps & files"], ["enroll", "➕", "Enroll devices"],
+  ["activity", "📝", "Activity log"], ["features", "✅", "Features"],
+];
 
+let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], commands: {} };
+let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
 const now = () => Date.now() + skew;  // server clock, so "last seen" is right even if this PC's clock is off
 const isOnline = d => d.lastSeen && now() - d.lastSeen < ONLINE_MS;
 const label = d => d.name || d.deviceName || d.id.slice(0, 8);
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const dev = id => S.devices.find(d => d.id === id);
+// Sites (stored as d.group): every saved site, plus "" (no site) if any device has none.
+const groups = () => [...new Set([...S.sites.map(x => x.name), ...S.devices.map(d => d.group || "")])].sort((a, b) => a ? b ? a.localeCompare(b) : -1 : 1);
+const openAlerts = () => S.alerts.filter(a => !a.resolvedAt && !a.ackAt);
 const ago = t => {
   if (!t) return "never";
   const s = Math.max(0, Math.round((now() - t) / 1000));
@@ -176,14 +209,20 @@ const ago = t => {
   if (s < 86400) return Math.round(s / 3600) + " h ago";
   return new Date(t).toLocaleString();
 };
-
-const FILTERS = {
-  all:      { label: "Total devices", cls: "",     test: () => true },
-  online:   { label: "Online",        cls: "ok",   test: d => isOnline(d) },
-  offline:  { label: "Offline",       cls: "bad",  test: d => !isOnline(d) },
-  unlocked: { label: "Unlocked",      cls: "warn", test: d => d.kioskLocked === false },
-  low:      { label: "Low battery",   cls: "warn", test: d => d.battery != null && d.battery < LOW_BATTERY },
+const fmtUptime = s => s == null ? "–" : s < 3600 ? Math.round(s / 60) + " min" : s < 86400 ? Math.round(s / 3600) + " h" : Math.round(s / 86400) + " days";
+const fmtSize = b => b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB";
+const statusPill = d => isOnline(d) ? `<span class="pill ok"><i></i>Online</span>` : `<span class="pill bad"><i></i>Offline</span>`;
+const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
+  if (v == null) return `<span class="meta">–</span>`;
+  const lvl = invert ? (v < badAt ? "bad" : v < warnAt ? "warn" : "") : (v >= badAt ? "bad" : v >= warnAt ? "warn" : "");
+  return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
+const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
+const stateCell = d => d.pending ? `<span class="pill neutral">Sending ${esc(CMD[d.pending] || d.pending)}…</span>`
+  : d.type !== "android-kiosk" ? `<span class="meta">${d.uptime != null ? "Up " + fmtUptime(d.uptime) : "Monitored"}</span>`
+  : d.kioskLocked === false ? `<span class="pill warn"><i></i>Unlocked</span>` : `<span class="pill ok"><i></i>Locked</span>`;
+const options = (list, sel) => list.map(([v, t]) => `<option value="${esc(v)}" ${v === sel ? "selected" : ""}>${esc(t)}</option>`).join("");
+const groupName = g => g || "No site";
 
 function toast(msg, err) {
   const t = document.createElement("div");
@@ -196,163 +235,646 @@ function toast(msg, err) {
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   if (r.status === 401) { location.href = "/login"; throw new Error("Signed out"); }
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
-  return r.json();
+  const ct = r.headers.get("content-type") || "";
+  const data = ct.includes("json") ? await r.json() : await r.text();
+  if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+  return data;
 }
+const act = async (fn, okMsg) => {
+  try { const r = await fn(); if (okMsg) toast(typeof okMsg === "function" ? okMsg(r) : okMsg); }
+  catch (e) { toast("Failed: " + e.message, true); }
+  await refresh();
+};
 
+// ---------------- data + routing ----------------
 async function refresh() {
   try {
-    const r = await api("/api/devices");
+    const r = await api("/api/state");
     skew = r.now - Date.now();
-    commands = r.commands || {};
-    devices = r.devices.sort((a, b) => label(a).localeCompare(label(b)));
+    r.devices.sort((a, b) => label(a).localeCompare(label(b)));
+    S = r;
     $("live").classList.remove("down");
-    $("liveText").textContent = "Live · updated " + new Date().toLocaleTimeString();
-    render();
+    $("liveText").textContent = "Live · " + new Date().toLocaleTimeString();
   } catch (e) {
     $("live").classList.add("down");
     $("liveText").textContent = "Server unreachable";
+    return;
   }
+  for (const id of picked) if (!dev(id)) picked.delete(id);
+  const n = openAlerts().length;
+  $("bellN").hidden = !n;
+  $("bellN").textContent = n;
+  renderNav();
+  route(true);
+  if ($("mapDlg").open) drawMap();
 }
 
-function render() {
-  $("stats").innerHTML = Object.entries(FILTERS).map(([k, f]) =>
-    `<button class="stat ${f.cls} ${filter === k ? "active" : ""}" data-filter="${k}">
-       <div class="n">${devices.filter(f.test).length}</div><div class="l">${f.label}</div></button>`).join("");
+function renderNav() {
+  const cur = (location.hash.slice(2) || "overview").split("/")[0];
+  const counts = { devices: S.devices.length, sites: groups().filter(Boolean).length, alerts: openAlerts().length, tasks: S.tasks.length };
+  $("nav").innerHTML = PAGES.map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") ? "on" : ""}">
+    <span>${icon}</span>${t}${counts[k] ? `<span class="c ${k === "alerts" ? "bad" : ""}">${counts[k]}</span>` : ""}</a>`).join("");
+}
 
-  const q = $("search").value.trim().toLowerCase(), type = $("type").value;
-  const shown = devices.filter(FILTERS[filter].test).filter(d => !type || d.type === type).filter(d =>
-    !q || [label(d), d.model, d.serial, d.deviceName, d.localIp, d.ip].some(v => String(v ?? "").toLowerCase().includes(q)));
+// Live pages redraw every 5 s; pages with forms only redraw their lists (`live` = called from refresh).
+let lastPage = "";
+function route(live) {
+  const [page, arg] = (location.hash.slice(2) || "overview").split("/");
+  const fresh = page + "/" + arg !== lastPage;
+  lastPage = page + "/" + arg;
+  const fn = VIEWS[page] || VIEWS.overview;
+  if (!live || fresh) { renderNav(); $("view").innerHTML = ""; }
+  fn(arg ? decodeURIComponent(arg) : undefined, !live || fresh);
+}
+window.onhashchange = () => route(false);
 
-  $("rows").innerHTML = shown.map(d => {
-    const on = isOnline(d), low = d.battery != null && d.battery < LOW_BATTERY;
-    const kioskType = d.type === "android-kiosk";
-    const kiosk = d.command
-      ? `<span class="pill neutral">Sending ${esc(CMD[d.command.type]?.[0] || d.command.type)}…</span>`
-      : !kioskType ? `<span class="meta">${d.uptime != null ? "Up " + fmtUptime(d.uptime) : "Monitored"}</span>`
-      : d.kioskLocked === false ? `<span class="pill warn"><i></i>Unlocked</span>` : `<span class="pill ok"><i></i>Locked</span>`;
-    return `<tr data-id="${esc(d.id)}" class="${d.id === selected ? "sel" : ""}">
+// ---------------- views ----------------
+const VIEWS = {};
+
+VIEWS.overview = () => {
+  const ds = S.devices, on = ds.filter(isOnline);
+  const byType = Object.entries(ds.reduce((m, d) => (m[d.type] = (m[d.type] || 0) + 1, m), {}));
+  const recentAlerts = S.alerts.filter(a => !a.resolvedAt).slice(-6).reverse();
+  $("view").innerHTML = `
+    <h2>Overview</h2><p class="lead">All devices across all sites, updated live.</p>
+    <div class="stats">
+      <a class="stat" href="#/devices"><div class="n">${ds.length}</div><div class="l">Total devices</div></a>
+      <a class="stat ok" href="#/devices" data-status="online"><div class="n">${on.length}</div><div class="l">Online</div></a>
+      <a class="stat bad" href="#/devices" data-status="offline"><div class="n">${ds.length - on.length}</div><div class="l">Offline</div></a>
+      <a class="stat warn" href="#/devices" data-status="unlocked"><div class="n">${ds.filter(d => d.kioskLocked === false && d.type === "android-kiosk").length}</div><div class="l">Unlocked kiosks</div></a>
+      <a class="stat warn" href="#/devices" data-status="low"><div class="n">${ds.filter(d => d.battery != null && d.battery < LOW_BATTERY).length}</div><div class="l">Low battery</div></a>
+      <a class="stat bad" href="#/alerts"><div class="n">${openAlerts().length}</div><div class="l">Open alerts</div></a>
+    </div>
+    <div class="cols">
+      <div class="card"><h3>By device type</h3><table><tbody>${byType.map(([t, n]) => {
+        const o = ds.filter(d => d.type === t && isOnline(d)).length;
+        return `<tr class="click" data-type="${esc(t)}"><td>${esc(TYPES[t] || t)}</td><td>${n} device${n > 1 ? "s" : ""}</td><td><span class="pill ok">${o} online</span></td></tr>`;
+      }).join("") || `<tr><td class="empty">No devices yet</td></tr>`}</tbody></table></div>
+      <div class="card"><h3>By site<span class="grow"></span><a href="#/sites" class="meta">All sites →</a></h3><table><tbody>${groups().map(g => {
+        const list = ds.filter(d => (d.group || "") === g), o = list.filter(isOnline).length;
+        return `<tr class="click" data-group="${esc(g)}"><td>${esc(groupName(g))}</td><td>${list.length} device${list.length === 1 ? "" : "s"}</td><td>${!list.length ? `<span class="pill neutral">empty</span>` : o === list.length ? `<span class="pill ok">all online</span>` : `<span class="pill bad">${list.length - o} offline</span>`}</td></tr>`;
+      }).join("") || `<tr><td class="empty">No sites yet. <a href="#/sites">Add one</a></td></tr>`}</tbody></table></div>
+      <div class="card"><h3>Open alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3>
+        <table><tbody>${recentAlerts.map(a => `<tr><td>${alertIcon(a)}</td><td class="wrap">${esc(a.text)}</td><td class="meta">${ago(a.at)}</td></tr>`).join("")
+        || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
+    </div>`;
+  $("view").onclick = e => {
+    const t = e.target.closest("[data-type],[data-group],[data-status]");
+    if (!t) return;
+    filters = { q: "", type: t.dataset.type || "", group: t.dataset.group ?? "", status: t.dataset.status || "" };
+    if (t.dataset.group !== undefined) filters.group = t.dataset.group || "__none";
+    location.hash = "#/devices";
+  };
+};
+
+const STATUS = {
+  "": ["All statuses", () => true], online: ["Online", isOnline], offline: ["Offline", d => !isOnline(d)],
+  unlocked: ["Unlocked kiosks", d => d.type === "android-kiosk" && d.kioskLocked === false],
+  low: ["Low battery", d => d.battery != null && d.battery < LOW_BATTERY],
+};
+function shownDevices() {
+  const q = filters.q.toLowerCase();
+  return S.devices.filter(STATUS[filters.status][1])
+    .filter(d => !filters.type || d.type === filters.type)
+    .filter(d => !filters.group || (filters.group === "__none" ? !d.group : d.group === filters.group))
+    .filter(d => !q || [label(d), d.model, d.serial, d.deviceName, d.localIp, d.ip, d.group].some(v => String(v ?? "").toLowerCase().includes(q)));
+}
+
+VIEWS.devices = (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `
+      <h2>Devices</h2><p class="lead">Tick devices to control many at once. Click a row for full details, health and logs.</p>
+      <div class="card">
+        <div class="toolbar">
+          <input type="search" id="q" placeholder="Search name, model, serial, IP, site…" value="${esc(filters.q)}">
+          <select id="fType"></select><select id="fGroup"></select><select id="fStatus"></select>
+        </div>
+        <div id="bulk"></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
+            <th>Battery</th><th>Memory</th><th>Storage</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
+      </div>`;
+    $("q").oninput = e => { filters.q = e.target.value; VIEWS.devices(); };
+    for (const [id, key] of [["fType", "type"], ["fGroup", "group"], ["fStatus", "status"]]) $(id).onchange = e => { filters[key] = e.target.value; VIEWS.devices(); };
+    $("all").onchange = e => { for (const d of shownDevices()) e.target.checked ? picked.add(d.id) : picked.delete(d.id); VIEWS.devices(); };
+    $("rows").onclick = rowClick;
+  }
+  $("fType").innerHTML = options([["", "All types"], ...Object.entries(TYPES)], filters.type);
+  $("fGroup").innerHTML = options([["", "All sites"], ...groups().filter(Boolean).map(g => [g, g]), ["__none", "No site"]], filters.group);
+  $("fStatus").innerHTML = options(Object.entries(STATUS).map(([k, v]) => [k, v[0]]), filters.status);
+  const list = shownDevices();
+  $("rows").innerHTML = list.map(d => `<tr class="click ${picked.has(d.id) ? "sel" : ""}" data-id="${esc(d.id)}">
+      <td><input type="checkbox" data-pick ${picked.has(d.id) ? "checked" : ""} aria-label="Select"></td>
       <td><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
-      <td><span class="pill ${on ? "ok" : "bad"}"><i></i>${on ? "Online" : "Offline"}</span></td>
-      <td>${kiosk}</td>
-      <td>${d.battery == null ? "–" : `<span class="batt ${low ? "low" : ""}"><span class="bar"><b style="width:${d.battery}%"></b></span>${d.battery}%${d.charging ? " ⚡" : ""}</span>`}</td>
-      <td><span title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</span></td>
-      <td><div class="actions">
-        ${kioskType ? `<button class="btn primary" data-cmd="unlock" title="Unlock for 2 minutes">Unlock</button>
-        <button class="btn" data-cmd="lock">Lock</button>` : `<button class="btn" data-details>Details</button>`}
-        <button class="btn ghost" data-menu aria-label="More">⋯</button>
-      </div></td>
-    </tr>`;
-  }).join("");
+      <td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>
+      <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
+      <td>${meter(d.ram, 80, 92)}</td><td>${meter(d.disk, 85, 95)}</td>
+      <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
+      <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
+        <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`).join("");
+  $("empty").hidden = list.length > 0;
+  $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
+  $("all").checked = list.length > 0 && list.every(d => picked.has(d.id));
+  renderBulk();
+};
 
-  $("empty").hidden = shown.length > 0;
-  $("empty").textContent = devices.length === 0
-    ? "No devices yet. They appear here as soon as the kiosk app or a device agent checks in."
-    : "No devices match this filter.";
-
-  const seen = new Set();
-  for (const d of devices) {
-    if (d.lat == null) continue;
-    seen.add(d.id);
-    const color = isOnline(d) ? css("--ok") : css("--bad");
-    const popup = `<div class="name">${esc(label(d))}</div>
-      ${isOnline(d) ? "Online" : "Offline"} · battery ${d.battery ?? "?"}%<br>
-      <span class="meta">Location ±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}</span>`;
-    if (!markers[d.id]) {
-      markers[d.id] = L.circleMarker([d.lat, d.lng], { radius: 9, weight: 3, fillOpacity: .9 }).addTo(map)
-        .on("click", () => { selected = d.id; render(); });
-    }
-    markers[d.id].setLatLng([d.lat, d.lng]).setStyle({ color: "#fff", fillColor: color })
-      .setRadius(d.id === selected ? 12 : 9).bindPopup(popup);
-  }
-  for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
-  const pts = Object.values(markers).map(m => m.getLatLng());
-  if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 16 }); fitted = true; }
+function rowClick(e) {
+  const tr = e.target.closest("tr[data-id]");
+  if (!tr) return;
+  const d = dev(tr.dataset.id);
+  if (e.target.closest("[data-pick]")) { e.target.checked ? picked.add(d.id) : picked.delete(d.id); VIEWS.devices(); return; }
+  const cmd = e.target.closest("[data-cmd]"), menu = e.target.closest("[data-menu]");
+  if (cmd) return command([d], cmd.dataset.cmd);
+  if (menu) { e.stopPropagation(); return deviceMenu(menu, d); }
+  location.hash = "#/device/" + encodeURIComponent(d.id);
 }
 
-async function command(d, type) {
-  if (!isOnline(d) && !confirm(`${label(d)} is offline. Send anyway? It runs when the device reconnects.`)) return;
-  if (type === "reboot" && !confirm(`Restart ${label(d)}?`)) return;
-  try {
-    await api(`/api/devices/${d.id}/command`, { type });
-    toast(CMD[type][1](d));
-  } catch (e) { toast("Failed: " + e.message, true); }
-  refresh();
+function renderBulk() {
+  const sel = [...picked].map(dev).filter(Boolean);
+  if (!sel.length) { $("bulk").innerHTML = ""; return; }
+  const cmds = [...new Set(sel.flatMap(d => S.commands[d.type] || []))];
+  $("bulk").innerHTML = `<div class="bulk"><b>${sel.length} selected</b>
+    <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
+    <button class="btn" id="bGroup">Move to site…</button>
+    <button class="btn danger" id="bDel">Remove</button>
+    <button class="btn ghost" id="bClear">Clear selection</button></div>`;
+  $("bCmd").onchange = e => { if (e.target.value) command(sel, e.target.value); e.target.value = ""; };
+  $("bGroup").onclick = () => askGroup(sel.length + " devices", "", g => act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "group", group: g }), "Moved"));
+  $("bDel").onclick = () => confirm(`Remove ${sel.length} devices from the portal? They come back if they check in again.`) &&
+    act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "delete" }).then(() => picked.clear()), "Removed");
+  $("bClear").onclick = () => { picked.clear(); VIEWS.devices(); };
 }
 
-function closeMenu() { document.querySelector(".menu")?.remove(); }
-function openMenu(btn, d) {
+function deviceMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = (commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c))
-      .map(c => `<button data-cmd="${c}">${CMD[c][0]}</button>`).join("") +
-    `<hr><button data-act="details">Details</button><button data-act="locate">Show on map</button><button data-act="rename">Rename</button>
-    <button data-act="delete" class="danger">Remove from list</button>`;
+  m.innerHTML = (S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
+    `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
+     <button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
   const r = btn.getBoundingClientRect();
   m.style.top = Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8) + "px";
   m.style.left = Math.max(8, r.right - m.offsetWidth) + "px";
-  m.onclick = async e => {
-    const act = e.target.dataset.act;
+  m.onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
     closeMenu();
-    if (e.target.dataset.cmd) return command(d, e.target.dataset.cmd);
-    try {
-      if (act === "details") return showDetails(d);
-      if (act === "locate") locate(d);
-      if (act === "rename") {
-        const name = prompt("Device name (e.g. site name):", label(d));
-        if (name && name.trim()) { await api(`/api/devices/${d.id}/name`, { name }); toast("Renamed"); }
-      }
-      if (act === "delete" && confirm(`Remove ${label(d)} from the list? It comes back if the device checks in again.`)) {
-        await api(`/api/devices/${d.id}/delete`, {});
-        toast("Removed");
-      }
-    } catch (err) { toast("Failed: " + err.message, true); }
-    refresh();
+    if (b.dataset.cmd) return command([d], b.dataset.cmd);
+    deviceAction(d, b.dataset.act);
   };
 }
+function closeMenu() { document.querySelector(".menu")?.remove(); }
+document.addEventListener("click", e => { if (!e.target.closest(".menu")) closeMenu(); });
 
-function showDetails(d) {
+function deviceAction(d, a) {
+  if (a === "open") location.hash = "#/device/" + encodeURIComponent(d.id);
+  if (a === "map") openMap(d);
+  if (a === "rename") {
+    const name = prompt("Device name (e.g. site + location):", label(d));
+    if (name && name.trim()) act(() => api(`/api/devices/${d.id}/name`, { name }), "Renamed");
+  }
+  if (a === "group") askGroup(label(d), d.group || "", g => act(() => api(`/api/devices/${d.id}/group`, { group: g }), "Moved"));
+  if (a === "delete" && confirm(`Remove ${label(d)} from the portal? It comes back if it checks in again.`)) {
+    act(() => api(`/api/devices/${d.id}/delete`, {}), "Removed").then(() => { if (location.hash.startsWith("#/device/")) location.hash = "#/devices"; });
+  }
+}
+
+// Sends one command to a list of devices. install / file ask which app / file first.
+async function command(list, type, extra = {}) {
+  if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
+  if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
+  const names = list.length === 1 ? label(list[0]) : list.length + " devices";
+  if (type === "reboot" && !confirm(`Restart ${names}?`)) return;
+  if (list.length === 1 && !isOnline(list[0]) && !confirm(`${names} is offline. Send anyway? It runs when the device reconnects.`)) return;
+  if (list.length > 1 && !confirm(`Send "${CMD[type].replace("…", "")}" to ${names}?`)) return;
+  await act(() => list.length === 1
+      ? api(`/api/devices/${list[0].id}/command`, { type, ...extra })
+      : api("/api/bulk", { target: { ids: list.map(d => d.id) }, action: "command", type, ...extra }),
+    r => `${CMD[type].replace("…", "")} sent to ${r.count ?? 1} device${(r.count ?? 1) === 1 ? "" : "s"}`);
+}
+
+function pickUpload(kind, list, type) {
+  const items = S[kind];
+  if (!items.length) { toast(`Upload ${kind === "apps" ? "an app" : "a file"} first on the Apps & files page`, true); location.hash = "#/apps"; return; }
+  dialog(`<h2>${kind === "apps" ? "Install / update app" : "Send file"}</h2>
+    <p class="meta">${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}. ${kind === "apps" ? "Installs silently on device-owner devices." : "Saved in the device's Download/Kiosk folder."}</p>
+    <select id="upPick" style="width:100%">${options(items.map(x => [x.id, (x.label || x.name) + " · " + fmtSize(x.size)]))}</select>`,
+    "Send", () => command(list, type, kind === "apps" ? { appId: $("upPick").value } : { fileId: $("upPick").value }));
+}
+
+function dialog(html, okText, onOk) {
+  const d = $("dlg");
+  d.innerHTML = `<form method="dialog">${html}<div class="foot"><button class="btn" value="cancel" formnovalidate>Cancel</button>
+    ${okText ? `<button class="btn primary" value="ok">${esc(okText)}</button>` : ""}</div></form>`;
+  d.onclose = () => { if (d.returnValue === "ok") onOk(); };
+  d.returnValue = "";
+  d.showModal();
+}
+function askGroup(what, cur, done) {
+  dialog(`<h2>Move ${esc(what)} to site</h2>
+    <select id="gName" style="width:100%">${options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], cur)}</select>
+    <p class="meta">Need a new site? <a href="#/sites" onclick="$('dlg').close()">Add it on the Sites page</a>.</p>`,
+    "Move", () => done($("gName").value));
+}
+
+VIEWS.device = async (id, first) => {
+  const d = dev(id);
+  if (!d) { $("view").innerHTML = `<p class="empty">Device not found. <a href="#/devices">Back to devices</a></p>`; return; }
   const rows = {
-    Type: TYPES[d.type] || d.type, Status: isOnline(d) ? "Online" : "Offline", "Last seen": d.lastSeen && new Date(d.lastSeen).toLocaleString(),
+    Type: TYPES[d.type] || d.type, Site: d.group || "–", Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
     Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP": d.localIp, "Seen from IP": d.ip,
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
-    Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m)`,
-    "Last command": d.lastCommand && `${CMD[d.lastCommand]?.[0] || d.lastCommand} · ${ago(d.lastCommandAt)}`,
-    ...(d.info || {}), "Device ID": d.id,
+    Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
+    Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
+    ...(d.info || {}), "First seen": d.firstSeen && new Date(d.firstSeen).toLocaleString(), "Device ID": d.id,
   };
-  $("detailsBody").innerHTML = `<h2>${esc(label(d))}</h2><dl>` +
-    Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + "</dl>";
-  $("details").showModal();
+  const cmds = S.commands[d.type] || [];
+  if (first) {
+    $("view").innerHTML = `
+      <p><a href="#/devices">← All devices</a></p>
+      <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
+        <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button>
+        <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
+      <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
+      <div class="cols">
+        <div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="dKv"></dl></div></div>
+        <div>
+          <div class="card"><h3>Health · last 24 hours</h3><div id="dChart"></div></div>
+          <div class="card"><h3>Activity<span class="grow"></span><a class="meta" href="#/activity">All activity →</a></h3>
+            <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
+        </div>
+      </div>
+      <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button></h3><pre class="log" id="dLogs">Loading…</pre></div>`;
+    $("view").onclick = e => {
+      const b = e.target.closest("[data-a],[data-cmd]");
+      if (!b) return;
+      if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
+    };
+    $("dLogBtn").onclick = () => command([dev(id)], "logs");
+  }
+  $("dTitle").textContent = label(d);
+  $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
+  $("dCmds").innerHTML = cmds.map(c => `<button class="btn ${c === "unlock" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dKv").innerHTML = Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  const [hist, ev, logs] = await Promise.all([
+    api(`/api/devices/${d.id}/history`).catch(() => ({ history: [] })),
+    api(`/api/events?device=${encodeURIComponent(d.id)}`).catch(() => ({ events: [] })),
+    api(`/api/devices/${d.id}/logs`).catch(e => "No logs yet. Click \"Request new logs\"; they arrive within a few seconds when the device is online."),
+  ]);
+  if (!location.hash.startsWith("#/device/")) return;
+  $("dChart").innerHTML = chart(hist.history);
+  $("dEvents").innerHTML = ev.events.slice(0, 100).map(eventRow).join("") || `<tr><td class="empty">Nothing yet</td></tr>`;
+  const pre = $("dLogs"), atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 10;
+  if (pre.textContent !== logs) { pre.textContent = (d.logsAt ? `Uploaded ${ago(d.logsAt)}\n\n` : "") + logs; if (atEnd || first) pre.scrollTop = pre.scrollHeight; }
+};
+
+// history rows: [time, battery, cpu, ram, disk, temp]
+function chart(h) {
+  if (!h || h.length < 2) return `<p class="empty">Collecting… a point is saved every 5 minutes.</p>`;
+  const W = 600, H = 160, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
+  const lines = [["Battery %", 1, css("--ok")], ["Memory %", 3, "#3b82f6"], ["Storage %", 4, css("--accent")]];
+  const x = t => 4 + (W - 8) * (t - t0) / Math.max(1, t1 - t0), y = v => H - 6 - (H - 12) * v / 100;
+  const paths = lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) =>
+    `<polyline fill="none" stroke="${c}" stroke-width="2" points="${h.filter(r => r[i] != null).map(r => x(r[0]).toFixed(1) + "," + y(r[i]).toFixed(1)).join(" ")}"/>`);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      ${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}" stroke-dasharray="3 4"/>`).join("")}${paths.join("")}</svg>
+    <div class="legend">${lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, , c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("")}
+      <span>${new Date(t0).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} → now</span></div>`;
 }
 
-function locate(d) {
-  if (!markers[d.id]) { toast("No location from this device", true); return; }
-  map.setView(markers[d.id].getLatLng(), 16);
-  markers[d.id].openPopup();
+const siteOf = name => S.sites.find(x => x.name === name) || { name };
+VIEWS.sites = () => {
+  $("view").innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Sites</h2>
+      <button class="btn primary" data-s="add">+ Add site</button></div>
+    <p class="lead">Each site holds its devices. Control a whole site at once, or open it to see only its devices.
+      New devices can join a site automatically with an enrollment token.</p>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Site</th><th>Devices</th><th>Online</th><th>Types</th><th>Control the whole site</th><th></th></tr></thead>
+      <tbody>${groups().map(g => {
+        const list = S.devices.filter(d => (d.group || "") === g), o = list.filter(isOnline).length, site = siteOf(g);
+        const cmds = [...new Set(list.flatMap(d => S.commands[d.type] || []))];
+        return `<tr><td><a href="#/devices" data-open="${esc(g)}" class="name">${esc(groupName(g))}</a>
+            ${site.address || site.contact ? `<div class="meta">${esc([site.address, site.contact].filter(Boolean).join(" · "))}</div>` : ""}</td>
+          <td>${list.length}</td>
+          <td>${!list.length ? `<span class="pill neutral">–</span>` : o === list.length ? `<span class="pill ok">${o}</span>` : `<span class="pill bad">${o} / ${list.length}</span>`}</td>
+          <td class="meta">${[...new Set(list.map(d => TYPES[d.type] || d.type))].join(", ") || "–"}</td>
+          <td>${cmds.length ? `<select data-group="${esc(g)}"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>` : `<span class="meta">–</span>`}</td>
+          <td><div class="row">${g ? `<button class="btn" data-s="addDev" data-name="${esc(g)}">Add devices</button>
+            <button class="btn ghost" data-s="edit" data-name="${esc(g)}">Edit</button>
+            <button class="btn ghost danger" data-s="del" data-name="${esc(g)}">Delete</button>` : ""}</div></td></tr>`;
+      }).join("") || `<tr><td colspan="6" class="empty">No sites yet. Click <b>+ Add site</b>.</td></tr>`}</tbody></table></div></div>`;
+  $("view").onchange = e => {
+    const g = e.target.dataset.group;
+    if (g === undefined || !e.target.value) return;
+    command(S.devices.filter(d => (d.group || "") === g), e.target.value);
+    e.target.value = "";
+  };
+  $("view").onclick = e => {
+    const a = e.target.closest("[data-open]");
+    if (a) filters = { q: "", type: "", status: "", group: a.dataset.open || "__none" };
+    const b = e.target.closest("[data-s]");
+    if (!b) return;
+    const name = b.dataset.name;
+    if (b.dataset.s === "add") siteForm();
+    if (b.dataset.s === "edit") siteForm(siteOf(name));
+    if (b.dataset.s === "addDev") addDevicesToSite(name);
+    if (b.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) {
+      act(() => api("/api/sites/delete", { name }), "Site deleted");
+    }
+  };
+};
+
+function siteForm(site) {
+  dialog(`<h2>${site ? "Edit site" : "Add site"}</h2><div class="grid" style="display:grid;grid-template-columns:max-content 1fr;gap:10px 14px;align-items:center">
+    <label class="meta">Site name</label><input id="sName" value="${esc(site?.name || "")}" placeholder="e.g. Tampines Hub" required autofocus>
+    <label class="meta">Address</label><input id="sAddr" value="${esc(site?.address || "")}" placeholder="optional">
+    <label class="meta">Contact</label><input id="sContact" value="${esc(site?.contact || "")}" placeholder="optional: person / phone"></div>`,
+    site ? "Save" : "Add site", () => {
+      const name = $("sName").value.trim();
+      if (!name) return toast("Site name is required", true);
+      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, oldName: site?.name }), site ? "Site saved" : `Site "${name}" added`);
+    });
 }
 
-$("rows").onclick = e => {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
-  const d = devices.find(x => x.id === tr.dataset.id);
-  selected = d.id;
-  const cmd = e.target.closest("[data-cmd]"), menu = e.target.closest("[data-menu]");
-  if (cmd) command(d, cmd.dataset.cmd);
-  else if (e.target.closest("[data-details]")) showDetails(d);
-  else if (menu) { e.stopPropagation(); openMenu(menu, d); }
-  else locate(d);
-  render();
+function addDevicesToSite(name) {
+  const others = S.devices.filter(d => (d.group || "") !== name);
+  if (!others.length) return toast("All devices are already in this site");
+  dialog(`<h2>Add devices to ${esc(name)}</h2>
+    <div style="max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:8px">${others.map(d => `<label class="row" style="padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:nowrap">
+      <input type="checkbox" value="${esc(d.id)}" ${d.group ? "" : "checked"}><span><span class="name">${esc(label(d))}</span>
+      <span class="meta">${esc(TYPES[d.type] || d.type)} · ${d.group ? "now in " + esc(d.group) : "no site"}</span></span></label>`).join("")}</div>`,
+    "Add to site", () => {
+      const ids = [...$("dlg").querySelectorAll("input[type=checkbox]:checked")].map(i => i.value);
+      if (ids.length) act(() => api("/api/bulk", { target: { ids }, action: "group", group: name }), `${ids.length} device${ids.length === 1 ? "" : "s"} added to ${name}`);
+    });
+}
+
+const alertIcon = a => ({ offline: "📴", battery: "🪫", crash: "💥" }[a.kind] || "⚠️");
+VIEWS.alerts = () => {
+  const open = S.alerts.filter(a => !a.resolvedAt).reverse(), done = S.alerts.filter(a => a.resolvedAt).reverse().slice(0, 100);
+  const row = a => `<tr><td>${alertIcon(a)}</td><td class="wrap"><div class="name">${esc(a.text)}</div>
+      ${a.detail ? `<details><summary class="meta">Crash details</summary><pre class="log">${esc(a.detail)}</pre></details>` : ""}
+      ${dev(a.deviceId) ? `<a class="meta" href="#/device/${encodeURIComponent(a.deviceId)}">Open device →</a>` : ""}</td>
+      <td class="meta">${new Date(a.at).toLocaleString()}</td>
+      <td>${a.resolvedAt ? `<span class="pill ok">Resolved</span>` : a.ackAt ? `<span class="pill neutral">Acknowledged</span>` : `<button class="btn" data-ack="${a.id}">Acknowledge</button>`}</td></tr>`;
+  $("view").innerHTML = `<h2>Alerts</h2><p class="lead">Raised automatically: device offline for over 5 minutes, battery under ${LOW_BATTERY}%, or the app crashed.
+    Offline and battery alerts clear themselves when the problem is fixed.</p>
+    <div class="card"><h3>Open (${open.length})</h3><table><tbody>${open.map(row).join("") || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
+    <div class="card"><h3>Resolved · last 7 days</h3><table><tbody>${done.map(row).join("") || `<tr><td class="empty">None</td></tr>`}</tbody></table></div>`;
+  $("view").onclick = e => { const b = e.target.closest("[data-ack]"); if (b) act(() => api(`/api/alerts/${b.dataset.ack}/ack`, {}), "Acknowledged"); };
 };
-$("stats").onclick = e => {
-  const b = e.target.closest("[data-filter]");
-  if (b) { filter = b.dataset.filter; render(); }
+
+// Target picker used by tasks: all / group / type.
+const targetText = t => t.all ? "All devices" : t.group != null ? "Site: " + groupName(t.group) : t.type ? "Type: " + (TYPES[t.type] || t.type) : "?";
+const targetSelect = () => options([["all:", "All devices"], ...groups().map(g => ["group:" + g, "Site: " + groupName(g)]),
+  ...Object.entries(TYPES).map(([k, v]) => ["type:" + k, "Type: " + v])]);
+const parseTarget = v => { const [k, ...r] = v.split(":"), x = r.join(":"); return k === "all" ? { all: true } : k === "group" ? { group: x } : { type: x }; };
+
+VIEWS.tasks = (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `<h2>Scheduled tasks</h2><p class="lead">Run a command automatically at a set time, e.g. restart every device at a site each night at 3:00, or install an app update on Sunday.</p>
+      <div class="card"><h3>New task</h3><form class="grid pad" id="tForm">
+        <label>Name</label><input id="tName" placeholder="e.g. Nightly restart" required>
+        <label>Command</label><select id="tType">${options(["reboot", "lockscreen", "lock", "install", "file", "logs", "ring"].map(c => [c, CMD[c].replace("…", "")]))}</select>
+        <label id="tUpL" hidden>App / file</label><select id="tUp" hidden></select>
+        <label>Devices</label><select id="tTarget"></select>
+        <label>Time</label><input type="time" id="tTime" value="03:00" required>
+        <label>Days</label><div class="days">${DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" checked> ${d}</label>`).join("")}</div>
+        <span></span><div><button class="btn primary">Add task</button></div>
+      </form></div>
+      <div class="card"><h3>Tasks</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Command</th><th>Devices</th><th>When</th><th>Last run</th><th>On</th><th></th></tr></thead>
+        <tbody id="tRows"></tbody></table></div></div>`;
+    const syncUp = () => {
+      const t = $("tType").value, kind = t === "install" ? "apps" : t === "file" ? "files" : null;
+      $("tUp").hidden = $("tUpL").hidden = !kind;
+      if (kind) $("tUp").innerHTML = options(S[kind].map(x => [x.id, x.label || x.name])) || `<option value="">Upload one on Apps & files first</option>`;
+    };
+    $("tType").onchange = syncUp;
+    syncUp();
+    $("tTarget").innerHTML = targetSelect();
+    $("tForm").onsubmit = e => {
+      e.preventDefault();
+      const type = $("tType").value;
+      act(() => api("/api/tasks", { name: $("tName").value, type, appId: type === "install" ? $("tUp").value : undefined,
+        fileId: type === "file" ? $("tUp").value : undefined, target: parseTarget($("tTarget").value), time: $("tTime").value,
+        days: [...document.querySelectorAll(".days input:checked")].map(i => +i.value) }).then(() => $("tName").value = ""), "Task added");
+    };
+    $("tRows").onclick = e => {
+      const b = e.target.closest("[data-t]");
+      if (!b) return;
+      const t = S.tasks.find(x => x.id === b.dataset.id);
+      if (b.dataset.t === "run") act(() => api(`/api/tasks/${t.id}/run`, {}), r => `Sent to ${r.count} device${r.count === 1 ? "" : "s"}`);
+      if (b.dataset.t === "del" && confirm(`Delete task "${t.name}"?`)) act(() => api(`/api/tasks/${t.id}/delete`, {}), "Deleted");
+      if (b.dataset.t === "toggle") act(() => api("/api/tasks", { ...t, enabled: b.checked }));
+    };
+  }
+  const upName = t => t.type === "install" ? S.apps.find(a => a.id === t.appId)?.label : t.type === "file" ? S.files.find(f => f.id === t.fileId)?.name : "";
+  $("tRows").innerHTML = S.tasks.map(t => `<tr><td class="name">${esc(t.name)}</td>
+      <td>${esc(CMD[t.type].replace("…", ""))}${upName(t) ? `<div class="meta">${esc(upName(t))}</div>` : ""}</td><td>${esc(targetText(t.target))}</td>
+      <td>${t.time} · ${t.days.length === 7 ? "every day" : t.days.map(i => DAYS[i]).join(", ")}</td><td class="meta">${t.lastRun ? ago(t.lastRun) : "never"}</td>
+      <td><input type="checkbox" data-t="toggle" data-id="${t.id}" ${t.enabled ? "checked" : ""} aria-label="Enabled"></td>
+      <td><div class="row"><button class="btn" data-t="run" data-id="${t.id}">Run now</button><button class="btn ghost" data-t="del" data-id="${t.id}">Delete</button></div></td></tr>`).join("")
+    || `<tr><td colspan="7" class="empty">No tasks yet</td></tr>`;
 };
-$("search").oninput = $("type").onchange = render;
-document.addEventListener("click", e => { if (!e.target.closest(".menu")) closeMenu(); });
+
+async function upload(kind, file, labelText) {
+  const q = new URLSearchParams({ kind, name: file.name, ...(labelText ? { label: labelText } : {}) });
+  const r = await fetch("/api/upload?" + q, { method: "POST", body: file });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+}
+
+VIEWS.apps = (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `<h2>Apps & files</h2><p class="lead">Upload an app (.apk) once, then install or update it on any devices: silently, no tap needed on device-owner devices (OTA update).
+      Files are sent to the device's Download/Kiosk folder.</p>
+      <div class="cols">
+        <div class="card"><h3>Upload app (.apk)</h3><form class="pad row" id="aForm">
+          <input type="file" id="aFile" accept=".apk" required><input id="aLabel" placeholder="Name (e.g. VMS v2.1)">
+          <button class="btn primary">Upload</button></form></div>
+        <div class="card"><h3>Upload file</h3><form class="pad row" id="fForm">
+          <input type="file" id="fFile" required><button class="btn primary">Upload</button></form></div>
+      </div>
+      <div class="card"><h3>Apps</h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
+      <div class="card"><h3>Files</h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody id="fRows"></tbody></table></div></div>`;
+    $("aForm").onsubmit = e => { e.preventDefault(); const f = $("aFile").files[0]; toast("Uploading…"); act(() => upload("app", f, $("aLabel").value).then(() => e.target.reset()), "App uploaded"); };
+    $("fForm").onsubmit = e => { e.preventDefault(); const f = $("fFile").files[0]; toast("Uploading…"); act(() => upload("file", f).then(() => e.target.reset()), "File uploaded"); };
+    $("view").onclick = e => {
+      const b = e.target.closest("[data-x]");
+      if (!b) return;
+      const [kind, id] = [b.dataset.kind, b.dataset.id];
+      if (b.dataset.x === "send") chooseDevices(kind === "apps" ? "install" : "file", list => command(list, kind === "apps" ? "install" : "file", kind === "apps" ? { appId: id } : { fileId: id }));
+      if (b.dataset.x === "kiosk") act(() => api(`/api/apps/${id}/kiosk`, {}), "Used for QR enrollment");
+      if (b.dataset.x === "del" && confirm("Delete this upload?")) act(() => api(`/api/${kind}/${id}/delete`, {}), "Deleted");
+    };
+  }
+  $("aRows").innerHTML = S.apps.slice().reverse().map(a => `<tr><td class="name">${esc(a.label)}</td><td>${fmtSize(a.size)}</td><td class="meta">${ago(a.at)}</td>
+      <td>${S.kioskApp === a.id ? `<span class="pill ok">Used for QR enrollment</span>` : `<button class="btn ghost" data-x="kiosk" data-kind="apps" data-id="${a.id}">Use for QR</button>`}</td>
+      <td><div class="row"><button class="btn primary" data-x="send" data-kind="apps" data-id="${a.id}">Install on devices…</button>
+      <button class="btn ghost" data-x="del" data-kind="apps" data-id="${a.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No apps uploaded</td></tr>`;
+  $("fRows").innerHTML = S.files.slice().reverse().map(f => `<tr><td class="name">${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td class="meta">${ago(f.at)}</td>
+      <td><div class="row"><button class="btn primary" data-x="send" data-kind="files" data-id="${f.id}">Send to devices…</button>
+      <button class="btn ghost" data-x="del" data-kind="files" data-id="${f.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="4" class="empty">No files uploaded</td></tr>`;
+};
+
+// Pick which devices get an app / file: all, a site, a type, or the ones ticked on the Devices page.
+function chooseDevices(cmd, done) {
+  const able = S.devices.filter(d => (S.commands[d.type] || []).includes(cmd));
+  if (!able.length) return toast("No devices can do this yet", true);
+  dialog(`<h2>Choose devices</h2><select id="cdT" style="width:100%">${picked.size ? `<option value="picked">${picked.size} selected on the Devices page</option>` : ""}${targetSelect()}</select>
+    <p class="meta">Only Android devices running the kiosk app can receive apps and files (${able.length} now).</p>`, "Next", () => {
+      const v = $("cdT").value, t = v === "picked" ? null : parseTarget(v);
+      const list = (v === "picked" ? [...picked].map(dev) : S.devices.filter(d => t.all || (t.group != null ? (d.group || "") === t.group : d.type === t.type)))
+        .filter(d => d && able.includes(d));
+      list.length ? done(list) : toast("None of those devices can do this", true);
+    });
+}
+
+VIEWS.enroll = (arg, first) => {
+  if (first) {
+    const lanGuess = location.hostname === "localhost" || location.hostname === "127.0.0.1" ? "http://192.168.68.50:" + (location.port || 80) : location.origin;
+    $("view").innerHTML = `<h2>Enroll devices</h2><p class="lead">Three ways to add a device. Tokens put new devices straight into the right site and mode.</p>
+      <div class="cols">
+        <div class="card"><h3>1 · Create an enrollment token</h3><form class="grid pad" id="kForm">
+          <label>Name</label><input id="kLabel" placeholder="e.g. Site A lobby" required>
+          <label>Site</label><select id="kGroup"></select>
+          <label>Mode</label><select id="kMode"><option value="kiosk">Kiosk (locked to allowed apps)</option><option value="monitor">Monitor only (device works normally)</option></select>
+          <span></span><div><button class="btn primary">Create token</button></div></form>
+          <div class="table-wrap"><table><thead><tr><th>Token</th><th>Site</th><th>Mode</th><th>Used</th><th></th></tr></thead><tbody id="kRows"></tbody></table></div></div>
+        <div class="card"><h3>2 · QR code (new or factory-reset Android)</h3><div class="pad">
+          <form class="grid" id="qForm">
+            <label>Token</label><select id="qTok"></select>
+            <label>Server address</label><input id="qServer" value="${esc(lanGuess)}" required>
+            <label>Wi-Fi name</label><input id="qSsid" placeholder="optional: device joins this Wi-Fi during setup">
+            <label>Wi-Fi password</label><input id="qPass" type="password" autocomplete="off">
+            <span></span><div><button class="btn primary">Make QR code</button></div></form>
+          <div id="qOut" style="margin-top:14px"></div>
+          <p class="meta">On the device: factory reset → on the first <b>Welcome</b> screen tap the same spot 6 times → scan this code. Android 9+ (Telpo terminals, Samsung tablets, phones).
+          The device must reach the server address, so use this PC's network IP, not "localhost".</p></div></div>
+      </div>
+      <div class="card"><h3>3 · USB cable (device already set up, no accounts on it)</h3><div class="pad">
+        <p>Turn on USB debugging, connect, then double-click <b>setup-tablet.bat</b> (kiosk) or run <code>setup-tablet.bat monitor</code> (monitor only) in the project folder.</p>
+        <p class="meta">Windows PCs: run <code>agents\\agent.ps1</code>. Linux: run <code>agents/agent.sh</code>. IoT boards: see <code>agents/esp32.ino</code>.</p></div></div>`;
+    $("kForm").onsubmit = e => { e.preventDefault(); act(() => api("/api/tokens", { label: $("kLabel").value, group: $("kGroup").value, mode: $("kMode").value }).then(() => e.target.reset()), "Token created"); };
+    $("qForm").onsubmit = async e => {
+      e.preventDefault();
+      try {
+        const r = await api("/api/qr", { token: $("qTok").value, server: $("qServer").value.trim(), wifiSsid: $("qSsid").value, wifiPassword: $("qPass").value });
+        const qr = qrcode(0, "L");
+        qr.addData(r.qr);
+        qr.make();
+        $("qOut").innerHTML = `<div class="qr">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>`;
+      } catch (err) { toast("Failed: " + err.message, true); }
+    };
+    $("kRows").onclick = e => {
+      const b = e.target.closest("[data-del]");
+      if (b && confirm("Delete this token? Devices already enrolled stay.")) act(() => api("/api/tokens/delete", { token: b.dataset.del }), "Deleted");
+    };
+  }
+  const kSel = $("kGroup").value;
+  $("kGroup").innerHTML = options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], kSel);
+  const sel = $("qTok").value;
+  $("qTok").innerHTML = options(S.tokens.map(t => [t.token, t.label + (t.group ? " → " + t.group : "")]), sel) || `<option value="">Create a token first</option>`;
+  $("kRows").innerHTML = S.tokens.slice().reverse().map(t => `<tr><td><div class="name">${esc(t.label)}</div><code class="meta">${esc(t.token)}</code></td>
+      <td>${esc(t.group || "–")}</td><td>${t.mode === "monitor" ? "Monitor" : "Kiosk"}</td><td>${t.uses || 0}×</td>
+      <td><button class="btn ghost" data-del="${esc(t.token)}">Delete</button></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No tokens yet</td></tr>`;
+};
+
+const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱" };
+const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc(e.text)}${e.deviceId && dev(e.deviceId) && !location.hash.startsWith("#/device/")
+  ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
+VIEWS.activity = async (arg, first) => {
+  if (first) $("view").innerHTML = `<h2>Activity log</h2><p class="lead">Everything that happened: devices coming online and offline, commands sent and delivered, alerts, uploads, tasks.</p>
+    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Filter…"></div><div class="table-wrap"><table><tbody id="evRows"></tbody></table></div></div>`;
+  if (first) $("evQ").oninput = () => VIEWS.activity();
+  const r = await api("/api/events").catch(() => ({ events: [] }));
+  if (!$("evRows")) return;
+  const q = $("evQ").value.toLowerCase();
+  $("evRows").innerHTML = r.events.filter(e => !q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)).slice(0, 500).map(eventRow).join("")
+    || `<tr><td class="empty">Nothing yet</td></tr>`;
+};
+
+// Honest status of every feature on the roadmap.
+const FEATURES = [
+  ["App pinning (kiosk mode)", "done", "Lock tablets to chosen apps; 6 taps + password for admin"],
+  ["Device lock / unlock", "done", "Unlock for 2 minutes, lock to kiosk, lock screen"],
+  ["Online / offline status", "done", "Live, devices check in every 10 s"],
+  ["Remote reboot", "done", "Android (device owner), Windows, Linux, IoT"],
+  ["Multi-app support (VMS, kiosk apps)", "done", "Choose allowed apps per tablet; push apps from Apps & files"],
+  ["OTA app update", "done", "Upload an .apk, install silently on many devices"],
+  ["Device registration (token)", "done", "Tokens put devices in a site and mode"],
+  ["Device registration (QR)", "done", "Android Enterprise QR on a factory-reset device"],
+  ["Device health (battery, memory, storage)", "done", "Plus temperature and Wi-Fi signal; 24-hour chart. Android doesn't let apps read CPU load (Windows agent does)"],
+  ["Basic logs", "done", "Activity log for every device and the whole portal"],
+  ["Remote logs & debug", "done", "Get logs pulls the app log and last crash from a device"],
+  ["Alerts (battery, offline, crash)", "done", "Raised and cleared automatically"],
+  ["Offline alerts", "partial", "Shown in the portal; email / WhatsApp notifications not yet"],
+  ["Device grouping (sites)", "done", "Add sites, put devices in them, control a whole site"],
+  ["Bulk control", "done", "Tick devices or pick a site, send any command"],
+  ["Scheduled tasks", "done", "Command at a time on chosen days"],
+  ["Command automation", "partial", "Scheduled tasks; rules like \"if offline then…\" not yet"],
+  ["File transfer", "partial", "Portal → device; device → portal not yet"],
+  ["Offline mode (local network)", "done", "Runs fully on this PC's network, no internet needed"],
+  ["Windows / Linux support", "done", "agents/agent.ps1 and agents/agent.sh"],
+  ["Mobile admin app", "partial", "Portal works on phones and can be added to the home screen"],
+  ["Performance monitoring", "partial", "Memory / storage / battery trends; per-app usage not yet"],
+  ["Rooted & non-rooted support", "partial", "Works without root (device owner); root-only extras not yet"],
+  ["Remote control (VNC screen control)", "next", "Next phase. Android asks for consent each session unless the app is system-signed (Telpo) or the device is rooted"],
+  ["Screen recording", "next", "Comes with remote control"],
+  ["Remote ADB", "next", "Needs the secure tunnel"],
+  ["Secure tunnel access", "next", "Needed for cloud / remote sites"],
+  ["AI monitoring", "later", "After enough health history is collected"],
+];
+VIEWS.features = () => {
+  const P = { done: ["ok", "Done"], partial: ["warn", "Partly"], next: ["neutral", "Next phase"], later: ["neutral", "Later"] };
+  const n = k => FEATURES.filter(f => f[1] === k).length;
+  $("view").innerHTML = `<h2>Features</h2><p class="lead">${n("done")} done · ${n("partial")} partly done · ${n("next") + n("later")} to come.</p>
+    <div class="card feat"><table><tbody>${FEATURES.map(([f, s, note]) => `<tr><td><div class="name">${esc(f)}</div><div class="meta">${esc(note)}</div></td>
+      <td><span class="pill ${P[s][0]}">${P[s][1]}</span></td></tr>`).join("")}</tbody></table></div>`;
+};
+
+// ---------------- map (opens from the header) ----------------
+let map, markers = {}, fitted = false;
+function drawMap() {
+  if (!map) {
+    map = L.map("map").setView([1.3521, 103.8198], 11);
+    const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "Imagery &copy; Esri" });
+    const labels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 });
+    const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" });
+    L.layerGroup([sat, labels]).addTo(map);
+    L.control.layers({ "Satellite": L.layerGroup([sat, labels]), "Street": street }).addTo(map);
+  }
+  const seen = new Set();
+  for (const d of S.devices) {
+    if (d.lat == null) continue;
+    seen.add(d.id);
+    const popup = `<b>${esc(label(d))}</b><br>${isOnline(d) ? "Online" : "Offline"}${d.battery != null ? " · battery " + d.battery + "%" : ""}<br>
+      <span class="meta">±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
+    markers[d.id] ||= L.circleMarker([d.lat, d.lng], { radius: 9, weight: 3, fillOpacity: .95 }).addTo(map);
+    markers[d.id].setLatLng([d.lat, d.lng]).setStyle({ color: "#fff", fillColor: isOnline(d) ? "#22c55e" : "#ef4444" }).bindPopup(popup);
+  }
+  for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
+  const pts = Object.values(markers).map(m => m.getLatLng());
+  if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 }); fitted = true; }
+}
+function openMap(d) {
+  $("mapDlg").showModal();
+  drawMap();
+  map.invalidateSize();
+  if (d) {
+    if (!markers[d.id]) return toast("No location from this device yet", true);
+    map.setView(markers[d.id].getLatLng(), 18);
+    markers[d.id].openPopup();
+  }
+  const n = S.devices.filter(x => x.lat == null).length;
+  if (!d && n) toast(`${n} device${n > 1 ? "s have" : " has"} no location (no GPS or not an Android device)`);
+}
+$("mapBtn").onclick = () => openMap();
 $("logout").onclick = async () => { await fetch("/api/logout", { method: "POST" }); location.href = "/login"; };
 
+route(false);
 refresh();
 setInterval(refresh, 5000);
 </script>

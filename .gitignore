@@ -5,3 +5,7 @@ local.properties
 server/devices.json
 server/devices.json.tmp
 *.apk
+server/portal.json
+server/portal.json.tmp
+server/uploads/
+server/logs/
