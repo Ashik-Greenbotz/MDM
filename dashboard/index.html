@@ -124,6 +124,23 @@
   .pill.bad { color: var(--bad); background: var(--bad-soft); }
   .pill.warn { color: var(--warn); background: var(--warn-soft); }
   .pill.neutral { color: var(--muted); background: var(--hover); }
+  /* Sites page: one card per site */
+  .site-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; margin-top: 14px; }
+  .site-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .site-card a { color: inherit; text-decoration: none; }
+  .site-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .site-head .name { font-size: 16px; font-weight: 650; }
+  .site-health { display: flex; align-items: center; gap: 10px; }
+  .site-health > b { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .site-health .meter { flex: 1; } .site-health .meter .bar { width: 100%; }
+  .site-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .site-stats div { background: var(--hover); border-radius: 10px; padding: 8px; text-align: center; }
+  .site-stats b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .site-stats span { font-size: 12px; color: var(--muted); }
+  .site-stats .bad b { color: var(--bad); } .site-stats .warn b { color: var(--warn); }
+  .stat .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .health-list { display: grid; gap: 14px; } .health-list .hbar { margin: 6px 0 4px; }
   .meter { display: inline-flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; font-size: 13px; }
   .meter .bar { width: 38px; height: 6px; border-radius: 4px; background: var(--line); overflow: hidden; }
   .meter .bar b { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--ok), #6ee7b7); }
@@ -167,7 +184,7 @@
   .donut-wrap { display: flex; align-items: center; gap: 28px; padding: 20px; flex-wrap: wrap; }
   .donut { width: 180px; height: 180px; flex: none; }
   .donut text { fill: var(--text); }
-  .donut circle + circle { stroke-linecap: round; filter: drop-shadow(0 0 6px var(--ok-soft)); }
+  .donut circle + circle { filter: drop-shadow(0 0 4px var(--ok-soft)); }
   .legend2 { display: grid; gap: 10px; font-size: 14px; }
   .legend2 i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 8px; vertical-align: -1px; }
   .hbar { display: flex; height: 8px; border-radius: 5px; overflow: hidden; background: var(--line); min-width: 120px; }
@@ -490,43 +507,66 @@ window.onhashchange = () => route(false);
 // ---------------- views ----------------
 const VIEWS = {};
 
+// Fleet state per device, most important first: maintenance, offline, warning (online but low battery
+// or an unlocked kiosk), online. Used by the dashboard and the Sites cards.
+const fleetState = d => d.maintenance ? "maintenance" : !isOnline(d) ? "offline"
+  : (d.battery != null && d.battery < LOW_BATTERY) || (d.type === "android-kiosk" && d.kioskLocked === false) ? "warning" : "online";
+const FLEET = [["online", "Online", "--ok"], ["warning", "Warning", "--warn"], ["offline", "Offline", "--bad"], ["maintenance", "Maintenance", "--muted"]];
+function siteStats(g) {
+  const list = S.devices.filter(d => (d.group || "") === g), ids = new Set(list.map(d => d.id));
+  const n = Object.fromEntries(FLEET.map(([k]) => [k, list.filter(d => fleetState(d) === k).length]));
+  const on = list.filter(isOnline).length, alerts = openAlerts().filter(a => ids.has(a.deviceId)).length;
+  // Fleet health = share of the site's devices online. Attention below 90% or with open alerts.
+  const health = list.length ? Math.round(1000 * on / list.length) / 10 : null;
+  const status = health == null ? ["neutral", "No devices"] : health < 50 ? ["bad", "Critical"] : health < 90 || alerts ? ["warn", "Attention"] : ["ok", "Healthy"];
+  return { list, n, on, off: list.length - on, alerts, health, status };
+}
+const healthPill = s => `<span class="pill ${s.status[0]}">${s.status[1]}</span>${s.health == null ? "" : ` <b class="num">${s.health}%</b>`}`;
+
 VIEWS.overview = () => {
-  const ds = S.devices, on = ds.filter(isOnline);
-  const byType = Object.entries(ds.reduce((m, d) => (m[d.type] = (m[d.type] || 0) + 1, m), {}));
+  const ds = S.devices, on = ds.filter(isOnline), n = Object.fromEntries(FLEET.map(([k]) => [k, ds.filter(d => fleetState(d) === k).length]));
+  const sites = groups().filter(Boolean);
+  const byType = Object.entries(ds.reduce((m, d) => ((m[d.type] ||= []).push(d), m), {}));
   const recentAlerts = S.alerts.filter(a => !a.resolvedAt).slice(-6).reverse();
+  const pct = (a, b) => b ? Math.round(1000 * a / b) / 10 : 0;
   $("view").innerHTML = `
-    <div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Overview</h2>
+    <div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Device Fleet Overview</h2>
       <span class="row"><button class="btn" id="mAllOn">🛠 Maintenance on all</button><button class="btn" id="mAllOff">Maintenance off all</button></span></div>
-    <p class="lead">All devices across all sites, updated live.</p>
+    <p class="lead">Monitor device health, connectivity and alerts across all sites, updated live.</p>
     <div class="stats">
+      <a class="stat" href="#/sites"><div class="n">${sites.length}</div><div class="l">Total sites</div></a>
       <a class="stat" href="#/devices"><div class="n">${ds.length}</div><div class="l">Total devices</div></a>
-      <a class="stat ok" href="#/devices" data-status="online"><div class="n">${on.length}</div><div class="l">Online</div></a>
-      <a class="stat bad" href="#/devices" data-status="offline"><div class="n">${ds.length - on.length}</div><div class="l">Offline</div></a>
-      <a class="stat warn" href="#/devices" data-status="unlocked"><div class="n">${ds.filter(d => d.kioskLocked === false && d.type === "android-kiosk").length}</div><div class="l">Unlocked kiosks</div></a>
-      <a class="stat warn" href="#/devices" data-status="low"><div class="n">${ds.filter(d => d.battery != null && d.battery < LOW_BATTERY).length}</div><div class="l">Low battery</div></a>
-      <a class="stat warn" href="#/devices" data-status="maintenance"><div class="n">${ds.filter(d => d.maintenance).length}</div><div class="l">In maintenance</div></a>
+      <a class="stat ok" href="#/devices" data-status="online"><div class="n">${on.length}</div><div class="l">Online</div><div class="s">${pct(on.length, ds.length)}% of fleet</div></a>
+      <a class="stat warn" href="#/devices" data-status="low"><div class="n">${n.warning}</div><div class="l">Warning</div><div class="s">Low battery or unlocked kiosk</div></a>
+      <a class="stat bad" href="#/devices" data-status="offline"><div class="n">${ds.length - on.length}</div><div class="l">Offline</div><div class="s">No check-in for over a minute</div></a>
       <a class="stat bad" href="#/alerts"><div class="n">${openAlerts().length}</div><div class="l">Open alerts</div></a>
+      <a class="stat warn" href="#/devices" data-status="maintenance"><div class="n">${n.maintenance}</div><div class="l">In maintenance</div></a>
     </div>
     <div class="cols">
-      <div class="card"><h3>Online / offline</h3>${donut(on.length, ds.length - on.length)}</div>
-      <div class="card"><h3>Sites</h3><table><tbody>${groups().map(g => {
-        const list = ds.filter(d => (d.group || "") === g), o = list.filter(isOnline).length;
-        return `<tr class="click" data-group="${esc(g)}"><td>${esc(groupName(g))}</td>
-          <td style="width:45%">${list.length ? `<div class="hbar"><b style="width:${100 * o / list.length}%"></b><s style="width:${100 * (list.length - o) / list.length}%"></s></div>` : `<span class="meta">empty</span>`}</td>
-          <td class="meta">${o} / ${list.length}</td></tr>`;
-      }).join("") || `<tr><td class="empty">No sites yet</td></tr>`}</tbody></table></div>
-      <div class="card"><h3>Offline devices</h3><table><tbody>${ds.filter(d => !isOnline(d)).sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 8).map(d =>
+      <div class="card"><h3>Fleet status<span class="grow"></span><span class="meta">Distribution of device states</span></h3>${donut(n, ds.length)}</div>
+      <div class="card"><h3>Device health<span class="grow"></span><span class="meta">Online ratio by device type</span></h3>
+        <div class="pad health-list">${byType.map(([t, list]) => {
+          const o = list.filter(isOnline).length, p = pct(o, list.length);
+          return `<div class="click" data-type="${esc(t)}"><div class="row"><b>${esc(TYPES[t] || t)}</b><span class="grow" style="flex:1"></span><b class="num">${p}%</b></div>
+            <div class="hbar"><b style="width:${p}%"></b></div><div class="meta">${o} of ${list.length} devices reporting normally</div></div>`;
+        }).join("") || `<div class="empty">No devices yet</div>`}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:18px"><h3>Site health<span class="grow"></span><span class="meta">Connectivity and alerts per site</span>
+      <a href="#/sites" class="meta" style="margin-left:12px">View all sites →</a></h3>
+      <div class="table-wrap"><table><thead><tr><th>Site</th><th>Total devices</th><th>Online</th><th>Warning</th><th>Offline</th><th>Open alerts</th><th>Health</th></tr></thead>
+      <tbody>${groups().map(g => {
+        const s = siteStats(g);
+        return `<tr class="click" data-group="${esc(g)}"><td class="name">${esc(groupName(g))}</td><td>${s.list.length}</td><td>${s.n.online}</td>
+          <td>${s.n.warning || "0"}</td><td${s.off ? ` style="color:var(--bad)"` : ""}>${s.off}</td><td>${s.alerts}</td><td>${healthPill(s)}</td></tr>`;
+      }).join("") || `<tr><td colspan="7" class="empty">No sites yet</td></tr>`}</tbody></table></div></div>
+    <div class="cols">
+      <div class="card"><h3>Latest alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3>
+        <table><tbody>${recentAlerts.map(a => `<tr${a.deviceId ? ` class="click" data-dev="${esc(a.deviceId)}"` : ""}><td>${alertIcon(a)}</td><td class="wrap">${esc(a.text)}</td>
+          <td><span class="pill ${a.kind === "offline" || a.kind === "crash" ? "bad" : "warn"}">${a.kind === "offline" || a.kind === "crash" ? "Critical" : "Warning"}</span></td><td class="meta">${ago(a.at)}</td></tr>`).join("")
+        || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
+      <div class="card"><h3>Offline devices<span class="grow"></span><a href="#/devices" data-status="offline" class="meta">All devices →</a></h3><table><tbody>${ds.filter(d => !isOnline(d)).sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 8).map(d =>
         `<tr class="click" data-dev="${esc(d.id)}"><td><span class="code">${esc(d.code || "")}</span></td><td class="name">${esc(label(d))}</td><td class="meta">${esc(d.group || "")}</td><td class="meta">since ${ago(d.lastSeen)}</td></tr>`).join("")
         || `<tr><td class="empty">All devices online 🎉</td></tr>`}</tbody></table></div>
-    </div>
-    <div class="cols">
-      <div class="card"><h3>By device type</h3><table><tbody>${byType.map(([t, n]) => {
-        const o = ds.filter(d => d.type === t && isOnline(d)).length;
-        return `<tr class="click" data-type="${esc(t)}"><td>${esc(TYPES[t] || t)}</td><td>${n} device${n > 1 ? "s" : ""}</td><td><span class="pill ok">${o} online</span></td></tr>`;
-      }).join("") || `<tr><td class="empty">No devices yet</td></tr>`}</tbody></table></div>
-      <div class="card"><h3>Open alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3>
-        <table><tbody>${recentAlerts.map(a => `<tr><td>${alertIcon(a)}</td><td class="wrap">${esc(a.text)}</td><td class="meta">${ago(a.at)}</td></tr>`).join("")
-        || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
     </div>`;
   $("view").onclick = e => {
     if (e.target.id === "mAllOn") return maintenance({ all: true }, true, S.devices.length);
@@ -543,16 +583,22 @@ VIEWS.overview = () => {
   };
 };
 
-function donut(on, off) {
-  const total = on + off, r = 70, c = 2 * Math.PI * r, pct = total ? Math.round(100 * on / total) : 0;
-  const onLen = total ? c * on / total : 0;
+// Ring with one segment per fleet state (n = { online, warning, offline, maintenance }).
+function donut(n, total) {
+  const r = 70, c = 2 * Math.PI * r, pct = v => total ? Math.round(1000 * v / total) / 10 : 0;
+  let start = 0;
+  const segs = FLEET.filter(([k]) => n[k]).map(([k, , col]) => {
+    const len = c * n[k] / total, s = `<circle cx="90" cy="90" r="${r}" fill="none" stroke="${css(col)}" stroke-width="22"
+      stroke-dasharray="${len} ${c}" stroke-dashoffset="${-start}" transform="rotate(-90 90 90)"/>`;
+    start += len;
+    return s;
+  });
   return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 180 180">
-      <circle cx="90" cy="90" r="${r}" fill="none" stroke="${total ? css("--bad") : css("--line")}" stroke-width="22"/>
-      <circle cx="90" cy="90" r="${r}" fill="none" stroke="${css("--ok")}" stroke-width="22" stroke-dasharray="${onLen} ${c}" transform="rotate(-90 90 90)"/>
-      <text x="90" y="88" text-anchor="middle" font-size="34" font-weight="700">${pct}%</text>
+      <circle cx="90" cy="90" r="${r}" fill="none" stroke="${css("--line")}" stroke-width="22"/>${segs.join("")}
+      <text x="90" y="88" text-anchor="middle" font-size="34" font-weight="700">${Math.round(pct(n.online + n.warning))}%</text>
       <text x="90" y="112" text-anchor="middle" font-size="13" opacity=".65">online</text></svg>
-    <div class="legend2"><div><i style="background:${css("--ok")}"></i><b>${on}</b> online</div>
-      <div><i style="background:${css("--bad")}"></i><b>${off}</b> offline</div><div class="meta">${total} devices in total</div></div></div>`;
+    <div class="legend2">${FLEET.map(([k, name, col]) => `<div><i style="background:${css(col)}"></i><b>${n[k]}</b> ${name} <span class="meta">(${pct(n[k])}%)</span></div>`).join("")}
+      <div class="meta">${total} devices in total</div></div></div>`;
 }
 
 const STATUS = {
@@ -919,27 +965,23 @@ VIEWS.sites = () => {
       <button class="btn primary" data-s="add">+ Add site</button></div>
     <p class="lead">Each site holds its devices. Control a whole site at once, or open it to see only its devices.
       New devices can join a site automatically with an enrollment token.</p>
-    <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Site</th><th>Devices</th><th>Online</th><th>Types</th><th>Control the whole site</th><th></th></tr></thead>
-      <tbody>${groups().map(g => {
-        const list = S.devices.filter(d => (d.group || "") === g), o = list.filter(isOnline).length, site = siteOf(g);
-        const cmds = [...new Set(list.flatMap(d => withUnpin(S.commands[d.type] || [])))];
-        return `<tr><td><a href="${g ? "#/site/" + encodeURIComponent(g) : "#/devices"}" data-open="${esc(g)}" class="name">${esc(groupName(g))}</a>
-            ${site.address || site.contact ? `<div class="meta">${esc([site.address, site.contact].filter(Boolean).join(" · "))}</div>` : ""}</td>
-          <td>${list.length}</td>
-          <td>${!list.length ? `<span class="pill neutral">–</span>` : o === list.length ? `<span class="pill ok">${o}</span>` : `<span class="pill bad">${o} / ${list.length}</span>`}</td>
-          <td class="meta">${[...new Set(list.map(d => TYPES[d.type] || d.type))].join(", ") || "–"}</td>
-          <td>${cmds.length ? `<select data-group="${esc(g)}"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>` : `<span class="meta">–</span>`}</td>
-          <td><div class="row">${g ? `<button class="btn" data-s="addDev" data-name="${esc(g)}">Add devices</button>
-            <button class="btn ghost" data-s="edit" data-name="${esc(g)}">Edit</button>
-            <button class="btn ghost danger" data-s="del" data-name="${esc(g)}">Delete</button>` : ""}</div></td></tr>`;
-      }).join("") || `<tr><td colspan="6" class="empty">No sites yet. Click <b>+ Add site</b>.</td></tr>`}</tbody></table></div></div>`;
-  $("view").onchange = e => {
-    const g = e.target.dataset.group;
-    if (g === undefined || !e.target.value) return;
-    command(S.devices.filter(d => (d.group || "") === g), e.target.value);
-    e.target.value = "";
-  };
+    <div class="site-grid">${groups().map(g => {
+        const { list, off, alerts, health, status } = siteStats(g), site = siteOf(g);
+        const href = g ? "#/site/" + encodeURIComponent(g) : "#/devices";
+        return `<div class="card site-card">
+          <a href="${href}" data-open="${esc(g)}" class="site-head">
+            <div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No address yet" : "Devices not in any site"))}</div></div>
+            <span class="pill ${status[0]}">${status[1]}</span></a>
+          <a href="${href}" data-open="${esc(g)}" class="site-health"><span class="meta">Fleet health</span>
+            ${health == null ? "" : `<span class="meter ${health < 50 ? "bad" : health < 90 ? "warn" : ""}"><span class="bar"><b style="width:${health}%"></b></span></span>`}
+            <b>${health == null ? "–" : health + "%"}</b></a>
+          <div class="site-stats">
+            <div><b>${list.length}</b><span>Devices</span></div>
+            <div class="${off ? "bad" : ""}"><b>${off}</b><span>Offline</span></div>
+            <div class="${alerts ? "warn" : ""}"><b>${alerts}</b><span>Alerts</span></div>
+          </div>
+        </div>`;
+      }).join("") || `<div class="card empty" style="padding:24px">No sites yet. Click <b>+ Add site</b>.</div>`}</div>`;
   $("view").onclick = e => {
     const a = e.target.closest("[data-open]");
     if (a && !a.dataset.open) filters = { q: "", type: "", status: "", group: a.dataset.open || "__none" };
@@ -947,11 +989,6 @@ VIEWS.sites = () => {
     if (!b) return;
     const name = b.dataset.name;
     if (b.dataset.s === "add") siteForm();
-    if (b.dataset.s === "edit") siteForm(siteOf(name));
-    if (b.dataset.s === "addDev") addDevicesToSite(name);
-    if (b.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) {
-      act(() => api("/api/sites/delete", { name }), "Site deleted");
-    }
   };
 };
 
@@ -962,7 +999,7 @@ VIEWS.site = async (name, first) => {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
       <div class="row" style="margin-bottom:4px"><h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
-        <button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button></div>
+        <button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button><button class="btn ghost danger" data-s="del">Delete site</button></div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
       <div class="cols">
@@ -990,6 +1027,9 @@ VIEWS.site = async (name, first) => {
       if (b?.dataset.s === "edit") siteForm(siteOf(name));
       if (b?.dataset.s === "addDev") addDevicesToSite(name);
       if (b?.dataset.s === "map") openMap(mine());
+      if (b?.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) {
+        act(() => api("/api/sites/delete", { name }), "Site deleted").then(() => { location.hash = "#/sites"; });
+      }
     };
   }
   const alerts = openAlerts().filter(a => ids.has(a.deviceId));
