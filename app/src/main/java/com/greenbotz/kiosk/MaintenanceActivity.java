@@ -22,11 +22,22 @@ public class MaintenanceActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        android.widget.FrameLayout root = new android.widget.FrameLayout(this);
+        root.setBackgroundColor(0xFF53BFE0); // the image's blue, so the letterbox bars blend in
         ImageView img = new ImageView(this);
-        img.setBackgroundColor(0xFF53BFE0); // the image's blue, so the letterbox bars blend in
         img.setScaleType(ImageView.ScaleType.FIT_CENTER);
         img.setImageResource(R.drawable.maintenance);
-        setContentView(img);
+        root.addView(img, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        android.widget.TextView footer = new android.widget.TextView(this);
+        footer.setText(R.string.footer);
+        footer.setTextColor(0xCCFFFFFF);
+        footer.setTextSize(12);
+        int pad = Math.round(12 * getResources().getDisplayMetrics().density);
+        footer.setPadding(pad, pad, pad, pad);
+        android.widget.FrameLayout.LayoutParams fp = new android.widget.FrameLayout.LayoutParams(-2, -2);
+        fp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+        root.addView(footer, fp);
+        setContentView(root);
     }
 
     @Override

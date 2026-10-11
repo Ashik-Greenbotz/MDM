@@ -90,6 +90,18 @@
                 android:columnCount="4"
                 android:padding="12dp" />
         </ScrollView>
+
+        <!-- Footer on every kiosk home screen -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#F4F5F7"
+            android:gravity="center"
+            android:paddingBottom="10dp"
+            android:paddingTop="2dp"
+            android:text="@string/footer"
+            android:textColor="#9AA0A6"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <!-- App pinning: shown for a few seconds before the app reopens -->
