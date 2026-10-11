@@ -11,7 +11,7 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 ## Portal pages
 - **Overview**: totals, devices per type and per site, open alerts. **🗺 Map** (top bar) opens satellite view of all devices.
 - **Devices**: search/filter, tick devices for bulk commands, click a row for details, 24 h health chart, activity and logs.
-- **Sites**: **+ Add site**, add devices to a site, send a command to a whole site.
+- **Sites**: **+ Add site**, **Edit name / location** on each site card, add devices to a site, send a command to a whole site.
 - **Alerts**: offline > 2 min (with alarm sound), battery < 20 %, app crash (raised and cleared automatically).
 - **Scheduled tasks**: a command at a set time on chosen days (e.g. restart a site every night).
 - **Apps & files**: upload an .apk (up to 2 GB) and install it silently on devices (OTA); send files to Download/Kiosk.

@@ -970,7 +970,7 @@ VIEWS.sites = () => {
         const href = g ? "#/site/" + encodeURIComponent(g) : "#/devices";
         return `<div class="card site-card">
           <a href="${href}" data-open="${esc(g)}" class="site-head">
-            <div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No address yet" : "Devices not in any site"))}</div></div>
+            <div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No location yet" : "Devices not in any site"))}</div></div>
             <span class="pill ${status[0]}">${status[1]}</span></a>
           <a href="${href}" data-open="${esc(g)}" class="site-health"><span class="meta">Fleet health</span>
             ${health == null ? "" : `<span class="meter ${health < 50 ? "bad" : health < 90 ? "warn" : ""}"><span class="bar"><b style="width:${health}%"></b></span></span>`}
@@ -980,6 +980,7 @@ VIEWS.sites = () => {
             <div class="${off ? "bad" : ""}"><b>${off}</b><span>Offline</span></div>
             <div class="${alerts ? "warn" : ""}"><b>${alerts}</b><span>Alerts</span></div>
           </div>
+          ${g ? `<button class="btn" data-s="edit" data-name="${esc(g)}">Edit name / location</button>` : ""}
         </div>`;
       }).join("") || `<div class="card empty" style="padding:24px">No sites yet. Click <b>+ Add site</b>.</div>`}</div>`;
   $("view").onclick = e => {
@@ -989,6 +990,7 @@ VIEWS.sites = () => {
     if (!b) return;
     const name = b.dataset.name;
     if (b.dataset.s === "add") siteForm();
+    if (b.dataset.s === "edit") siteForm(siteOf(name));
   };
 };
 
@@ -1058,7 +1060,7 @@ VIEWS.site = async (name, first) => {
 function siteForm(site) {
   dialog(`<h2>${site ? "Edit site" : "Add site"}</h2><div class="grid" style="display:grid;grid-template-columns:max-content 1fr;gap:10px 14px;align-items:center">
     <label class="meta">Site name</label><input id="sName" value="${esc(site?.name || "")}" placeholder="e.g. Tampines Hub" required autofocus>
-    <label class="meta">Address</label><input id="sAddr" value="${esc(site?.address || "")}" placeholder="optional">
+    <label class="meta">Location</label><input id="sAddr" value="${esc(site?.address || "")}" placeholder="optional">
     <label class="meta">Contact</label><input id="sContact" value="${esc(site?.contact || "")}" placeholder="optional: person / phone"></div>`,
     site ? "Save" : "Add site", () => {
       const name = $("sName").value.trim();
