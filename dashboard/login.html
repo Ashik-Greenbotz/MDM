@@ -13,7 +13,7 @@
     :root { --bg: #111317; --card: #1b1e24; --text: #e8eaed; --muted: #9aa0a6; --line: #2c3038; --bad: #ef7070; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; align-content: center; padding: 16px;
     font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
   .card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
     padding: 32px 28px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
@@ -42,6 +42,7 @@
   <div class="err" id="err" role="alert"></div>
   <button id="btn">Sign in</button>
 </form>
+<footer style="color:var(--muted);font-size:12px;text-align:center;margin-top:16px">2026 © Interlock Security Systems · Developed by Ashik</footer>
 <script>
 document.getElementById("form").onsubmit = async e => {
   e.preventDefault();
