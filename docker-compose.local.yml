@@ -1,0 +1,12 @@
+# Office PC: run the portal in Docker, built from this repo, using the data in ./server.
+#   docker compose -f docker-compose.local.yml up -d --build
+# Secrets come from functions/.env (same file start-server.bat uses). Stop start-server.bat first (same port).
+services:
+  portal:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file: functions/.env
+    volumes:
+      - ./server:/app/server
