@@ -1,0 +1,3 @@
+mdm.gbotz.site {
+	reverse_proxy portal:8080
+}

@@ -8,6 +8,8 @@ on:
       - "dashboard/**"
       - "Dockerfile"
       - ".dockerignore"
+      - "docker-compose.yml"
+      - "Caddyfile"
       - ".github/workflows/docker-deploy.yml"
   workflow_dispatch: {}
 
@@ -63,6 +65,20 @@ jobs:
     permissions:
       packages: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync compose files to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.VM_PORT || 22 }}
+          source: "docker-compose.yml,Caddyfile"
+          target: ${{ secrets.VM_DEPLOY_PATH }}
+          strip_components: 0
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
