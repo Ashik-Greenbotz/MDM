@@ -144,7 +144,7 @@
     width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
   dialog::backdrop { background: rgba(0,0,0,.4); }
   dialog h2 { margin: 0 0 14px; font-size: 18px; }
-  dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  dialog .foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   #mapDlg { width: min(1300px, calc(100vw - 24px)); height: min(860px, calc(100vh - 24px)); padding: 0; overflow: hidden; }
   #mapDlg .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   #mapDlg .bar h2 { margin: 0; flex: 1; font-size: 16px; }
@@ -236,7 +236,7 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const withUnpin = (d, cmds) => d.singleApp ? cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]) : cmds;
+const withUnpin = cmds => cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]);
 const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
 const stateCell = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
   : d.type !== "android-kiosk" ? `<span class="meta">${d.uptime != null ? "Up " + fmtUptime(d.uptime) : "Monitored"}</span>`
@@ -515,7 +515,7 @@ function rowClick(e) {
 function renderBulk() {
   const sel = [...picked].map(dev).filter(Boolean);
   if (!sel.length) { $("bulk").innerHTML = ""; return; }
-  const cmds = [...new Set(sel.flatMap(d => withUnpin({ singleApp: 1 }, S.commands[d.type] || [])))];
+  const cmds = [...new Set(sel.flatMap(d => withUnpin(S.commands[d.type] || [])))];
   $("bulk").innerHTML = `<div class="bulk"><b>${sel.length} selected</b>
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
@@ -532,7 +532,7 @@ function deviceMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = withUnpin(d, S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
+  m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
     `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
      <button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
@@ -603,7 +603,7 @@ function pickSingleApp(list) {
       Or use <b>Unpin app</b> here.</p>
     <p class="meta">Now: ${list.map(d => esc(label(d)) + " – " + (d.singleApp ? "📌 " + esc(appName(d, d.singleApp)) : "not pinned")).slice(0, 5).join("<br>")}${list.length > 5 ? "<br>…" : ""}</p>`,
     "📌 Pin app", () => command(list, "singleapp", { package: $("saPick").value, appName: $("saPick").selectedOptions[0].text }),
-    anyPinned ? ["Unpin app", () => command(list, "unpin"), "danger"] : null);
+    [anyPinned ? "Unpin app" : "Unpin app (nothing pinned)", () => command(list, "unpin"), "danger"]);
 }
 
 // extra: optional second action, [label, handler, cssClass].
@@ -661,7 +661,7 @@ VIEWS.device = async (id, first) => {
   }
   $("dTitle").innerHTML = `<span class="code" style="font-size:16px">${esc(d.code || "")}</span> ${esc(label(d))}`;
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
-  $("dCmds").innerHTML = withUnpin(d, cmds).map(c => `<button class="btn ${c === "unlock" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dCmds").innerHTML = withUnpin(cmds).map(c => `<button class="btn ${c === "unlock" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
   $("dKv").innerHTML = Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   const [hist, ev, logs] = await Promise.all([
     api(`/api/devices/${d.id}/history`).catch(() => ({ history: [] })),
@@ -699,7 +699,7 @@ VIEWS.sites = () => {
       <thead><tr><th>Site</th><th>Devices</th><th>Online</th><th>Types</th><th>Control the whole site</th><th></th></tr></thead>
       <tbody>${groups().map(g => {
         const list = S.devices.filter(d => (d.group || "") === g), o = list.filter(isOnline).length, site = siteOf(g);
-        const cmds = [...new Set(list.flatMap(d => S.commands[d.type] || []))];
+        const cmds = [...new Set(list.flatMap(d => withUnpin(S.commands[d.type] || [])))];
         return `<tr><td><a href="${g ? "#/site/" + encodeURIComponent(g) : "#/devices"}" data-open="${esc(g)}" class="name">${esc(groupName(g))}</a>
             ${site.address || site.contact ? `<div class="meta">${esc([site.address, site.contact].filter(Boolean).join(" · "))}</div>` : ""}</td>
           <td>${list.length}</td>
@@ -777,7 +777,7 @@ VIEWS.site = async (name, first) => {
   $("sOff").innerHTML = list.filter(d => !isOnline(d)).sort((a, b) => b.lastSeen - a.lastSeen).map(d =>
     `<tr class="click" data-dev="${esc(d.id)}"><td><span class="code">${esc(d.code || "")}</span></td><td class="name">${esc(label(d))}</td><td class="meta">since ${ago(d.lastSeen)}</td></tr>`).join("")
     || `<tr><td class="empty">All devices online 🎉</td></tr>`;
-  const cmds = [...new Set(list.flatMap(d => withUnpin(d, S.commands[d.type] || [])))];
+  const cmds = [...new Set(list.flatMap(d => withUnpin(S.commands[d.type] || [])))];
   if (document.activeElement?.id !== "sCmdSel") $("sCmd").innerHTML = cmds.length
     ? `<select id="sCmdSel" aria-label="Control the whole site"><option value="">Control the whole site…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>` : "";
   $("rows").innerHTML = list.map(d => devRow(d, false)).join("");
