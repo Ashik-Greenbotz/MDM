@@ -138,6 +138,8 @@
   .alarm { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px; border-radius: 12px;
     background: var(--bad); color: #fff; font-weight: 600; animation: pulse 1.2s ease-in-out infinite; }
   .alarm .grow { flex: 1; }
+  .alarm.maint { background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn); animation: none; flex-wrap: wrap; }
+  .alarm.maint .btn { background: var(--card); color: var(--text); border-color: var(--line); }
   .alarm .btn { background: #fff; color: var(--bad); border-color: #fff; }
   @keyframes pulse { 50% { opacity: .78; } }
 
@@ -187,7 +189,7 @@
 </header>
 <div class="layout">
   <nav id="nav"></nav>
-  <main><div id="alarmBar"></div><div id="view"></div></main>
+  <main><div id="alarmBar"></div><div id="maintBar"></div><div id="view"></div></main>
 </div>
 <div id="toasts"></div>
 <dialog id="mapDlg">
@@ -210,7 +212,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", unpin: "Unpin app", screenshot: "📸 Screenshot",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PAGES = [
@@ -245,9 +247,10 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const withUnpin = cmds => cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]);
+const withUnpin = cmds => cmds.includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]), "maintOn", "maintOff"] : cmds;
 const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
-const stateCell = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
+const stateCell = d => (d.maintenance ? `<span class="pill warn" title="Showing the System Maintenance screen">🛠 Maintenance</span> ` : "") + stateCell1(d);
+const stateCell1 = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
   : d.type !== "android-kiosk" ? `<span class="meta">${d.uptime != null ? "Up " + fmtUptime(d.uptime) : "Monitored"}</span>`
   : d.kioskLocked === false ? `<span class="pill warn"><i></i>Unlocked</span>`
   : d.singleApp ? `<span class="pill ok" title="App pinned"><i></i>📌 ${esc(appName(d, d.singleApp))}</span>` : `<span class="pill ok"><i></i>Locked</span>`;
@@ -296,6 +299,7 @@ async function refresh() {
   $("bellN").textContent = n;
   renderNav();
   renderAlarm();
+  renderMaint();
   route(true);
   if ($("mapDlg").open) drawMap();
 }
@@ -374,13 +378,16 @@ VIEWS.overview = () => {
   const byType = Object.entries(ds.reduce((m, d) => (m[d.type] = (m[d.type] || 0) + 1, m), {}));
   const recentAlerts = S.alerts.filter(a => !a.resolvedAt).slice(-6).reverse();
   $("view").innerHTML = `
-    <h2>Overview</h2><p class="lead">All devices across all sites, updated live.</p>
+    <div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Overview</h2>
+      <span class="row"><button class="btn" id="mAllOn">🛠 Maintenance on all</button><button class="btn" id="mAllOff">Maintenance off all</button></span></div>
+    <p class="lead">All devices across all sites, updated live.</p>
     <div class="stats">
       <a class="stat" href="#/devices"><div class="n">${ds.length}</div><div class="l">Total devices</div></a>
       <a class="stat ok" href="#/devices" data-status="online"><div class="n">${on.length}</div><div class="l">Online</div></a>
       <a class="stat bad" href="#/devices" data-status="offline"><div class="n">${ds.length - on.length}</div><div class="l">Offline</div></a>
       <a class="stat warn" href="#/devices" data-status="unlocked"><div class="n">${ds.filter(d => d.kioskLocked === false && d.type === "android-kiosk").length}</div><div class="l">Unlocked kiosks</div></a>
       <a class="stat warn" href="#/devices" data-status="low"><div class="n">${ds.filter(d => d.battery != null && d.battery < LOW_BATTERY).length}</div><div class="l">Low battery</div></a>
+      <a class="stat warn" href="#/devices" data-status="maintenance"><div class="n">${ds.filter(d => d.maintenance).length}</div><div class="l">In maintenance</div></a>
       <a class="stat bad" href="#/alerts"><div class="n">${openAlerts().length}</div><div class="l">Open alerts</div></a>
     </div>
     <div class="cols">
@@ -405,6 +412,8 @@ VIEWS.overview = () => {
         || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
     </div>`;
   $("view").onclick = e => {
+    if (e.target.id === "mAllOn") return maintenance({ all: true }, true, S.devices.length);
+    if (e.target.id === "mAllOff") return maintenance({ all: true }, false);
     const dv = e.target.closest("[data-dev]");
     if (dv) { location.hash = "#/device/" + encodeURIComponent(dv.dataset.dev); return; }
     const sg = e.target.closest("[data-group]")?.dataset.group;
@@ -433,6 +442,7 @@ const STATUS = {
   "": ["All statuses", () => true], online: ["Online", isOnline], offline: ["Offline", d => !isOnline(d)],
   unlocked: ["Unlocked kiosks", d => d.type === "android-kiosk" && d.kioskLocked === false],
   low: ["Low battery", d => d.battery != null && d.battery < LOW_BATTERY],
+  maintenance: ["In maintenance", d => d.maintenance],
 };
 function shownDevices() {
   const q = filters.q.toLowerCase();
@@ -630,7 +640,22 @@ async function screenshot(d, send = true) {
   catch (e) { sendError = e.message; render(); }
 }
 
+// target: same shape as /api/bulk ({ids} | {all:true} ...); n = how many devices, for the confirm text.
+function maintenance(target, on, n) {
+  if (on && n > 1 && !confirm(`Show the maintenance screen on ${n} devices?`)) return;
+  return act(() => api("/api/maintenance", { target, on }), r => `Maintenance ${on ? "on" : "off"} for ${r.count} device${r.count === 1 ? "" : "s"}`);
+}
+function renderMaint() {
+  const n = S.devices.filter(d => d.maintenance).length;
+  $("maintBar").innerHTML = n ? `<div class="alarm maint">🛠<span class="grow">${n} device${n > 1 ? "s" : ""} in maintenance (showing the System Maintenance screen)</span>
+    <a class="btn" href="#/devices" id="maintShow">Show</a><button class="btn" id="maintOff">Turn all off</button></div>` : "";
+  if (!n) return;
+  $("maintShow").onclick = () => { filters = { q: "", type: "", group: "", status: "maintenance" }; route(false); };
+  $("maintOff").onclick = () => maintenance({ all: true }, false);
+}
+
 async function command(list, type, extra = {}) {
+  if (type === "maintOn" || type === "maintOff") return maintenance({ ids: list.map(d => d.id) }, type === "maintOn", list.length);
   if (type === "screenshot" && list.length === 1) return screenshot(list[0]);
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
@@ -847,7 +872,7 @@ VIEWS.site = async (name, first) => {
   const alerts = openAlerts().filter(a => ids.has(a.deviceId));
   $("sInfo").textContent = [site.address, site.contact].filter(Boolean).join(" · ") || "No address or contact yet (Edit site to add them).";
   $("sStats").innerHTML = [["", list.length, "Total devices"], ["ok", on.length, "Online"], ["bad", list.length - on.length, "Offline"],
-    ["warn", list.filter(STATUS.unlocked[1]).length, "Unlocked kiosks"], ["warn", list.filter(STATUS.low[1]).length, "Low battery"], ["bad", alerts.length, "Open alerts"]]
+    ["warn", list.filter(STATUS.unlocked[1]).length, "Unlocked kiosks"], ["warn", list.filter(STATUS.low[1]).length, "Low battery"], ["warn", list.filter(STATUS.maintenance[1]).length, "In maintenance"], ["bad", alerts.length, "Open alerts"]]
     .map(([c, n, l]) => `<div class="stat ${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
   $("sDonut").innerHTML = donut(on.length, list.length - on.length);
   $("sOff").innerHTML = list.filter(d => !isOnline(d)).sort((a, b) => b.lastSeen - a.lastSeen).map(d =>
