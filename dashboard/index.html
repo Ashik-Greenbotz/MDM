@@ -101,6 +101,7 @@
   .meter .bar b { display: block; height: 100%; background: var(--ok); }
   .meter.warn .bar b { background: var(--warn); } .meter.bad .bar b { background: var(--bad); }
   .btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); font-size: 13px; white-space: nowrap; }
+  a.btn { color: inherit; text-decoration: none; display: inline-block; }
   .btn:hover { background: var(--hover); }
   .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -145,6 +146,13 @@
   dialog::backdrop { background: rgba(0,0,0,.4); }
   dialog h2 { margin: 0 0 14px; font-size: 18px; }
   dialog .foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #shotDlg { width: min(760px, calc(100vw - 24px)); }
+  #shotDlg h2 .code { font-size: 13px; vertical-align: middle; }
+  img.shot { display: block; max-width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+  .shot-msg { text-align: center; padding: 32px 8px 8px; }
+  .shot-msg p { max-width: 420px; margin: 8px auto 0; }
+  .spin { width: 40px; height: 40px; margin: 0 auto 16px; border: 4px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   #mapDlg { width: min(1300px, calc(100vw - 24px)); height: min(860px, calc(100vh - 24px)); padding: 0; overflow: hidden; }
   #mapDlg .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   #mapDlg .bar h2 { margin: 0; flex: 1; font-size: 16px; }
@@ -188,6 +196,7 @@
   <div id="map"></div>
 </dialog>
 <dialog id="dlg"></dialog>
+<dialog id="shotDlg"></dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
@@ -201,7 +210,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", unpin: "Unpin app",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", unpin: "Unpin app", screenshot: "📸 Screenshot",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PAGES = [
@@ -480,6 +489,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td>${meter(d.ram, 80, 92)}</td><td>${meter(d.disk, 85, 95)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
+        ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
         <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`;
 const q2 = () => filters.q.toLowerCase();
 function addDevice() {
@@ -564,7 +574,64 @@ function deviceAction(d, a) {
 }
 
 // Sends one command to a list of devices. install / file ask which app / file first.
+// Screenshot popup. t0 = server time the request was sent; null = just show the last screenshot.
+let shotTimers = [];
+async function screenshot(d, send = true) {
+  const dl = $("shotDlg"), t0 = send ? now() : null;
+  shotTimers.forEach(clearInterval);
+  shotTimers = [];
+  dl.onclose = () => { shotTimers.forEach(clearInterval); shotTimers = []; };
+  dl.onclick = e => {
+    const b = e.target.closest("[data-shot]");
+    if (b?.dataset.shot === "again") screenshot(dev(d.id) || d);
+    if (b?.dataset.shot === "close") dl.close();
+  };
+  let sendError = "", shown = "";
+  const render = () => {
+    const x = dev(d.id) || d, secs = t0 ? Math.round((now() - t0) / 1000) : 0;
+    const again = `<button class="btn primary" data-shot="again">📸 ${t0 ? "Try again" : "Take new screenshot"}</button>`;
+    let state, body;
+    if (t0 == null || x.screenshotAt > t0) {
+      const at = x.screenshotAt, src = `/api/devices/${encodeURIComponent(x.id)}/screenshot.jpg?t=${at}`;
+      const file = `${x.code || x.id}-${new Date(at - new Date(at).getTimezoneOffset() * 6e4).toISOString().slice(0, 19).replace(/\D/g, "")}.jpg`;
+      state = "img" + at;
+      body = at ? `<a href="${src}" target="_blank" rel="noopener"><img class="shot" src="${src}" alt="Screenshot of ${esc(label(x))}"></a>
+        <p class="meta" style="text-align:center">${new Date(at).toLocaleString()}${t0 ? ` · took ${Math.max(1, Math.round((at - t0) / 1000))} s` : ` · ${ago(at)}`}</p>
+        <div class="foot">${again.replace("Try again", "Take again")}<a class="btn" href="${src}" download="${esc(file)}">Download</a>
+          <a class="btn" href="${src}" target="_blank" rel="noopener">Open full size</a><button class="btn" data-shot="close">Close</button></div>`
+        : `<p class="empty">No screenshot yet.</p><div class="foot"><button class="btn" data-shot="close">Close</button>${again}</div>`;
+    } else if (sendError || x.screenshotError?.at > t0) {
+      state = "err";
+      body = `<div class="shot-msg"><div style="font-size:40px">⚠️</div><b>Couldn't take the screenshot</b>
+        <p class="meta">${esc(sendError || x.screenshotError.text)}</p></div><div class="foot"><button class="btn" data-shot="close">Close</button>${again}</div>`;
+    } else if (secs >= 60) {
+      state = "timeout";
+      body = `<div class="shot-msg"><div style="font-size:40px">⏳</div><b>No screenshot after a minute</b>
+        <p class="meta">${isOnline(x) ? `${esc(label(x))} may be busy, or someone needs to tap <b>Start now</b> on its screen the first time.`
+          : `${esc(label(x))} is offline. The request stays queued and runs when it reconnects.`}</p></div>
+        <div class="foot"><button class="btn" data-shot="close">Close</button>${again}</div>`;
+    } else {
+      state = "wait";
+      body = `<div class="shot-msg"><div class="spin"></div><b>Waiting for ${esc(label(x))}… ${secs} s</b>
+        <p class="meta">${isOnline(x) ? "Usually 3–20 seconds. The first time on older Android, someone may need to tap <b>Start now</b> on the device."
+          : `⚠️ ${esc(label(x))} is offline (last seen ${ago(x.lastSeen)}). The request is queued and runs when it reconnects.`}</p></div>
+        <div class="foot"><button class="btn" data-shot="close">Close</button></div>`;
+    }
+    if (state === shown && state !== "wait") return;
+    shown = state;
+    dl.innerHTML = `<h2>📸 ${esc(label(x))} <span class="code">${esc(x.code || "")}</span></h2>${body}`;
+    if (state !== "wait") { shotTimers.forEach(clearInterval); shotTimers = []; }
+  };
+  render();
+  if (!dl.open) dl.showModal();
+  if (!t0) return;
+  shotTimers = [setInterval(render, 1000), setInterval(() => refresh().then(render), 1500)];
+  try { await api(`/api/devices/${d.id}/command`, { type: "screenshot" }); }
+  catch (e) { sendError = e.message; render(); }
+}
+
 async function command(list, type, extra = {}) {
+  if (type === "screenshot" && list.length === 1) return screenshot(list[0]);
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
   if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
@@ -646,6 +713,8 @@ VIEWS.device = async (id, first) => {
       <div class="cols">
         <div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="dKv"></dl></div></div>
         <div>
+          <div class="card" id="dShotCard" hidden><h3>Last screenshot<span class="grow"></span><span class="meta" id="dShotAt"></span></h3>
+            <div class="pad"><img class="shot" id="dShot" alt="Last screenshot" style="max-height:320px;cursor:zoom-in"></div></div>
           <div class="card"><h3>Health · last 24 hours</h3><div id="dChart"></div></div>
           <div class="card"><h3>Activity<span class="grow"></span><a class="meta" href="#/activity">All activity →</a></h3>
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
@@ -653,6 +722,7 @@ VIEWS.device = async (id, first) => {
       </div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button></h3><pre class="log" id="dLogs">Loading…</pre></div>`;
     $("view").onclick = e => {
+      if (e.target.id === "dShot") return screenshot(dev(id), false);
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
@@ -661,7 +731,13 @@ VIEWS.device = async (id, first) => {
   }
   $("dTitle").innerHTML = `<span class="code" style="font-size:16px">${esc(d.code || "")}</span> ${esc(label(d))}`;
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
-  $("dCmds").innerHTML = withUnpin(cmds).map(c => `<button class="btn ${c === "unlock" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dCmds").innerHTML = withUnpin(cmds).map(c => `<button class="btn ${c === "unlock" || c === "screenshot" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dShotCard").hidden = !d.screenshotAt;
+  if (d.screenshotAt) {
+    const src = `/api/devices/${encodeURIComponent(d.id)}/screenshot.jpg?t=${d.screenshotAt}`;
+    if ($("dShot").getAttribute("src") !== src) $("dShot").src = src;
+    $("dShotAt").textContent = ago(d.screenshotAt);
+  }
   $("dKv").innerHTML = Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   const [hist, ev, logs] = await Promise.all([
     api(`/api/devices/${d.id}/history`).catch(() => ({ history: [] })),
@@ -986,7 +1062,7 @@ VIEWS.enroll = (arg, first) => {
       <td><button class="btn ghost" data-del="${esc(t.token)}">Delete</button></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No tokens yet</td></tr>`;
 };
 
-const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱" };
+const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸" };
 const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc(e.text)}${e.deviceId && dev(e.deviceId) && !location.hash.startsWith("#/device/")
   ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
 VIEWS.activity = async (arg, first) => {
