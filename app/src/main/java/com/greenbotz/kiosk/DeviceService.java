@@ -115,6 +115,7 @@ public class DeviceService extends Service {
                 .setContentTitle("Device monitoring active")
                 .build();
         appPrefs = getSharedPreferences("kiosk", MODE_PRIVATE);
+        self = this;
         catchCrashes();
         grantLocation();
         if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
@@ -282,6 +283,10 @@ public class DeviceService extends Service {
         e.commit();
     }
     private static SharedPreferences appPrefs;
+    private static DeviceService self;
+    // Android 9/10 screenshots: kept for the life of the process once the user allowed it (ScreenshotActivity).
+    static android.media.projection.MediaProjection projection;
+    private static boolean screenshotWaiting;
     private String sentApps;
 
     private JSONArray launcherApps() {
@@ -384,6 +389,7 @@ public class DeviceService extends Service {
             event(this, type + " failed: app is not device owner");
         }
         // Slow jobs run on their own thread so check-ins keep going.
+        if (type.equals("screenshot")) screenshot();
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
             new Thread(() -> {
                 try {
@@ -543,6 +549,105 @@ public class DeviceService extends Service {
             if (dpm.setTimeZone(admin, tz)) event(this, "Time zone set to " + tz);
         } catch (Exception e) {
             Log.w(TAG, "time zone", e);
+        }
+    }
+
+    // ---- screenshots for the portal ----
+    private void screenshot() {
+        ScreenshotService a = ScreenshotService.instance;
+        if (Build.VERSION.SDK_INT >= 30) {
+            if (a == null) {
+                screenshotFailed(this, "screenshot service is off on this device (run setup-tablet.bat once)");
+                return;
+            }
+            a.capture(bmp -> net.execute(() -> uploadScreenshot(bmp)), err -> screenshotFailed(this, err));
+            return;
+        }
+        if (projection != null) {
+            captureProjection();
+        } else {
+            // Asks on the device; onProjectionReady() continues once the user taps Start now.
+            screenshotWaiting = true;
+            startActivity(new Intent(this, ScreenshotActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        }
+    }
+
+    static void onProjectionReady(Context ctx) {
+        if (self != null && screenshotWaiting) {
+            screenshotWaiting = false;
+            self.handler.postDelayed(self::captureProjection, 600); // let the permission dialog disappear first
+        }
+    }
+
+    private void captureProjection() {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int w = dm.widthPixels, h = dm.heightPixels;
+        android.view.WindowManager wm = getSystemService(android.view.WindowManager.class);
+        android.graphics.Point real = new android.graphics.Point();
+        wm.getDefaultDisplay().getRealSize(real);
+        w = real.x;
+        h = real.y;
+        android.media.ImageReader reader = android.media.ImageReader.newInstance(w, h, android.graphics.PixelFormat.RGBA_8888, 2);
+        android.hardware.display.VirtualDisplay vd;
+        try {
+            vd = projection.createVirtualDisplay("portal-screenshot", w, h, dm.densityDpi,
+                    android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, handler);
+        } catch (SecurityException e) {
+            projection = null; // token expired: ask again next time
+            screenshotFailed(this, "screen capture permission expired, take the screenshot again and allow it on the device");
+            return;
+        }
+        int fw = w, fh = h;
+        reader.setOnImageAvailableListener(r -> {
+            android.media.Image img = r.acquireLatestImage();
+            if (img == null) return;
+            android.media.Image.Plane p = img.getPlanes()[0];
+            int rowPx = p.getRowStride() / p.getPixelStride();
+            android.graphics.Bitmap full = android.graphics.Bitmap.createBitmap(rowPx, fh, android.graphics.Bitmap.Config.ARGB_8888);
+            full.copyPixelsFromBuffer(p.getBuffer());
+            img.close();
+            r.setOnImageAvailableListener(null, null);
+            vd.release();
+            r.close();
+            android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(full, 0, 0, fw, fh);
+            net.execute(() -> uploadScreenshot(bmp));
+        }, handler);
+    }
+
+    static void screenshotFailed(Context ctx, String why) {
+        event(ctx, "Screenshot failed: " + why);
+        if (self != null) self.net.execute(() -> self.postScreenshot(null, why));
+    }
+
+    private void uploadScreenshot(android.graphics.Bitmap bmp) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out);
+        bmp.recycle();
+        postScreenshot(out.toByteArray(), null);
+    }
+
+    // Runs on the `net` thread. Either a JPEG or an error message for the portal's screenshot window.
+    private void postScreenshot(byte[] jpeg, String error) {
+        try {
+            String url = serverUrl(this) + "/api/screenshot" + (error == null ? "" : "?error=" + java.net.URLEncoder.encode(error, "UTF-8"));
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            try {
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(30000);
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "image/jpeg");
+                c.setRequestProperty("X-Device-Key", getString(R.string.server_key));
+                c.setRequestProperty("X-Device-Id", deviceId());
+                try (OutputStream o = c.getOutputStream()) {
+                    if (jpeg != null) o.write(jpeg);
+                }
+                if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+            } finally {
+                c.disconnect();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "screenshot upload failed", e);
         }
     }
 

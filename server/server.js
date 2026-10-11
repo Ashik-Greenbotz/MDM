@@ -31,7 +31,7 @@ const TIME_ZONE = process.env.TIME_ZONE || Intl.DateTimeFormat().resolvedOptions
 const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
-const ANDROID = ["lockscreen", "reboot", "ring", "install", "file", "logs"];
+const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "install", "file", "logs"];
 const COMMANDS = {
   "android-kiosk": ["unlock", "lock", "singleapp", ...ANDROID],
   android: ANDROID,
@@ -361,6 +361,25 @@ const server = http.createServer(async (req, res) => {
       log(id, "logs", "Logs uploaded");
       return send(res, 200, { ok: true });
     }
+    // Screenshot from a device (JPEG body), or ?error=... when it couldn't take one.
+    if (req.method === "POST" && p === "/api/screenshot") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const id = String(req.headers["x-device-id"] || "");
+      const d = devices[id];
+      if (!d) return send(res, 404, { error: "unknown device" });
+      const error = url.searchParams.get("error");
+      if (error) {
+        d.screenshotError = { at: Date.now(), text: error.slice(0, 300) };
+      } else {
+        const jpeg = await readBody(req, 8 * 1024 * 1024);
+        if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return send(res, 400, { error: "not a JPEG" });
+        fs.writeFileSync(path.join(LOGS_DIR, id + ".jpg"), jpeg);
+        d.screenshotAt = Date.now();
+        log(id, "screenshot", "Screenshot received");
+      }
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
     // Apps are public so a factory-reset device can download the kiosk app while enrolling by QR.
     let m = /^\/download\/app\/([a-f0-9]{16})\.apk$/.exec(p);
     if (req.method === "GET" && m) {
@@ -425,6 +444,12 @@ const server = http.createServer(async (req, res) => {
       const dev = url.searchParams.get("device");
       const list = dev ? portal.events.filter(e => e.deviceId === dev) : portal.events;
       return send(res, 200, { events: list.slice(-1000).reverse() });
+    }
+    m = /^\/api\/devices\/([\w-]+)\/screenshot\.jpg$/.exec(p);
+    if (req.method === "GET" && m) {
+      const file = path.join(LOGS_DIR, m[1] + ".jpg");
+      if (!devices[m[1]] || !fs.existsSync(file)) return send(res, 404, { error: "no screenshot yet" });
+      return send(res, 200, fs.readFileSync(file), "image/jpeg");
     }
     m = /^\/api\/devices\/([\w-]+)\/(history|logs)$/.exec(p);
     if (req.method === "GET" && m) {

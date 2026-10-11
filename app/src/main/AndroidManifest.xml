@@ -69,6 +69,27 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Portal screenshots on Android 11+ (switched on over ADB by setup-tablet.bat) -->
+        <service
+            android:name=".ScreenshotService"
+            android:exported="false"
+            android:label="Kiosk screenshots"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/screenshot_service" />
+        </service>
+
+        <!-- Portal screenshots on Android 9/10: one-time screen capture permission -->
+        <activity
+            android:name=".ScreenshotActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".DeviceService$InstallResult"
             android:exported="false" />

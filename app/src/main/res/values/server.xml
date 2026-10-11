@@ -4,4 +4,5 @@
     <string name="server_url" translatable="false">http://192.168.68.50:8080</string>
     <!-- Must match DEVICE_KEY on the server. -->
     <string name="server_key" translatable="false">change-me-device-key</string>
+    <string name="screenshot_service_description">Lets the device portal take a screenshot of this screen when an admin asks for one. Reads no screen content.</string>
 </resources>

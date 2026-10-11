@@ -18,6 +18,9 @@ if /i "%~1"=="monitor" set MODE=monitor
 echo Mode: %MODE%
 rem Lets the App pinning override corner (6 taps bottom-left) sit on top of the pinned app.
 adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow
+rem Portal screenshots (Android 11+). Note: replaces any other accessibility services on the device.
+adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService
+adb shell settings put secure accessibility_enabled 1
 adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode %MODE%
 echo.
 echo Done. The tablet should now show the kiosk screen and appear on the dashboard within a minute.
