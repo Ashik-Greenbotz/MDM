@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+
+    <!-- Wallpaper (logo sits on white, so it is centred rather than stretched) -->
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/wallpaper" />
+
+    <!-- Allowed apps, picked from the admin menu -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingTop="120dp">
+
+        <GridLayout
+            android:id="@+id/apps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:columnCount="4" />
+    </ScrollView>
+
+    <!-- Internet status -->
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="16dp"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- Invisible admin hotspot: tap 6 times within 3 seconds -->
+    <View
+        android:id="@+id/corner"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_gravity="top|end" />
+</FrameLayout>

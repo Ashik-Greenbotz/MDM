@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kiosk Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2129; --muted:#6b7280; --line:#e5e7eb; --ok:#2e7d32; --bad:#c62828; --accent:#f28c00; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  .summary span { margin-left:12px; color:var(--muted); }
+  main { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:16px; padding:16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; overflow:auto; }
+  #map { height: calc(100vh - 110px); min-height:320px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--card); }
+  tbody tr { cursor:pointer; }
+  tr.sel { background:#fff4e5; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+  .on { background:var(--ok); } .off { background:var(--bad); }
+  button { font:inherit; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  .muted { color:var(--muted); }
+  #err { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kiosk Dashboard</h1>
+  <span id="err"></span>
+  <div class="summary" id="summary"></div>
+</header>
+<main>
+  <div class="card">
+    <table>
+      <thead><tr><th>Device</th><th>Status</th><th>Kiosk</th><th>Battery</th><th>Last seen</th><th>Actions</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="card"><div id="map"></div></div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ONLINE_MS = 60 * 1000; // tablets check in every 10s
+const $ = id => document.getElementById(id);
+const map = L.map("map").setView([1.3521, 103.8198], 11);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+let devices = [], markers = {}, selected, skew = 0, fitted = false;
+
+const now = () => Date.now() + skew; // server clock
+const isOnline = d => d.lastSeen && now() - d.lastSeen < ONLINE_MS;
+const label = d => d.name || d.deviceName || d.id.slice(0, 8);
+const ago = t => {
+  if (!t) return "never";
+  const s = Math.round((now() - t) / 1000);
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return new Date(t).toLocaleString();
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+  return r.json();
+}
+
+async function refresh() {
+  try {
+    const r = await api("/api/devices");
+    skew = r.now - Date.now();
+    devices = r.devices.sort((a, b) => label(a).localeCompare(label(b)));
+    $("err").textContent = "";
+    render();
+  } catch (e) { $("err").textContent = "Server unreachable: " + e.message; }
+}
+
+function render() {
+  const online = devices.filter(isOnline).length;
+  $("summary").innerHTML = `<span>${devices.length} devices</span><span>${online} online</span><span>${devices.length - online} offline</span>`;
+  $("rows").innerHTML = devices.map(d => {
+    const on = isOnline(d);
+    const pending = d.command ? ` <span class="muted">(sending ${esc(d.command.type)}…)</span>` : "";
+    return `<tr data-id="${esc(d.id)}" class="${d.id === selected ? "sel" : ""}">
+      <td><b>${esc(label(d))}</b><br><span class="muted">${esc(d.model)} ${esc(d.serial)}</span></td>
+      <td><span class="dot ${on ? "on" : "off"}"></span>${on ? "Online" : "Offline"}</td>
+      <td>${d.kioskLocked === false ? "Unlocked" : "Locked"}${pending}</td>
+      <td>${d.battery ?? "?"}%${d.charging ? " ⚡" : ""}</td>
+      <td>${ago(d.lastSeen)}</td>
+      <td>
+        <button data-cmd="unlock">Unlock 2 min</button>
+        <button data-cmd="lock">Lock</button>
+        <button data-act="rename">Rename</button>
+        <button data-act="delete">Remove</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  const seen = new Set();
+  for (const d of devices) {
+    if (d.lat == null) continue;
+    seen.add(d.id);
+    const text = `<b>${esc(label(d))}</b><br>${isOnline(d) ? "Online" : "Offline"} · ±${Math.round(d.accuracy || 0)} m<br>location ${ago(d.locationTime)}`;
+    if (!markers[d.id]) markers[d.id] = L.marker([d.lat, d.lng]).addTo(map);
+    markers[d.id].setLatLng([d.lat, d.lng]).bindPopup(text);
+  }
+  for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
+  const pts = Object.values(markers).map(m => m.getLatLng());
+  if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 16 }); fitted = true; }
+}
+
+$("rows").onclick = async e => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  const id = tr.dataset.id, d = devices.find(x => x.id === id);
+  selected = id;
+  const cmd = e.target.dataset.cmd, act = e.target.dataset.act;
+  try {
+    if (cmd) {
+      if (!isOnline(d) && !confirm("This tablet is offline. Send anyway? It runs when the tablet comes back online.")) return;
+      await api(`/api/devices/${id}/command`, { type: cmd });
+    } else if (act === "rename") {
+      const name = prompt("Device name (e.g. site name):", label(d));
+      if (name) await api(`/api/devices/${id}/name`, { name });
+    } else if (act === "delete") {
+      if (confirm(`Remove ${label(d)} from the list? It reappears if the tablet checks in again.`)) await api(`/api/devices/${id}/delete`, {});
+    } else if (markers[id]) {
+      map.setView(markers[id].getLatLng(), 16);
+      markers[id].openPopup();
+    }
+  } catch (err) { alert("Failed: " + err.message); }
+  refresh();
+};
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

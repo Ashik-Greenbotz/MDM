@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default kiosk server; can be changed per tablet from the admin menu ("Server address"). -->
+<resources>
+    <string name="server_url" translatable="false">http://192.168.68.50:8080</string>
+    <!-- Must match DEVICE_KEY on the server. -->
+    <string name="server_key" translatable="false">change-me-device-key</string>
+</resources>

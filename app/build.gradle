@@ -1,0 +1,13 @@
+plugins { id "com.android.application" }
+
+android {
+    namespace "com.greenbotz.kiosk"
+    compileSdk 35
+    defaultConfig {
+        applicationId "com.greenbotz.kiosk"
+        minSdk 30
+        targetSdk 35
+        versionCode 2
+        versionName "2.0"
+    }
+}
