@@ -451,7 +451,8 @@ public class KioskActivity extends Activity {
             pkgs.add(getPackageName());
             dpm.setLockTaskPackages(admin, pkgs.toArray(new String[0]));
             // Home button returns to this screen; recents and notifications stay blocked.
-            dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_HOME
+            // App pinned: no Home button at all (way out is the bottom-left override or Unpin from the portal).
+            dpm.setLockTaskFeatures(admin, (isPinned(this) ? 0 : DevicePolicyManager.LOCK_TASK_FEATURE_HOME)
                     | DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS);
             setHomeAlias(true);
             IntentFilter home = new IntentFilter(Intent.ACTION_MAIN);
