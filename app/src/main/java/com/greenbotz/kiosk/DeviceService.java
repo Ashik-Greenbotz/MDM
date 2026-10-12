@@ -68,6 +68,7 @@ public class DeviceService extends Service {
     static final String PREF_TOKEN = "token";
     static final String PREF_CODE = "code";
     static final String PREF_MAINTENANCE = "maintenance";
+    static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
     static volatile boolean maintenanceShowing;
     private static final String PREF_EVENTS = "events", PREF_CRASH = "crash";
@@ -237,6 +238,11 @@ public class DeviceService extends Service {
             d.put("type", !monitor ? "android-kiosk" : isTelpo() ? "telpo" : "android");
             d.put("mode", monitor ? "monitor" : "kiosk");
             d.put("singleApp", prefs.getString(KioskActivity.PREF_SINGLE_APP, ""));
+            java.util.Set<String> acks = new java.util.HashSet<>(prefs.getStringSet(PREF_ACKS, java.util.Collections.emptySet()));
+            d.put("acks", new JSONArray(acks));
+            // Allowed apps for the portal; sent when changed (sentAllowed starts null, so always on the first report).
+            String allowed = new JSONArray(new java.util.TreeSet<>(prefs.getStringSet(KioskActivity.PREF_APPS, java.util.Collections.emptySet()))).toString();
+            if (!allowed.equals(sentAllowed)) d.put("allowedApps", new JSONArray(allowed));
             // Installed apps, so the portal can offer them for app pinning. Sent when the list changes.
             JSONArray apps = launcherApps();
             if (!apps.toString().equals(sentApps)) d.put("launcherApps", apps);
@@ -262,7 +268,10 @@ public class DeviceService extends Service {
             }
             JSONObject reply = post(serverUrl(this) + "/api/report", d);
             clearSent(events, crash);
+            clearAcks(acks);
+            setServerOk(prefs, true);
             if (d.has("launcherApps")) sentApps = apps.toString();
+            if (d.has("allowedApps")) sentAllowed = allowed;
             String code = reply.optString("code");
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
             boolean maint = reply.optBoolean("maintenance");
@@ -272,12 +281,65 @@ public class DeviceService extends Service {
                 handler.post(() -> startActivity(new Intent(this, MaintenanceActivity.class)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
             }
+            // Announcement: re-sent by the server until acked; the maintenance screen has priority.
+            JSONObject ann = reply.optJSONObject("announcement");
+            if (ann != null && !maint && !KioskActivity.monitorOnly(this)) {
+                String aid = ann.optString("id");
+                if (!aid.isEmpty() && !aid.equals(AnnouncementActivity.showing)
+                        && !prefs.getStringSet(PREF_ACKS, java.util.Collections.emptySet()).contains(aid)) {
+                    AnnouncementActivity.showing = aid;
+                    handler.post(() -> startActivity(new Intent(this, AnnouncementActivity.class)
+                            .putExtra("id", aid).putExtra("text", ann.optString("text"))
+                            .putExtra("image", ann.isNull("image") ? "" : ann.optString("image"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
+                }
+            }
             String tz = reply.optString("timeZone");
             if (!tz.isEmpty() && !tz.equals(java.util.TimeZone.getDefault().getID())) handler.post(() -> setTimeZone(tz));
             JSONObject cmd = reply.optJSONObject("command");
             if (cmd != null) handler.post(() -> runCommand(cmd));
         } catch (Exception e) {
             Log.w(TAG, "report failed: " + e);
+            setServerOk(getSharedPreferences("kiosk", MODE_PRIVATE), false);
+        }
+    }
+
+    private static void setServerOk(SharedPreferences p, boolean ok) {
+        if (p.getBoolean(PREF_SERVER_OK, !ok) != ok) p.edit().putBoolean(PREF_SERVER_OK, ok).apply();
+    }
+
+    // Drops acks the server has now received (a new one may have been added meanwhile).
+    private static synchronized void clearAcks(java.util.Set<String> sent) {
+        SharedPreferences p = appPrefs;
+        if (p == null || sent.isEmpty()) return;
+        java.util.Set<String> now = new java.util.HashSet<>(p.getStringSet(PREF_ACKS, java.util.Collections.emptySet()));
+        now.removeAll(sent);
+        p.edit().putStringSet(PREF_ACKS, now).commit();
+    }
+
+    // Acknowledge pressed: remembered until the server has it, then sent with an immediate check-in.
+    static synchronized void ack(Context ctx, String id) {
+        SharedPreferences p = ctx.getSharedPreferences("kiosk", MODE_PRIVATE);
+        java.util.Set<String> now = new java.util.HashSet<>(p.getStringSet(PREF_ACKS, java.util.Collections.emptySet()));
+        now.add(id);
+        p.edit().putStringSet(PREF_ACKS, now).commit();
+        DeviceService s = self;
+        if (s != null) s.net.execute(s::report);
+    }
+
+    // Announcement image: plain GET with the device key (no checksum, unlike installs). Off the main thread.
+    static android.graphics.Bitmap fetchImage(Context ctx, String path) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(ctx) + path).openConnection();
+        try {
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(60000);
+            c.setRequestProperty("X-Device-Key", ctx.getString(R.string.server_key));
+            if (c.getResponseCode() != 200) throw new Exception("image HTTP " + c.getResponseCode());
+            try (InputStream in = c.getInputStream()) {
+                return android.graphics.BitmapFactory.decodeStream(in);
+            }
+        } finally {
+            c.disconnect();
         }
     }
 
@@ -297,7 +359,7 @@ public class DeviceService extends Service {
     // Android 9/10 screenshots: kept for the life of the process once the user allowed it (ScreenshotActivity).
     static android.media.projection.MediaProjection projection;
     private static boolean screenshotWaiting;
-    private String sentApps;
+    private String sentApps, sentAllowed;
 
     private JSONArray launcherApps() {
         android.content.pm.PackageManager pm = getPackageManager();
@@ -400,6 +462,7 @@ public class DeviceService extends Service {
         }
         // Slow jobs run on their own thread so check-ins keep going.
         if (type.equals("screenshot")) screenshot();
+        if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
             new Thread(() -> {
                 try {
@@ -427,6 +490,24 @@ public class DeviceService extends Service {
         // Device owner apps may start activities from the background. Opening the kiosk screen locks it.
         if (type.equals("unlock") || type.equals("lock")) startActivity(open);
         handler.postDelayed(() -> net.execute(this::report), 3000);
+    }
+
+    // Portal "Allowed apps": same effect as the admin menu's app picker. KioskActivity redraws its tiles via its pref listener.
+    private void setAllowedApps(JSONArray pkgs) {
+        if (pkgs == null) return;
+        java.util.Set<String> apps = new java.util.TreeSet<>();
+        for (int i = 0; i < pkgs.length(); i++) if (!pkgs.optString(i).isEmpty()) apps.add(pkgs.optString(i));
+        SharedPreferences p = getSharedPreferences("kiosk", MODE_PRIVATE);
+        p.edit().putStringSet(KioskActivity.PREF_APPS, apps).commit();
+        DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
+        if (dpm.isDeviceOwnerApp(getPackageName()) && !KioskActivity.monitorOnly(this)) {
+            java.util.Set<String> lock = new java.util.TreeSet<>(apps);
+            String single = p.getString(KioskActivity.PREF_SINGLE_APP, "");
+            if (!single.isEmpty()) lock.add(single);
+            lock.add(getPackageName());
+            dpm.setLockTaskPackages(new ComponentName(this, AdminReceiver.class), lock.toArray(new String[0]));
+        }
+        event(this, "Allowed apps updated from portal");
     }
 
     // Downloads a portal file to `dest`, checking it against the sha256 the portal sent.

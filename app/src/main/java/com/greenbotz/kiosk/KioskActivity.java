@@ -60,7 +60,7 @@ public class KioskActivity extends Activity {
     // Used until changed from the admin menu.
     private static final String DEFAULT_PASSWORD = "1234";
     private static final String PREF_HASH = "pw_hash";
-    private static final String PREF_APPS = "apps";
+    static final String PREF_APPS = "apps";
     static final String PREF_UNLOCK_UNTIL = "unlock_until";
     private static final String PREF_WALLPAPER_SET = "wallpaper_set";
     private static final long UNLOCK_MS = 2 * 60 * 1000;
@@ -95,6 +95,8 @@ public class KioskActivity extends Activity {
     // Device ID arrives from the server in the background; show it as soon as it's saved.
     private final SharedPreferences.OnSharedPreferenceChangeListener codeListener = (p, key) -> {
         if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
+        if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showServerStatus);
+        if (PREF_APPS.equals(key)) runOnUiThread(this::renderApps);
     };
 
     // Battery % above the Device ID; ACTION_BATTERY_CHANGED is sticky, so registering also delivers the current level.
@@ -104,7 +106,13 @@ public class KioskActivity extends Activity {
             int level = i.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
             int scale = i.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100);
             boolean charging = i.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0;
-            if (level >= 0) ((TextView) findViewById(R.id.battery)).setText(level * 100 / scale + "%" + (charging ? "  charging" : ""));
+            if (level < 0) return;
+            int pct = level * 100 / scale;
+            int color = pct < 20 ? 0xFFD93025 : pct < 40 ? 0xFFF29900 : 0xFF1E8E3E;
+            TextView t = findViewById(R.id.battery);
+            t.setText(pct + "%" + (charging ? "  charging" : ""));
+            t.setTextColor(color);
+            t.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
         }
     };
 
@@ -120,6 +128,10 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
+        findViewById(R.id.serverStatus).setOnClickListener(v -> {
+            showServerAddress = !showServerAddress;
+            showServerStatus();
+        });
         findViewById(R.id.overrideCorner).setOnClickListener(v -> {
             handler.removeCallbacks(openSingleApp);
             if (isPinned(this) && PinOverlay.tap()) askOverridePin();
@@ -142,6 +154,7 @@ public class KioskActivity extends Activity {
         showDeviceCode();
         prefs().registerOnSharedPreferenceChangeListener(codeListener);
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        showServerStatus();
         if (monitorOnly(this)) {
             unlock();
             return;
@@ -202,6 +215,19 @@ public class KioskActivity extends Activity {
         handler.removeCallbacks(openSingleApp);
         prefs().unregisterOnSharedPreferenceChangeListener(codeListener);
         unregisterReceiver(batteryReceiver);
+    }
+
+    // Pill above Online/Offline: did the last check-in reach the portal server? Tap to show/hide the address.
+    private boolean showServerAddress;
+
+    private void showServerStatus() {
+        Uri u = Uri.parse(DeviceService.serverUrl(this));
+        String host = u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
+        boolean ok = prefs().getBoolean(DeviceService.PREF_SERVER_OK, false);
+        TextView s = findViewById(R.id.serverStatus);
+        s.setText("●  Server " + (ok ? "connected" : "disconnected") + (showServerAddress ? " · " + host : ""));
+        s.setTextColor(ok ? 0xFF1E8E3E : 0xFFD93025);
+        s.setBackground(rounded(ok ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
     }
 
     private void showDeviceCode() {
