@@ -31,11 +31,48 @@ The tablet must reach this PC over the network (same Wi-Fi/LAN).
 If the server moves, change it per tablet: 6 taps top-right → password → **Server address**.
 
 ## Files
+### Server and portal
 | Path | What |
 |---|---|
-| `server/server.js` | Server, plain Node.js, no packages to install. Saves tablets to `server/devices.json`. |
-| `dashboard/` | Dashboard and login pages. |
-| `app/` | Tablet app source. `Kiosk app phase2.apk` is the built app. |
+| `functions/server.js` | Portal server, plain Node.js. Office PC: `node server.js`, data in `server/`. |
+| `functions/index.js` | Runs `server.js` as a Firebase Cloud Function (see `firebase.json`). |
+| `functions/test-whatsapp.js` | End-to-end check of the WhatsApp offline alerts: `node test-whatsapp.js`. |
+| `functions/.env.example` | Copy to `functions/.env` (not in git): admin password, `DEVICE_KEY`, WhatsApp settings. |
+| `server/` | Office PC data (not in git): `devices.json`, `portal.json`, `logs/`, `uploads/`. |
+| `dashboard/` | Portal pages: `index.html` (portal), `login.html`, `logo.png`, `manifest.json` (Add to Home screen). |
+| `start-server.bat` / `start-server.sh` | Start the office PC server on port 8080. |
+| `Dockerfile`, `docker-compose.yml`, `Caddyfile` | Cloud server: portal in Docker behind Caddy (https for mdm.gbotz.site). |
+| `docker-compose.local.yml` | Same portal in Docker on the office PC, using `./server`. |
+| `.env.compose.example` | Settings for `docker-compose.yml`. |
+| `firebase.json`, `.firebaserc`, `storage.rules` | Firebase Hosting / Functions / Storage setup. |
+| `.github/workflows/` | `docker-deploy.yml`: a push to `main` builds and deploys the cloud portal. `pr-check.yml`: checks PRs to `main`. |
+| `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
+| `agents/` | Monitoring agents: `agent.ps1` (Windows), `agent.sh` (Linux), `esp32.ino` (IoT). |
+
+### Tablet app (`app/`, current version 10.12)
+| Path | What |
+|---|---|
+| `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |
+| `app/src/main/res/values/server.xml` | Built-in server address. Never commit a real key in it. |
+| `KioskActivity.java` | Home screen: status pill (green online, yellow server offline, red offline / tap for Wi-Fi), clock, battery, Device ID, allowed apps, admin menu (6 taps top-right). |
+| `SetupActivity.java` | First-run setup: Production/Debug server, Device ID, allowed apps. |
+| `DeviceService.java` | Checks in with the portal every 10 s and runs its commands (apps, relay, lock screen, reboot, ring, screenshot, install, file, logs, unlock/lock, single app). |
+| `AnnouncementActivity.java` | Full-screen announcements from the portal, with Acknowledge. |
+| `MaintenanceActivity.java` | Maintenance-mode screen. |
+| `ScreenshotService.java`, `ScreenshotActivity.java` | Portal screenshots: accessibility service, or screen capture on Android 9/10. |
+| `PinOverlay.java` | App pinning override: invisible bottom-left square over the pinned app, 6 taps open the override PIN. |
+| `ProvisioningActivity.java`, `AdminReceiver.java`, `BootReceiver.java` | Device-owner setup by QR, device admin, start on boot. |
+| `res/layout/main.xml` | Home screen layout. |
+| `res/values(-night)/` | Light/dark colours and themes (glass look). |
+| `res/drawable(-night)/` | Logo (light/dark), glass panels, gradient, Wi-Fi / Ethernet / battery icons, maintenance image. |
+| `setup-tablet.bat` | One-time USB setup of a new tablet (`setup-tablet.bat monitor` for monitor-only devices). |
+
+### Built apps (not in git, they contain device keys)
+| Path | What |
+|---|---|
+| `final apk/mdmkiosk app.apk` | Final app 10.12. One APK for both servers: pick Production or Debug in setup. |
+| `Cloud APK/Kiosk app v10.12.apk` | Same build, 10.12. |
+| `Kiosk app cloud.apk`, `Kiosk app local.apk`, `Kiosk app phase2.apk` | Older builds. |
 
 ## Before moving to the own server / cloud
 - Change `ADMIN_PASSWORD` and `DEVICE_KEY` (and `server_key` in `app/src/main/res/values/server.xml`, then rebuild).
