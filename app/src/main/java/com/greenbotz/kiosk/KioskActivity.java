@@ -8,6 +8,7 @@ import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.app.WallpaperManager;
 import android.app.admin.DevicePolicyManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -96,6 +97,17 @@ public class KioskActivity extends Activity {
         if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
     };
 
+    // Battery % above the Device ID; ACTION_BATTERY_CHANGED is sticky, so registering also delivers the current level.
+    private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            int level = i.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+            int scale = i.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100);
+            boolean charging = i.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0;
+            if (level >= 0) ((TextView) findViewById(R.id.battery)).setText(level * 100 / scale + "%" + (charging ? "  charging" : ""));
+        }
+    };
+
     static boolean monitorOnly(Context ctx) {
         return "monitor".equals(ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_MODE, "kiosk"));
     }
@@ -129,6 +141,7 @@ public class KioskActivity extends Activity {
         renderApps();
         showDeviceCode();
         prefs().registerOnSharedPreferenceChangeListener(codeListener);
+        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         if (monitorOnly(this)) {
             unlock();
             return;
@@ -188,6 +201,7 @@ public class KioskActivity extends Activity {
         super.onPause();
         handler.removeCallbacks(openSingleApp);
         prefs().unregisterOnSharedPreferenceChangeListener(codeListener);
+        unregisterReceiver(batteryReceiver);
     }
 
     private void showDeviceCode() {
