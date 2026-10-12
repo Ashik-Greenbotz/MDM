@@ -20,8 +20,6 @@ import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
-import android.net.LinkAddress;
-import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
@@ -139,7 +137,8 @@ public class KioskActivity extends Activity {
         overridePending = getIntent().getBooleanExtra(EXTRA_OVERRIDE, false);
         // Mode is picked once, on the first launch by setup-tablet.bat; after that only the admin menu changes it.
         if (!prefs().contains(PREF_MODE)) {
-            prefs().edit().putString(PREF_MODE, "monitor".equals(getIntent().getStringExtra("mode")) ? "monitor" : "kiosk").commit(); // commit: must survive an early crash
+            prefs().edit().putString(PREF_MODE, "monitor".equals(getIntent().getStringExtra("mode")) ? "monitor" : "kiosk")
+                    .putBoolean(SetupActivity.PREF_SETUP_DONE, false).commit(); // commit: must survive an early crash
         }
         setSystemWallpaperOnce();
         watchInternet();
@@ -170,6 +169,10 @@ public class KioskActivity extends Activity {
         hideSystemBars();
         if (MaintenanceActivity.on(this)) {
             startActivity(new Intent(this, MaintenanceActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
+        if (SetupActivity.needed(this)) {
+            startActivity(new Intent(this, SetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             return;
         }
         if (overridePending) {
@@ -225,7 +228,7 @@ public class KioskActivity extends Activity {
         String host = u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
         boolean ok = prefs().getBoolean(DeviceService.PREF_SERVER_OK, false);
         TextView s = findViewById(R.id.serverStatus);
-        s.setText("●  Server " + (ok ? "connected" : "disconnected") + (showServerAddress ? " · " + host : ""));
+        s.setText("●  Server" + (showServerAddress ? " · " + host : "")); // green = reached, red = not
         s.setTextColor(ok ? 0xFF1E8E3E : 0xFFD93025);
         s.setBackground(rounded(ok ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
     }
@@ -307,7 +310,7 @@ public class KioskActivity extends Activity {
 
     private void watchInternet() {
         TextView status = findViewById(R.id.status);
-        showOnline(status, false);
+        showOnline(status, false, 0);
         status.setOnClickListener(v -> {
             if (!online) showWifiPicker();
         });
@@ -317,18 +320,14 @@ public class KioskActivity extends Activity {
                     public void onCapabilitiesChanged(Network n, NetworkCapabilities caps) {
                         // VALIDATED = Android actually reached the internet, not just joined Wi-Fi.
                         boolean ok = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-                        runOnUiThread(() -> {
-                            showOnline(status, ok);
-                            showNet(caps, n);
-                        });
+                        int icon = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ? R.drawable.ic_wifi
+                                : caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ? R.drawable.ic_ethernet : 0;
+                        runOnUiThread(() -> showOnline(status, ok, icon));
                     }
 
                     @Override
                     public void onLost(Network n) {
-                        runOnUiThread(() -> {
-                            showOnline(status, false);
-                            findViewById(R.id.netInfo).setVisibility(View.GONE);
-                        });
+                        runOnUiThread(() -> showOnline(status, false, 0));
                     }
                 });
     }
@@ -340,55 +339,16 @@ public class KioskActivity extends Activity {
         return g;
     }
 
-    private void showOnline(TextView status, boolean online) {
+    // Online: Wi-Fi or Ethernet icon in the pill (a dot if neither). Offline: red, tap to pick Wi-Fi.
+    private void showOnline(TextView status, boolean online, int icon) {
         this.online = online;
-        status.setText(online ? "●  Online" : "●  Offline · tap to connect Wi-Fi");
-        status.setTextColor(online ? 0xFF1E8E3E : 0xFFD93025);
+        if (!online) icon = 0;
+        int color = online ? 0xFF1E8E3E : 0xFFD93025;
+        status.setText(online ? (icon != 0 ? "Online" : "●  Online") : "●  Offline · tap to connect Wi-Fi");
+        status.setTextColor(color);
+        status.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
+        status.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
         status.setBackground(rounded(online ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
-    }
-
-    // Line under the status pill: Wi-Fi icon + network name, or Ethernet icon + IP address.
-    private void showNet(NetworkCapabilities caps, Network n) {
-        TextView net = findViewById(R.id.netInfo);
-        int icon = 0;
-        String text = null;
-        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-            icon = R.drawable.ic_wifi;
-            String ssid = wifiName();
-            text = ssid.isEmpty() ? "Wi-Fi" : ssid;
-        } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-            icon = R.drawable.ic_ethernet;
-            String ip = ipv4(n);
-            text = ip.isEmpty() ? "Ethernet" : ip;
-        }
-        if (text == null) {
-            net.setVisibility(View.GONE);
-            return;
-        }
-        net.setText(text);
-        net.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
-        net.setVisibility(View.VISIBLE);
-    }
-
-    private String wifiName() {
-        WifiManager wm = getApplicationContext().getSystemService(WifiManager.class);
-        if (wm == null || wm.getConnectionInfo() == null) return "";
-        String s = wm.getConnectionInfo().getSSID();
-        if (s == null) return "";
-        s = s.replace("\"", "").trim();
-        return s.equals("<unknown ssid>") || s.equals("0x") ? "" : s;
-    }
-
-    private String ipv4(Network n) {
-        LinkProperties lp = getSystemService(ConnectivityManager.class).getLinkProperties(n);
-        if (lp != null) {
-            for (LinkAddress la : lp.getLinkAddresses()) {
-                if (la.getAddress() instanceof java.net.Inet4Address && !la.getAddress().isLoopbackAddress()) {
-                    return la.getAddress().getHostAddress();
-                }
-            }
-        }
-        return "";
     }
 
     // Own Wi-Fi list instead of the Settings panel, which links on to the rest of Settings.

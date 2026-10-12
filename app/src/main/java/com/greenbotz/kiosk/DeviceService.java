@@ -323,6 +323,11 @@ public class DeviceService extends Service {
         java.util.Set<String> now = new java.util.HashSet<>(p.getStringSet(PREF_ACKS, java.util.Collections.emptySet()));
         now.add(id);
         p.edit().putStringSet(PREF_ACKS, now).commit();
+        reportNow();
+    }
+
+    // Check in now instead of waiting for the next 10 s tick.
+    static void reportNow() {
         DeviceService s = self;
         if (s != null) s.net.execute(s::report);
     }

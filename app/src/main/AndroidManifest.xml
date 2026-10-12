@@ -93,6 +93,14 @@
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
         <activity
+            android:name=".SetupActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:lockTaskMode="if_whitelisted"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+
+        <activity
             android:name=".AnnouncementActivity"
             android:exported="false"
             android:launchMode="singleTask"
