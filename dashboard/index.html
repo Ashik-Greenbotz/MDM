@@ -191,7 +191,8 @@
   .hbar b { background: linear-gradient(90deg, var(--ok), #6ee7b7); } .hbar s { background: var(--bad); text-decoration: none; }
   .alarm { display: flex; align-items: center; gap: 12px; padding: 13px 18px; margin-bottom: 18px; border-radius: 16px;
     background: linear-gradient(135deg, #e5383b, #ff6b6b); color: #fff; font-weight: 600; box-shadow: 0 8px 30px rgba(229,56,59,.35);
-    animation: pulse 1.6s ease-in-out infinite; }
+    animation: alarmFlash .5s steps(2) infinite; }
+  @keyframes alarmFlash { 50% { background: #8b0000; box-shadow: 0 0 40px rgba(255,0,0,.8); } }
   .alarm .grow { flex: 1; }
   .alarm .btn { background: #fff; color: var(--bad); border-color: #fff; }
   .alarm.maint { background: var(--warn-soft); color: var(--warn); border: 1px solid rgba(255,179,64,.45); box-shadow: none; animation: none; flex-wrap: wrap;
@@ -317,7 +318,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Line icons from Lucide (lucide.dev, ISC licence), inlined so the portal works offline.
@@ -326,11 +327,11 @@ const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="curre
 const PAGES = [
   ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
-  ["activity", "activity", "Activity log"], ["features", "sparkles", "Features"], ["users", "users", "Users & access"],
+  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["features", "sparkles", "Features"], ["users", "users", "Users & access"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites" }[page] || page);
 
 let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
@@ -358,7 +359,7 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const withUnpin = cmds => cmds.includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]), "maintOn", "maintOff"] : cmds;
+const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]), "maintOn", "maintOff"] : cmds;
 const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
 const stateCell = d => (d.maintenance ? `<span class="pill warn" title="Showing the System Maintenance screen">🛠 Maintenance</span> ` : "") + stateCell1(d);
 const stateCell1 = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
@@ -420,47 +421,55 @@ async function refresh() {
 // ---------------- offline alarm ----------------
 // Sounds while any offline alert is open and not acknowledged; again for every new one. Browsers only allow sound
 // after the user has clicked somewhere on the page once, so the first click (any click) unlocks it.
-let audio, soundOn = true, lastAlarmAt = 0, alarmIds = "";
+let audio, soundOn = true, siren = null;
 try { soundOn = localStorage.getItem("alarmSound") !== "off"; } catch {}
-const offlineAlerts = () => S.alerts.filter(a => a.kind === "offline" && !a.resolvedAt && !a.ackAt);
-function beep() {
+const alarmAlerts = () => S.alerts.filter(a => !a.resolvedAt && !a.ackAt);
+// Fire-alarm siren: a sawtooth wailing 650 -> 1500 Hz every second, with a square wave an octave down.
+// It plays until stopSiren(). With seconds set, it stops by itself (the test burst when sound is turned on).
+function startSiren(seconds) {
+  if (siren) return;
   try {
     audio ||= new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === "suspended") audio.resume();
-    const t0 = audio.currentTime;
-    for (let i = 0; i < 6; i++) {          // three two-tone "dee-daa" pulses, ~2 s
-      const o = audio.createOscillator(), g = audio.createGain();
-      o.type = "square";
-      o.frequency.value = i % 2 ? 660 : 880;
-      g.gain.setValueAtTime(0.0001, t0 + i * 0.33);
-      g.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.33 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.33 + 0.3);
-      o.connect(g).connect(audio.destination);
-      o.start(t0 + i * 0.33);
-      o.stop(t0 + i * 0.33 + 0.32);
-    }
+    const g = audio.createGain(), lfo = audio.createOscillator(), depth = audio.createGain();
+    g.gain.value = 0.6;
+    lfo.type = "triangle"; lfo.frequency.value = 1;   // one wail per second
+    depth.gain.value = 425;                          // 1075 Hz ± 425 = 650 … 1500 Hz
+    lfo.connect(depth);
+    const oscs = [["sawtooth", 1075, 1], ["square", 537.5, 0.5]].map(([type, f, k]) => {
+      const o = audio.createOscillator(), mix = audio.createGain(), sweep = audio.createGain();
+      o.type = type; o.frequency.value = f; mix.gain.value = k * 0.5;
+      sweep.gain.value = f / 1075;
+      depth.connect(sweep).connect(o.frequency);
+      o.connect(mix).connect(g);
+      return o;
+    });
+    g.connect(audio.destination);
+    [lfo, ...oscs].forEach(o => o.start());
+    siren = { stop: () => { [lfo, ...oscs].forEach(o => { try { o.stop(); } catch {} }); g.disconnect(); } };
+    if (seconds) setTimeout(stopSiren, seconds * 1000);
   } catch {}
 }
+function stopSiren() { if (siren) { siren.stop(); siren = null; } }
 document.addEventListener("click", () => { try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {} }, { once: true });
+const KIND_TEXT = { offline: "offline", battery: "low battery", crash: "app crash" };
 function renderAlarm() {
-  const list = offlineAlerts();
+  const list = alarmAlerts();
   $("soundBtn").innerHTML = ico(soundOn ? "volume-2" : "volume-x");
   $("soundBtn").title = soundOn ? "Alarm sound on (click to mute)" : "Alarm sound muted (click to turn on)";
-  if (!list.length) { $("alarmBar").innerHTML = ""; alarmIds = ""; return; }
-  const names = list.map(a => dev(a.deviceId)).filter(Boolean).map(label);
-  $("alarmBar").innerHTML = `<div class="alarm">🚨<span class="grow">${list.length} device${list.length > 1 ? "s" : ""} offline: ${esc(names.slice(0, 5).join(", "))}${names.length > 5 ? " +" + (names.length - 5) + " more" : ""}</span>
-    <a class="btn" href="#/devices" data-status="offline" id="alarmShow">Show</a><button class="btn" id="alarmAck">Acknowledge (stop alarm)</button></div>`;
-  $("alarmShow").onclick = () => { filters = { q: "", type: "", group: "", status: "offline" }; };
-  $("alarmAck").onclick = () => act(() => Promise.all(offlineAlerts().map(a => api(`/api/alerts/${a.id}/ack`, {}))), "Alarm acknowledged");
-  const ids = list.map(a => a.id).join();
-  const isNew = ids !== alarmIds && list.some(a => !alarmIds.includes(a.id));
-  alarmIds = ids;
-  if (soundOn && (isNew || Date.now() - lastAlarmAt > 30000)) { lastAlarmAt = Date.now(); beep(); }
+  if (!list.length) { $("alarmBar").innerHTML = ""; stopSiren(); return; }
+  const counts = Object.entries(list.reduce((m, a) => (m[a.kind] = (m[a.kind] || 0) + 1, m), {})).map(([k, n]) => `${n} ${KIND_TEXT[k] || k}`).join(", ");
+  const names = [...new Set(list.map(a => dev(a.deviceId)).filter(Boolean).map(label))];
+  $("alarmBar").innerHTML = `<div class="alarm">🚨<span class="grow">${counts}: ${esc(names.slice(0, 5).join(", "))}${names.length > 5 ? " +" + (names.length - 5) + " more" : ""}</span>
+    <a class="btn" href="#/alerts" id="alarmShow">Show</a><button class="btn" id="alarmAck">Acknowledge (stop alarm)</button></div>`;
+  $("alarmAck").onclick = () => { stopSiren(); act(() => Promise.all(alarmAlerts().map(a => api(`/api/alerts/${a.id}/ack`, {}))), "Alarm acknowledged"); };
+  if (soundOn) startSiren(); else stopSiren();
 }
 $("soundBtn").onclick = () => {
   soundOn = !soundOn;
   try { localStorage.setItem("alarmSound", soundOn ? "on" : "off"); } catch {}
-  if (soundOn) beep();
+  stopSiren();
+  if (soundOn && !alarmAlerts().length) startSiren(2);
   renderAlarm();
 };
 
@@ -628,7 +637,7 @@ VIEWS.devices = (arg, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>Memory</th><th>Storage</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
       </div>`;
     $("q").oninput = e => { filters.q = e.target.value; VIEWS.devices(); };
@@ -645,7 +654,7 @@ VIEWS.devices = (arg, first) => {
     (filters.status || filters.type ? "" : S.pending.filter(x => !filters.group || (filters.group === "__none" ? !x.group : x.group === filters.group))
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
-      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="5"></td>
+      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
       <td><button class="btn ghost" data-unpend="${esc(x.code)}">Cancel</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
@@ -659,7 +668,6 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
       ${showSite ? `<td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>` : ""}
       <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
-      <td>${meter(d.ram, 80, 92)}</td><td>${meter(d.disk, 85, 95)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
@@ -913,7 +921,12 @@ VIEWS.device = async (id, first) => {
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
         </div>
       </div>
-      <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download logs</button></h3><pre class="log" id="dLogs">Loading…</pre></div>`;
+      <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
+        <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
+      <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
+        <div class="pad row">Saved logs from <input type="datetime-local" id="dFrom"> to <input type="datetime-local" id="dTo">
+          <button class="btn" id="dRange">⬇ Download</button><span class="meta" id="dDays"></span></div>
+        <pre class="log" id="dLogs">Loading…</pre></div>`;
     $("view").onclick = e => {
       if (e.target.id === "dShot") return screenshot(dev(id), false);
       const b = e.target.closest("[data-a],[data-cmd]");
@@ -922,7 +935,28 @@ VIEWS.device = async (id, first) => {
     };
     $("dLogBtn").onclick = () => command([dev(id)], "logs");
     $("dLogDl").onclick = () => deviceAction(dev(id), "logs");
+    const local = t => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    $("dFrom").value = local(midnight.getTime()); $("dTo").value = local(Date.now());
+    $("dRange").onclick = () => {
+      if (!$("dFrom").value || !$("dTo").value || $("dFrom").value > $("dTo").value) return toast("Pick a From time before the To time", true);
+      location.href = `/api/devices/${encodeURIComponent(id)}/logs/download?from=${$("dFrom").value}&to=${$("dTo").value}`;
+    };
+    $("dApps").onchange = () => { $("dApps").dataset.edited = "1"; };
+    $("dAppsSave").onclick = () => {
+      const packages = [...$("dApps").querySelectorAll("input:checked")].map(x => x.value);
+      act(() => api(`/api/devices/${encodeURIComponent(id)}/command`, { type: "apps", packages }), "Allowed apps sent to the device")
+        .then(() => { delete $("dApps").dataset.edited; });
+    };
   }
+  const apps = d.type === "android-kiosk" ? d.launcherApps || [] : [];
+  $("dAppsCard").hidden = !apps.length;
+  $("dAppsNote").textContent = d.pending === "apps" ? "Sending to device…" : d.allowedApps ? "" : "Update the tablet app to see its current list";
+  if (!$("dApps").dataset.edited) {
+    const on = new Set(d.allowedApps || []);
+    $("dApps").innerHTML = apps.map(([pkg, name]) => `<label class="chip"><input type="checkbox" value="${esc(pkg)}" ${on.has(pkg) ? "checked" : ""}>${esc(name)}</label>`).join("");
+  }
+  $("dDays").textContent = d.logDays?.length ? `Saved days: ${d.logDays[0]} → ${d.logDays[d.logDays.length - 1]}` : "No saved days yet (logs are saved every hour)";
   $("dTitle").innerHTML = `<span class="code" style="font-size:16px">${esc(d.code || "")}</span> ${esc(label(d))}`;
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
   $("dCmds").innerHTML = withUnpin(cmds).map(c => `<button class="btn ${c === "unlock" || c === "screenshot" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
@@ -954,8 +988,12 @@ function chart(h) {
   const paths = lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) =>
     `<polyline fill="none" stroke="${c}" stroke-width="2" points="${h.filter(r => r[i] != null).map(r => x(r[0]).toFixed(1) + "," + y(r[i]).toFixed(1)).join(" ")}"/>`);
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      ${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}" stroke-dasharray="3 4"/>`).join("")}${paths.join("")}</svg>
-    <div class="legend">${lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, , c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("")}
+      ${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}" stroke-dasharray="3 4"/>
+        <text x="${W - 4}" y="${y(v) - 3}" text-anchor="end" font-size="10" fill="${css("--muted")}">${v}%</text>`).join("")}${paths.join("")}</svg>
+    <div class="legend">${lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) => {
+        const last = [...h].reverse().find(r => r[i] != null)[i];
+        return `<span><i style="background:${c}"></i>${n.replace(" %", "")} <b>${Math.round(last)}%</b></span>`;
+      }).join("")}
       <span>${new Date(t0).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} → now</span></div>`;
 }
 
@@ -980,7 +1018,8 @@ VIEWS.sites = () => {
             <div class="${off ? "bad" : ""}"><b>${off}</b><span>Offline</span></div>
             <div class="${alerts ? "warn" : ""}"><b>${alerts}</b><span>Alerts</span></div>
           </div>
-          ${g ? `<button class="btn" data-s="edit" data-name="${esc(g)}">Edit name / location</button>` : ""}
+          ${g && me().admin ? `<div class="row"><button class="btn" data-s="edit" data-name="${esc(g)}">Edit name / location</button>
+            <button class="btn ghost danger" data-s="del" data-name="${esc(g)}">Delete</button></div>` : ""}
         </div>`;
       }).join("") || `<div class="card empty" style="padding:24px">No sites yet. Click <b>+ Add site</b>.</div>`}</div>`;
   $("view").onclick = e => {
@@ -991,6 +1030,7 @@ VIEWS.sites = () => {
     const name = b.dataset.name;
     if (b.dataset.s === "add") siteForm();
     if (b.dataset.s === "edit") siteForm(siteOf(name));
+    if (b.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) act(() => api("/api/sites/delete", { name }), "Site deleted");
   };
 };
 
@@ -1001,7 +1041,7 @@ VIEWS.site = async (name, first) => {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
       <div class="row" style="margin-bottom:4px"><h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
-        <button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button><button class="btn ghost danger" data-s="del">Delete site</button></div>
+        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
       <div class="cols">
@@ -1012,7 +1052,7 @@ VIEWS.site = async (name, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>Memory</th><th>Storage</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden>No devices in this site yet. Click <b>Add devices</b>.</div></div></div>
       <div class="cols">
         <div class="card"><h3>Open alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3><table><tbody id="sAlerts"></tbody></table></div>
@@ -1090,12 +1130,36 @@ VIEWS.alerts = () => {
       ${dev(a.deviceId) ? `<a class="meta" href="#/device/${encodeURIComponent(a.deviceId)}">Open device →</a>` : ""}</td>
       <td class="meta">${new Date(a.at).toLocaleString()}</td>
       <td>${a.resolvedAt ? `<span class="pill ok">Resolved</span>` : a.ackAt ? `<span class="pill neutral">Acknowledged</span>` : `<button class="btn" data-ack="${a.id}">Acknowledge</button>`}</td></tr>`;
-  $("view").innerHTML = `<h2>Alerts</h2><p class="lead">Raised automatically: device offline for over 2 minutes (with an alarm sound), battery under ${LOW_BATTERY}%, or the app crashed.
+  $("view").innerHTML = `<div class="row" style="justify-content:space-between"><h2>Alerts</h2>
+      ${me().admin ? `<button class="btn" id="waBtn">💬 WhatsApp alerts${S.whatsapp?.length ? ` (${S.whatsapp.length})` : ""}</button>` : ""}</div><p class="lead">Raised automatically: device offline for over 2 minutes (with an alarm sound), battery under ${LOW_BATTERY}%, or the app crashed.
     Offline and battery alerts clear themselves when the problem is fixed.</p>
     <div class="card"><h3>Open (${open.length})</h3><table><tbody>${open.map(row).join("") || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
     <div class="card"><h3>Resolved · last 7 days</h3><table><tbody>${done.map(row).join("") || `<tr><td class="empty">None</td></tr>`}</tbody></table></div>`;
-  $("view").onclick = e => { const b = e.target.closest("[data-ack]"); if (b) act(() => api(`/api/alerts/${b.dataset.ack}/ack`, {}), "Acknowledged"); };
+  $("view").onclick = e => {
+    const b = e.target.closest("[data-ack]");
+    if (b) act(() => api(`/api/alerts/${b.dataset.ack}/ack`, {}), "Acknowledged");
+    if (e.target.closest("#waBtn")) whatsappForm();
+  };
 };
+
+// WhatsApp numbers that get every new alert and "back online" (sent with CallMeBot, free).
+function whatsappForm() {
+  const row = (r = {}) => `<div class="row wa" style="margin:6px 0"><input placeholder="Name" value="${esc(r.name)}" style="width:110px">
+    <input placeholder="+6591234567" value="${esc(r.phone)}" style="width:150px"><input placeholder="API key" value="${esc(r.apikey)}" style="width:110px">
+    <button class="btn ghost" type="button" data-rm>✕</button></div>`;
+  const read = () => [...document.querySelectorAll(".wa")].map(x => { const [name, phone, apikey] = [...x.querySelectorAll("input")].map(i => i.value.trim()); return { name, phone, apikey }; })
+    .filter(r => r.name || r.phone || r.apikey);
+  dialog(`<h2>WhatsApp alerts</h2>
+    <p class="meta">Each number gets a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when an offline device is back online.</p>
+    <p class="meta"><b>Get an API key (once per phone):</b> save <b>+34 644 71 81 99</b> in that phone's contacts, then send it the WhatsApp message
+      <code>I allow callmebot to send me messages</code>. The reply contains the API key.</p>
+    <div id="waRows">${(S.whatsapp?.length ? S.whatsapp : [{}]).map(row).join("")}</div>
+    <p><button class="btn" type="button" id="waAdd">+ Add number</button> <button class="btn" type="button" id="waTest">Save and send test</button></p>`,
+    "Save", () => act(() => api("/api/whatsapp", { list: read() }), "WhatsApp numbers saved"));
+  $("waRows").onclick = e => { if (e.target.closest("[data-rm]")) e.target.closest(".wa").remove(); };
+  $("waAdd").onclick = () => $("waRows").insertAdjacentHTML("beforeend", row());
+  $("waTest").onclick = () => act(() => api("/api/whatsapp", { list: read(), test: true }), "Test message sent. Check WhatsApp");
+}
 
 // Target picker used by tasks: all / group / type.
 const targetText = t => t.all ? "All devices" : t.group != null ? "Site: " + groupName(t.group) : t.type ? "Type: " + (TYPES[t.type] || t.type) : "?";
@@ -1161,6 +1225,7 @@ async function upload(kind, file, labelText) {
   }
   const r = await fetch("/api/upload?" + q, { method: "POST", body: file });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+  return r.json();
 }
 
 VIEWS.apps = (arg, first) => {
@@ -1214,40 +1279,94 @@ function chooseDevices(cmd, done) {
     });
 }
 
+// Announcements: a message and/or picture that pops up on the kiosk devices until someone taps Acknowledge.
+VIEWS.announcements = (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `<h2>Announcements</h2><p class="lead">Send a message or a picture to kiosk devices. It pops up on the screen and stays until someone taps <b>Acknowledge</b>.
+      Devices that are offline get it as soon as they come back.</p>
+      <div class="card"><h3>New announcement</h3><form class="grid pad" id="nForm">
+        <label>Message</label><textarea id="nText" rows="3" maxlength="1000" placeholder="e.g. The lobby will be closed tomorrow from 9 to 11 am."></textarea>
+        <label>Picture</label><input type="file" id="nImg" accept="image/*">
+        <label>Send to</label><select id="nTo">${picked.size ? `<option value="picked">${picked.size} selected on the Devices page</option>` : ""}${targetSelect()}</select>
+        <span></span><div><button class="btn primary" id="nSend">Send announcement</button></div></form></div>
+      <div class="card"><h3>Sent</h3><div id="nList"></div></div>`;
+    $("nForm").onsubmit = async e => {
+      e.preventDefault();
+      const text = $("nText").value.trim(), file = $("nImg").files[0], v = $("nTo").value;
+      if (!text && !file) return toast("Write a message or pick a picture", true);
+      $("nSend").disabled = true;
+      await act(async () => {
+        const image = file ? (await upload("file", file)).id : null;
+        const target = v === "picked" ? { ids: [...picked] } : parseTarget(v);
+        const r = await api("/api/announcements", { text, image, target });
+        e.target.reset();
+        return r;
+      }, r => `Sent to ${r.count} device${r.count === 1 ? "" : "s"}`);
+      $("nSend").disabled = false;
+    };
+    $("nList").onclick = e => {
+      const b = e.target.closest("[data-del]");
+      if (b && confirm("Delete this announcement? Devices that haven't acknowledged it stop showing it.")) act(() => api("/api/announcements/delete", { id: b.dataset.del }), "Deleted");
+    };
+  }
+  const open = new Set([...document.querySelectorAll("#nList details[open]")].map(x => x.dataset.id));
+  $("nList").innerHTML = (S.announcements || []).map(a => {
+    const done = a.deviceIds.filter(id => a.acks[id]).length;
+    return `<details data-id="${a.id}" ${open.has(a.id) ? "open" : ""} style="border-top:1px solid var(--line);padding:10px 16px">
+      <summary class="row" style="cursor:pointer"><span class="pill ${done === a.deviceIds.length ? "ok" : "warn"}">${done} / ${a.deviceIds.length} acknowledged</span>
+        <span style="flex:1">${esc(a.text || "(picture only)")}${a.image ? " 🖼" : ""}</span><span class="meta">${new Date(a.at).toLocaleString()} · ${esc(a.by)}</span>
+        <button class="btn ghost" data-del="${a.id}">Delete</button></summary>
+      ${a.image ? `<p><a href="/download/file/${a.image}" target="_blank">View picture</a></p>` : ""}
+      <table><tbody>${a.deviceIds.map(id => {
+        const d = dev(id), t = a.acks[id];
+        return `<tr><td>${d ? `<a href="#/device/${encodeURIComponent(id)}">${esc(label(d))}</a>` : "Removed device"}</td>
+          <td>${t ? `<span class="pill ok">Acknowledged ${new Date(t).toLocaleString()}</span>` : `<span class="pill neutral">Waiting${d && !isOnline(d) ? " (device offline)" : ""}</span>`}</td></tr>`;
+      }).join("")}</tbody></table></details>`;
+  }).join("") || `<p class="empty">Nothing sent yet</p>`;
+};
+
 VIEWS.enroll = (arg, first) => {
   if (first) {
-    const lanGuess = location.hostname === "localhost" || location.hostname === "127.0.0.1" ? "http://192.168.68.50:" + (location.port || 80) : location.origin;
-    $("view").innerHTML = `<h2>Enroll devices</h2><p class="lead">Three ways to add a device. Tokens put new devices straight into the right site and mode.</p>
+    // The device must reach this server, so "localhost" is swapped for this PC's network address.
+    const server = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && S.lan ? `http://${S.lan}:${location.port || 80}` : location.origin;
+    $("view").innerHTML = `<h2>Enroll devices</h2><p class="lead">Pick a site, show the QR code, scan it on the new device. That's it.</p>
       <div class="cols">
-        <div class="card"><h3>1 · Create an enrollment token</h3><form class="grid pad" id="kForm">
-          <label>Name</label><input id="kLabel" placeholder="e.g. Site A lobby" required>
-          <label>Site</label><select id="kGroup"></select>
-          <label>Mode</label><select id="kMode"><option value="kiosk">Kiosk (locked to allowed apps)</option><option value="monitor">Monitor only (device works normally)</option></select>
-          <span></span><div><button class="btn primary">Create token</button></div></form>
-          <div class="table-wrap"><table><thead><tr><th>Token</th><th>Site</th><th>Mode</th><th>Used</th><th></th></tr></thead><tbody id="kRows"></tbody></table></div></div>
-        <div class="card"><h3>2 · QR code (new or factory-reset Android)</h3><div class="pad">
-          <form class="grid" id="qForm">
-            <label>Token</label><select id="qTok"></select>
-            <label>Server address</label><input id="qServer" value="${esc(lanGuess)}" required>
-            <label>Wi-Fi name</label><input id="qSsid" placeholder="optional: device joins this Wi-Fi during setup">
-            <label>Wi-Fi password</label><input id="qPass" type="password" autocomplete="off">
-            <span></span><div><button class="btn primary">Make QR code</button></div></form>
-          <div id="qOut" style="margin-top:14px"></div>
-          <p class="meta">On the device: factory reset → on the first <b>Welcome</b> screen tap the same spot 6 times → scan this code. Android 9+ (Telpo terminals, Samsung tablets, phones).
-          The device must reach the server address, so use this PC's network IP, not "localhost".</p></div></div>
+        <div class="card"><h3>Enroll a new device</h3><form class="grid pad" id="qForm">
+          <label>Site</label><select id="qGroup"></select>
+          <label>Mode</label><select id="qMode"><option value="kiosk">Kiosk (locked to allowed apps)</option><option value="monitor">Monitor only (device works normally)</option></select>
+          <label>Wi-Fi name</label><input id="qSsid" placeholder="optional: the device joins this Wi-Fi during setup">
+          <label>Wi-Fi password</label><input id="qPass" type="password" autocomplete="off" placeholder="optional">
+          <label>Server address</label><input id="qServer" value="${esc(server)}" required>
+          <span></span><div><button class="btn primary">Show QR code</button></div></form></div>
+        <div class="card"><h3>QR code</h3><div class="pad"><div id="qOut"><p class="empty">Fill in the form and click <b>Show QR code</b>.</p></div>
+          <ol class="meta" style="padding-left:18px"><li>Factory reset the device (Android 9+: Telpo, Samsung tablets, phones).</li>
+            <li>On the first <b>Welcome</b> screen tap the same spot 6 times.</li><li>Scan this code. The device joins the site above by itself.</li></ol></div></div>
       </div>
-      <div class="card"><h3>3 · USB cable (device already set up, no accounts on it)</h3><div class="pad">
-        <p>Turn on USB debugging, connect, then double-click <b>setup-tablet.bat</b> (kiosk) or run <code>setup-tablet.bat monitor</code> (monitor only) in the project folder.</p>
-        <p class="meta">Windows PCs: run <code>agents\\agent.ps1</code>. Linux: run <code>agents/agent.sh</code>. IoT boards: see <code>agents/esp32.ino</code>.</p></div></div>`;
-    $("kForm").onsubmit = e => { e.preventDefault(); act(() => api("/api/tokens", { label: $("kLabel").value, group: $("kGroup").value, mode: $("kMode").value }).then(() => e.target.reset()), "Token created"); };
+      <details class="card"><summary><h3 style="display:inline">Enrollment tokens</h3></summary>
+        <p class="meta pad" style="margin:0">A token is made for each site + mode the first time you show its QR code. Delete one to stop new devices using that QR code.</p>
+        <div class="table-wrap"><table><thead><tr><th>Token</th><th>Site</th><th>Mode</th><th>Used</th><th></th></tr></thead><tbody id="kRows"></tbody></table></div></details>
+      <details class="card"><summary><h3 style="display:inline">Other ways to add a device</h3></summary><div class="pad">
+        <p><b>Device already set up in kiosk mode:</b> create a 4-digit Device ID and type it on the device (admin menu → Link device ID).
+          <button class="btn" id="kLink" type="button">Create Device ID</button></p>
+        <p><b>USB cable</b> (no accounts on the device): turn on USB debugging, connect, then double-click <b>setup-tablet.bat</b> (kiosk) or run <code>setup-tablet.bat monitor</code>.</p>
+        <p class="meta">Windows PCs: run <code>agents\\agent.ps1</code>. Linux: <code>agents/agent.sh</code>. IoT boards: <code>agents/esp32.ino</code>.</p></div></details>`;
+    $("kLink").onclick = addDevice;
     $("qForm").onsubmit = async e => {
       e.preventDefault();
+      const group = $("qGroup").value, mode = $("qMode").value;
       try {
-        const r = await api("/api/qr", { token: $("qTok").value, server: $("qServer").value.trim(), wifiSsid: $("qSsid").value, wifiPassword: $("qPass").value });
+        let t = S.tokens.find(x => (x.group || "") === group && (x.mode || "kiosk") === mode);
+        if (!t) {
+          await api("/api/tokens", { label: `${group || "No site"} · ${mode === "monitor" ? "Monitor" : "Kiosk"}`, group, mode });
+          await refresh();
+          t = S.tokens.find(x => (x.group || "") === group && (x.mode || "kiosk") === mode);
+        }
+        const r = await api("/api/qr", { token: t.token, server: $("qServer").value.trim(), wifiSsid: $("qSsid").value, wifiPassword: $("qPass").value });
         const qr = qrcode(0, "L");
         qr.addData(r.qr);
         qr.make();
-        $("qOut").innerHTML = `<div class="qr">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>`;
+        $("qOut").innerHTML = `<div class="qr">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
+          <p class="meta">Site <b>${esc(group || "No site")}</b> · ${mode === "monitor" ? "Monitor only" : "Kiosk"}</p>`;
       } catch (err) { toast("Failed: " + err.message, true); }
     };
     $("kRows").onclick = e => {
@@ -1255,16 +1374,14 @@ VIEWS.enroll = (arg, first) => {
       if (b && confirm("Delete this token? Devices already enrolled stay.")) act(() => api("/api/tokens/delete", { token: b.dataset.del }), "Deleted");
     };
   }
-  const kSel = $("kGroup").value;
-  $("kGroup").innerHTML = options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], kSel);
-  const sel = $("qTok").value;
-  $("qTok").innerHTML = options(S.tokens.map(t => [t.token, t.label + (t.group ? " → " + t.group : "")]), sel) || `<option value="">Create a token first</option>`;
+  const sel = $("qGroup").value;
+  $("qGroup").innerHTML = options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], sel);
   $("kRows").innerHTML = S.tokens.slice().reverse().map(t => `<tr><td><div class="name">${esc(t.label)}</div><code class="meta">${esc(t.token)}</code></td>
       <td>${esc(t.group || "–")}</td><td>${t.mode === "monitor" ? "Monitor" : "Kiosk"}</td><td>${t.uses || 0}×</td>
       <td><button class="btn ghost" data-del="${esc(t.token)}">Delete</button></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No tokens yet</td></tr>`;
 };
 
-const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸" };
+const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸", announcement: "📢" };
 const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc(e.text)}${e.deviceId && dev(e.deviceId) && !location.hash.startsWith("#/device/")
   ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
 VIEWS.activity = async (arg, first) => {
