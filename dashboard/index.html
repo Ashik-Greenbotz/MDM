@@ -5,24 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Device Portal</title>
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#f28c00">
+<meta name="theme-color" content="#e6eeff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a1024" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   /* Theme: html[data-theme] is set before paint by the head script (auto follows the system). */
   :root {
-    --bg: #f5f5f7; --card: rgba(255,255,255,.78); --solid: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: rgba(0,0,0,.08); --hover: rgba(0,0,0,.04);
-    --glass: rgba(255,255,255,.7); --accent: #f28c00; --accent2: #ffb340; --accent-soft: rgba(242,140,0,.12); --accent-ink: #ffffff;
+    --bg: #eceffa; --bg-grad: linear-gradient(135deg, #e6eeff 0%, #f1e8ff 50%, #ffeadb 100%);
+    --card: rgba(255,255,255,.55); --sheen: rgba(255,255,255,.45); --edge: rgba(255,255,255,.75); --solid: #ffffff; --th: rgba(255,255,255,.72);
+    --dlg: rgba(255,255,255,.8); --btn: rgba(255,255,255,.6); --btn-hover: rgba(255,255,255,.88);
+    --text: #1d2129; --muted: #5b6472; --line: rgba(29,33,41,.08); --hover: rgba(255,255,255,.5);
+    --glass: rgba(255,255,255,.5); --accent: #f28c00; --accent2: #ffb340; --accent-soft: rgba(242,140,0,.12); --accent-ink: #ffffff;
     --ok: #1f9d55; --ok-soft: rgba(31,157,85,.12); --bad: #e5383b; --bad-soft: rgba(229,56,59,.11); --warn: #b26a00; --warn-soft: rgba(255,179,64,.18);
-    --shadow: 0 1px 1px rgba(0,0,0,.03), 0 8px 28px rgba(0,0,0,.06); --shadow-hi: 0 2px 4px rgba(0,0,0,.04), 0 18px 48px rgba(0,0,0,.12);
-    --glow1: rgba(242,140,0,.16); --glow2: rgba(64,120,255,.12);
+    --shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 1px 2px rgba(31,38,90,.04), 0 10px 32px rgba(31,38,90,.08);
+    --shadow-hi: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 4px rgba(31,38,90,.05), 0 20px 50px rgba(31,38,90,.15);
+    --glow1: rgba(242,140,0,.2); --glow2: rgba(64,120,255,.22); --glow3: rgba(190,110,255,.18);
     --ease: cubic-bezier(.2,.8,.2,1); color-scheme: light;
   }
   :root[data-theme="dark"] {
-    --bg: #050507; --card: rgba(28,28,32,.66); --solid: #16161a; --text: #f5f5f7; --muted: #8e8e96; --line: rgba(255,255,255,.08); --hover: rgba(255,255,255,.06);
-    --glass: rgba(18,18,22,.62); --accent-soft: rgba(242,140,0,.16);
+    --bg: #0a1024; --bg-grad: linear-gradient(135deg, #0a1024 0%, #171c46 55%, #2a1a4a 100%);
+    --card: rgba(255,255,255,.07); --sheen: rgba(255,255,255,.07); --edge: rgba(255,255,255,.14); --solid: #171b40; --th: rgba(23,27,64,.82);
+    --dlg: rgba(23,27,64,.8); --btn: rgba(255,255,255,.08); --btn-hover: rgba(255,255,255,.15);
+    --text: #f3f5fa; --muted: #aeb4c4; --line: rgba(255,255,255,.08); --hover: rgba(255,255,255,.07);
+    --glass: rgba(14,18,44,.5); --accent-soft: rgba(242,140,0,.16);
     --ok: #34d399; --ok-soft: rgba(52,211,153,.14); --bad: #ff6b6b; --bad-soft: rgba(255,107,107,.14); --warn: #ffc94d; --warn-soft: rgba(255,201,77,.14);
-    --shadow: 0 0 0 1px rgba(255,255,255,.02), 0 10px 30px rgba(0,0,0,.4); --shadow-hi: 0 0 0 1px rgba(242,140,0,.25), 0 20px 50px rgba(0,0,0,.55), 0 0 40px rgba(242,140,0,.08);
-    --glow1: rgba(242,140,0,.18); --glow2: rgba(80,110,255,.16); color-scheme: dark;
+    --shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 32px rgba(0,0,0,.35);
+    --shadow-hi: inset 0 1px 0 rgba(255,255,255,.12), 0 0 0 1px rgba(242,140,0,.22), 0 20px 50px rgba(0,0,0,.5), 0 0 40px rgba(242,140,0,.08);
+    --glow1: rgba(242,140,0,.16); --glow2: rgba(80,110,255,.28); --glow3: rgba(170,80,255,.22); color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html { -webkit-font-smoothing: antialiased; }
@@ -30,7 +39,8 @@
     letter-spacing: -.01em; background: var(--bg); color: var(--text); transition: background .4s var(--ease), color .4s var(--ease); }
   /* slow-drifting light behind the glass */
   body::before { content: ""; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
-    background: radial-gradient(40% 35% at 20% 15%, var(--glow1), transparent 70%), radial-gradient(35% 30% at 85% 80%, var(--glow2), transparent 70%);
+    background: radial-gradient(40% 35% at 20% 15%, var(--glow1), transparent 70%), radial-gradient(35% 30% at 85% 80%, var(--glow2), transparent 70%),
+      radial-gradient(30% 30% at 75% 15%, var(--glow3), transparent 70%), var(--bg-grad);
     animation: drift 24s ease-in-out infinite alternate; }
   @keyframes drift { to { transform: translate3d(4%, -3%, 0) scale(1.08); } }
   button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
@@ -39,7 +49,8 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   header { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 10px 22px;
-    background: var(--glass); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line); }
+    background: var(--glass); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px);
+    border-bottom: 1px solid var(--edge); box-shadow: 0 1px 0 var(--line); }
   header img { width: 38px; height: 38px; object-fit: contain; border-radius: 10px; background: #fff; box-shadow: 0 2px 10px rgba(242,140,0,.25); }
   header h1 { font-size: 17px; font-weight: 700; margin: 0; white-space: nowrap; letter-spacing: -.02em;
     background: linear-gradient(90deg, var(--text), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -55,7 +66,7 @@
 
   .layout { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: calc(100vh - 59px); }
   nav { position: sticky; top: 59px; align-self: start; height: calc(100vh - 59px); overflow-y: auto; padding: 16px 10px;
-    background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-right: 1px solid var(--line); }
+    background: var(--glass); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px); border-right: 1px solid var(--edge); }
   nav a { position: relative; display: flex; align-items: center; gap: 11px; padding: 9px 12px; margin-bottom: 2px; border-radius: 10px;
     color: var(--text); text-decoration: none; font-weight: 500; transition: background .2s, color .2s, transform .2s var(--ease); }
   nav a:hover { background: var(--hover); transform: translateX(2px); }
@@ -69,15 +80,15 @@
   main .lead { color: var(--muted); margin: 0 0 22px; font-size: 15px; }
   @media (max-width: 800px) {
     .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-    nav { position: sticky; top: 59px; z-index: 900; height: auto; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px; gap: 2px; }
+    nav { position: sticky; top: 59px; z-index: 900; height: auto; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--edge); padding: 6px; gap: 2px; }
     nav a { white-space: nowrap; padding: 7px 11px; margin: 0; } nav a .c, nav a.on::before { display: none; } nav a:hover { transform: none; }
     main { padding: 18px 16px; } main h2 { font-size: 24px; } header { padding: 10px 16px; gap: 8px; } header .sub, #liveText { display: none; }
     header .btn { padding: 6px 10px; }
   }
 
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 14px; margin-bottom: 20px; }
-  .stat { position: relative; overflow: hidden; background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 16px; box-shadow: var(--shadow);
+  .stat { position: relative; overflow: hidden; background: linear-gradient(180deg, var(--sheen), transparent 70%), var(--card);
+    backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); border: 1px solid var(--edge); border-radius: 20px; padding: 18px 18px 16px; box-shadow: var(--shadow);
     text-align: left; text-decoration: none; color: inherit; display: block; transition: transform .35s var(--ease), box-shadow .35s var(--ease), border-color .35s; }
   .stat::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,.12) 50%, transparent 70%);
     transform: translateX(-100%); transition: transform .8s var(--ease); pointer-events: none; }
@@ -88,8 +99,8 @@
   .stat.ok .n { color: var(--ok); } .stat.bad .n { color: var(--bad); } .stat.warn .n { color: var(--warn); }
 
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 18px; }
-  .card { background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--line);
-    border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 18px; transition: box-shadow .35s var(--ease), border-color .35s; }
+  .card { background: linear-gradient(180deg, var(--sheen), transparent 140px), var(--card); backdrop-filter: saturate(170%) blur(24px);
+    -webkit-backdrop-filter: saturate(170%) blur(24px); border: 1px solid var(--edge); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 18px; transition: box-shadow .35s var(--ease), border-color .35s; }
   .card:hover { box-shadow: var(--shadow-hi); }
   .card > h3 { margin: 0; padding: 14px 18px; font-size: 15px; font-weight: 650; letter-spacing: -.01em; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
   .card > h3 .grow { flex: 1; }
@@ -104,7 +115,7 @@
   .table-wrap { overflow: auto; }
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 11px 14px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; vertical-align: middle; }
-  th { position: sticky; top: 0; background: var(--solid); color: var(--muted); font-size: 11px; font-weight: 600;
+  th { position: sticky; top: 0; background: var(--th); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); color: var(--muted); font-size: 11px; font-weight: 600;
     text-transform: uppercase; letter-spacing: .07em; z-index: 1; }
   tr:last-child td { border-bottom: 0; }
   tbody tr { transition: background .2s; }
@@ -145,10 +156,11 @@
   .meter .bar { width: 38px; height: 6px; border-radius: 4px; background: var(--line); overflow: hidden; }
   .meter .bar b { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--ok), #6ee7b7); }
   .meter.warn .bar b { background: linear-gradient(90deg, var(--warn), var(--accent2)); } .meter.bad .bar b { background: linear-gradient(90deg, var(--bad), #ff9a9a); }
-  .btn { padding: 7px 14px; border-radius: 980px; border: 1px solid var(--line); background: var(--card); font-size: 13px; font-weight: 500; white-space: nowrap;
+  .btn { padding: 7px 14px; border-radius: 980px; border: 1px solid var(--edge); background: var(--btn); box-shadow: inset 0 1px 0 var(--sheen), 0 1px 3px rgba(31,38,90,.06);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); font-size: 13px; font-weight: 500; white-space: nowrap;
     transition: transform .2s var(--ease), background .2s, box-shadow .25s var(--ease), border-color .2s; }
   a.btn { color: inherit; text-decoration: none; display: inline-block; }
-  .btn:hover { background: var(--hover); border-color: rgba(127,127,127,.25); }
+  .btn:hover { background: var(--btn-hover); border-color: var(--edge); }
   .btn:active { transform: scale(.96); }
   .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: var(--accent-ink); font-weight: 600;
@@ -200,8 +212,9 @@
   .alarm.maint .btn { background: var(--card); color: var(--text); border-color: var(--line); }
   @keyframes pulse { 50% { box-shadow: 0 8px 40px rgba(229,56,59,.6); } }
 
-  dialog { border: 1px solid var(--line); border-radius: 22px; background: var(--solid); color: var(--text); padding: 24px;
-    width: min(520px, calc(100vw - 32px)); box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+  dialog { border: 1px solid var(--edge); border-radius: 26px; background: var(--dlg); color: var(--text); padding: 24px;
+    backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
+    width: min(520px, calc(100vw - 32px)); box-shadow: inset 0 1px 0 var(--sheen), 0 30px 80px rgba(10,16,36,.35); }
   dialog[open] { animation: zoom .35s var(--ease); }
   dialog::backdrop { background: rgba(0,0,0,.35); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: fade .3s; }
   dialog h2 { margin: 0 0 14px; font-size: 20px; letter-spacing: -.02em; }
@@ -222,7 +235,7 @@
   .leaflet-popup-content { font: 13px/1.45 -apple-system, "Segoe UI", sans-serif; }
 
   .menu { position: fixed; z-index: 2000; background: var(--glass); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px);
-    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-hi); padding: 5px; min-width: 190px; transform-origin: top right; animation: zoom .2s var(--ease); }
+    border: 1px solid var(--edge); border-radius: 16px; box-shadow: var(--shadow-hi); padding: 5px; min-width: 190px; transform-origin: top right; animation: zoom .2s var(--ease); }
   .menu button { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 0; background: none; border-radius: 8px; transition: background .15s; }
   .menu button:hover { background: var(--accent); color: #fff; }
   .menu button.danger { color: var(--bad); }
@@ -318,7 +331,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Line icons from Lucide (lucide.dev, ISC licence), inlined so the portal works offline.
@@ -359,7 +372,7 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]), "maintOn", "maintOff"] : cmds;
+const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps" && c !== "relay")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]), "maintOn", "maintOff"] : cmds;
 const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
 const stateCell = d => (d.maintenance ? `<span class="pill warn" title="Showing the System Maintenance screen">🛠 Maintenance</span> ` : "") + stateCell1(d);
 const stateCell1 = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
@@ -921,6 +934,10 @@ VIEWS.device = async (id, first) => {
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
         </div>
       </div>
+      <div class="card" id="dRelayCard" hidden><h3>Relay (door)<span class="grow"></span><span id="dRelayState"></span></h3>
+        <div class="pad row"><button class="btn primary" data-relay="on">Relay ON</button><button class="btn" data-relay="off">Relay OFF</button>
+          <span class="meta">Pulse</span><input type="number" id="dPulse" min="1" max="600" value="5" style="width:70px"><span class="meta">s</span><button class="btn" data-relay="pulse">⚡ Pulse (open door)</button>
+          <label class="chip"><input type="checkbox" id="dRelayLink"> Maintenance mode switches the relay (ON when it starts, OFF when it ends)</label></div></div>
       <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
         <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
@@ -929,6 +946,9 @@ VIEWS.device = async (id, first) => {
         <pre class="log" id="dLogs">Loading…</pre></div>`;
     $("view").onclick = e => {
       if (e.target.id === "dShot") return screenshot(dev(id), false);
+      const r = e.target.closest("[data-relay]")?.dataset.relay;
+      if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
+        { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
@@ -942,6 +962,8 @@ VIEWS.device = async (id, first) => {
       if (!$("dFrom").value || !$("dTo").value || $("dFrom").value > $("dTo").value) return toast("Pick a From time before the To time", true);
       location.href = `/api/devices/${encodeURIComponent(id)}/logs/download?from=${$("dFrom").value}&to=${$("dTo").value}`;
     };
+    $("dRelayLink").onchange = e => act(() => api(`/api/devices/${encodeURIComponent(id)}/relaylink`, { on: e.target.checked }),
+      e.target.checked ? "Maintenance mode will switch the relay" : "Maintenance mode won't touch the relay");
     $("dApps").onchange = () => { $("dApps").dataset.edited = "1"; };
     $("dAppsSave").onclick = () => {
       const packages = [...$("dApps").querySelectorAll("input:checked")].map(x => x.value);
@@ -951,6 +973,11 @@ VIEWS.device = async (id, first) => {
   }
   const apps = d.type === "android-kiosk" ? d.launcherApps || [] : [];
   $("dAppsCard").hidden = !apps.length;
+  $("dRelayCard").hidden = !(S.commands[d.type] || []).includes("relay");
+  $("dRelayState").innerHTML = d.pending === "relay" ? `<span class="meta">Sending to device…</span>`
+    : d.relay == null ? `<span class="meta">Update the tablet app to see the relay state</span>`
+    : `<span class="pill ${d.relay ? "ok" : ""}">${d.relay ? "ON" : "OFF"}</span>`;
+  $("dRelayLink").checked = d.relayLink !== false;
   $("dAppsNote").textContent = d.pending === "apps" ? "Sending to device…" : d.allowedApps ? "" : "Update the tablet app to see its current list";
   if (!$("dApps").dataset.edited) {
     const on = new Set(d.allowedApps || []);
@@ -1566,8 +1593,7 @@ document.querySelector(".bellico").outerHTML = ico("bell");
 $("logout").querySelector(".outico").outerHTML = ico("log-out"); // donut/chart colours are read from CSS at draw time
 $("logout").onclick = async () => { await fetch("/api/logout", { method: "POST" }); location.href = "/login"; };
 
-route(false);
-refresh();
+refresh(); // draws the first page once the data is in (a device or site link opened before that showed "not found")
 setInterval(refresh, 5000);
 </script>
 </body>
