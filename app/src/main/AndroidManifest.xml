@@ -39,7 +39,7 @@
     <application
         android:label="Kiosk"
         android:usesCleartextTraffic="true"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@style/KioskTheme">
 
         <activity
             android:name=".KioskActivity"
@@ -98,14 +98,14 @@
             android:launchMode="singleTask"
             android:lockTaskMode="if_whitelisted"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+            android:theme="@style/KioskTheme" />
 
         <activity
             android:name=".AnnouncementActivity"
             android:exported="false"
             android:launchMode="singleTask"
             android:lockTaskMode="if_whitelisted"
-            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar.Fullscreen" />
+            android:theme="@style/KioskTheme.Fullscreen" />
 
         <activity
             android:name=".ScreenshotActivity"

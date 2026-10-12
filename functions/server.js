@@ -35,7 +35,7 @@ const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
 const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "install", "file", "logs"];
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "apps", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot"],
@@ -246,7 +246,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
@@ -293,6 +293,12 @@ function commandFrom(body) {
     const packages = Array.isArray(body.packages) ? body.packages.map(String) : null;
     if (!packages || packages.length > 300 || packages.some(x => !/^[\w.]{3,200}$/.test(x))) throw new Error("bad app list");
     return { type, packages, name: `${packages.length} allowed app${packages.length === 1 ? "" : "s"}` };
+  }
+  if (type === "relay") {
+    // on/off, or a pulse: on for `seconds`, then back off (door release)
+    const on = !!body.on, seconds = Math.round(Number(body.seconds) || 0);
+    if (seconds < 0 || seconds > 600) throw new Error("pulse must be 1-600 seconds");
+    return { type, on, seconds, name: seconds ? `pulse ${seconds} s` : on ? "on" : "off" };
   }
   if (!Object.values(COMMANDS).flat().includes(type)) throw new Error("unknown command");
   return { type };
@@ -565,7 +571,7 @@ async function handler(req, res) {
       const an = portal.announcements.find(a => a.deviceIds.includes(d.id) && !a.acks[d.id]);
       const announcement = an ? { id: an.id, text: an.text, image: an.image ? `/download/file/${an.image}` : null } : null;
       dirty = true;
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, announcement });
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, relayLink: d.relayLink !== false, announcement });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -748,7 +754,7 @@ async function handler(req, res) {
       portal.pending = portal.pending.filter(x => x.code !== body.code || !siteOk(u, x.group));
       return ok();
     }
-    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|delete)$/.exec(p);
+    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|delete)$/.exec(p);
     if (req.method === "POST" && m) {
       const d = devices[m[1]];
       if (!d || !sees(u, d)) return send(res, 404, { error: "no such device" });
@@ -756,6 +762,10 @@ async function handler(req, res) {
       if (m[2] === "command") {
         const cmd = commandFrom(body);
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
+      } else if (m[2] === "relaylink") {
+        // Maintenance mode switches the relay too (on when maintenance starts, off when it ends). Default on.
+        d.relayLink = !!body.on;
+        log(d.id, "relay", `Relay follows maintenance mode: ${d.relayLink ? "yes" : "no"} (by ${by})`);
       } else if (m[2] === "name") {
         d.name = String(body.name || "").slice(0, 80).trim();
       } else if (m[2] === "group") {

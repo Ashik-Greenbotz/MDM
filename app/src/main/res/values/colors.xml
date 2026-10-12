@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Glass" home screen, light mode. values-night/colors.xml has the dark set. -->
+<resources>
+    <color name="bg_start">#FFE6EEFF</color>
+    <color name="bg_center">#FFF1E8FF</color>
+    <color name="bg_end">#FFFFEADB</color>
+    <color name="glass_fill">#8CFFFFFF</color>
+    <color name="glass_edge">#80FFFFFF</color>
+    <color name="text_primary">#FF1D2129</color>
+    <color name="text_secondary">#FF5B6472</color>
+    <color name="ok">#FF1E8E3E</color>
+    <color name="warn">#FFB06000</color>
+    <color name="err">#FFD93025</color>
+    <color name="accent">#FF2563EB</color>
+</resources>

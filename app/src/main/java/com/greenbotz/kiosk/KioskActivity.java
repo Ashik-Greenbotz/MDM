@@ -93,7 +93,7 @@ public class KioskActivity extends Activity {
     // Device ID arrives from the server in the background; show it as soon as it's saved.
     private final SharedPreferences.OnSharedPreferenceChangeListener codeListener = (p, key) -> {
         if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
-        if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showServerStatus);
+        if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showStatus);
         if (PREF_APPS.equals(key)) runOnUiThread(this::renderApps);
     };
 
@@ -106,13 +106,30 @@ public class KioskActivity extends Activity {
             boolean charging = i.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0;
             if (level < 0) return;
             int pct = level * 100 / scale;
-            int color = pct < 20 ? 0xFFD93025 : pct < 40 ? 0xFFF29900 : 0xFF1E8E3E;
+            int color = getColor(pct < 20 ? R.color.err : pct < 40 ? R.color.warn : R.color.ok);
             TextView t = findViewById(R.id.battery);
             t.setText(pct + "%" + (charging ? "  charging" : ""));
             t.setTextColor(color);
             t.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
         }
     };
+
+    // Home screen theme from the admin menu: "auto" follows the system, else "light" / "dark".
+    static final String PREF_THEME = "theme";
+
+    static Context themed(Context base) {
+        String t = base.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_THEME, "auto");
+        if (t.equals("auto")) return base;
+        android.content.res.Configuration c = new android.content.res.Configuration(base.getResources().getConfiguration());
+        c.uiMode = (c.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                | (t.equals("dark") ? android.content.res.Configuration.UI_MODE_NIGHT_YES : android.content.res.Configuration.UI_MODE_NIGHT_NO);
+        return base.createConfigurationContext(c);
+    }
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(themed(base));
+    }
 
     static boolean monitorOnly(Context ctx) {
         return "monitor".equals(ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_MODE, "kiosk"));
@@ -126,10 +143,6 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
-        findViewById(R.id.serverStatus).setOnClickListener(v -> {
-            showServerAddress = !showServerAddress;
-            showServerStatus();
-        });
         findViewById(R.id.overrideCorner).setOnClickListener(v -> {
             handler.removeCallbacks(openSingleApp);
             if (isPinned(this) && PinOverlay.tap()) askOverridePin();
@@ -153,7 +166,7 @@ public class KioskActivity extends Activity {
         showDeviceCode();
         prefs().registerOnSharedPreferenceChangeListener(codeListener);
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        showServerStatus();
+        showStatus();
         if (monitorOnly(this)) {
             unlock();
             return;
@@ -218,19 +231,6 @@ public class KioskActivity extends Activity {
         handler.removeCallbacks(openSingleApp);
         prefs().unregisterOnSharedPreferenceChangeListener(codeListener);
         unregisterReceiver(batteryReceiver);
-    }
-
-    // Pill above Online/Offline: did the last check-in reach the portal server? Tap to show/hide the address.
-    private boolean showServerAddress;
-
-    private void showServerStatus() {
-        Uri u = Uri.parse(DeviceService.serverUrl(this));
-        String host = u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
-        boolean ok = prefs().getBoolean(DeviceService.PREF_SERVER_OK, false);
-        TextView s = findViewById(R.id.serverStatus);
-        s.setText("●  Server" + (showServerAddress ? " · " + host : "")); // green = reached, red = not
-        s.setTextColor(ok ? 0xFF1E8E3E : 0xFFD93025);
-        s.setBackground(rounded(ok ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
     }
 
     private void showDeviceCode() {
@@ -310,9 +310,13 @@ public class KioskActivity extends Activity {
 
     private void watchInternet() {
         TextView status = findViewById(R.id.status);
-        showOnline(status, false, 0);
+        showStatus();
         status.setOnClickListener(v -> {
             if (!online) showWifiPicker();
+            else {
+                showServerAddress = !showServerAddress;
+                showStatus();
+            }
         });
         getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(
                 new ConnectivityManager.NetworkCallback() {
@@ -322,12 +326,19 @@ public class KioskActivity extends Activity {
                         boolean ok = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
                         int icon = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ? R.drawable.ic_wifi
                                 : caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ? R.drawable.ic_ethernet : 0;
-                        runOnUiThread(() -> showOnline(status, ok, icon));
+                        runOnUiThread(() -> {
+                            online = ok;
+                            netIcon = icon;
+                            showStatus();
+                        });
                     }
 
                     @Override
                     public void onLost(Network n) {
-                        runOnUiThread(() -> showOnline(status, false, 0));
+                        runOnUiThread(() -> {
+                            online = false;
+                            showStatus();
+                        });
                     }
                 });
     }
@@ -339,16 +350,29 @@ public class KioskActivity extends Activity {
         return g;
     }
 
-    // Online: Wi-Fi or Ethernet icon in the pill (a dot if neither). Offline: red, tap to pick Wi-Fi.
-    private void showOnline(TextView status, boolean online, int icon) {
-        this.online = online;
-        if (!online) icon = 0;
-        int color = online ? 0xFF1E8E3E : 0xFFD93025;
-        status.setText(online ? (icon != 0 ? "Online" : "●  Online") : "●  Offline · tap to connect Wi-Fi");
+    // One pill. Green "Online": internet + portal server reached. Yellow: internet but the server isn't answering.
+    // Red: no internet, tap to pick Wi-Fi. Online, a tap shows/hides the server address.
+    private int netIcon;
+    private boolean showServerAddress;
+
+    private void showStatus() {
+        TextView status = findViewById(R.id.status);
+        boolean server = prefs().getBoolean(DeviceService.PREF_SERVER_OK, false);
+        int icon = online ? netIcon : 0;
+        int color = getColor(!online ? R.color.err : server ? R.color.ok : R.color.warn);
+        String text = !online ? "Offline · tap to connect Wi-Fi" : server ? "Online" : "Online · server offline";
+        if (online && showServerAddress) {
+            Uri u = Uri.parse(DeviceService.serverUrl(this));
+            text += " · " + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
+        }
+        status.setText(icon != 0 ? text : "●  " + text);
         status.setTextColor(color);
         status.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
         status.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
-        status.setBackground(rounded(online ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
+        // Tinted glass: status colour, translucent, with a brighter edge.
+        GradientDrawable pill = rounded(color & 0x00FFFFFF | 0x2E000000, 999);
+        pill.setStroke(Math.round(getResources().getDisplayMetrics().density), color & 0x00FFFFFF | 0x66000000);
+        status.setBackground(pill);
     }
 
     // Own Wi-Fi list instead of the Settings panel, which links on to the rest of Settings.
@@ -459,13 +483,12 @@ public class KioskActivity extends Activity {
                 tile.setCompoundDrawables(null, icon, null, null);
                 tile.setCompoundDrawablePadding((int) (10 * dp));
                 tile.setGravity(Gravity.CENTER);
-                tile.setTextColor(0xFF1D2129);
+                tile.setTextColor(getColor(R.color.text_primary));
                 tile.setTextSize(14);
                 tile.setMaxLines(2);
                 tile.setEllipsize(TextUtils.TruncateAt.END);
                 tile.setPadding((int) (8 * dp), (int) (18 * dp), (int) (8 * dp), (int) (14 * dp));
-                tile.setBackground(rounded(0xFFFFFFFF, 20 * dp));
-                tile.setElevation(2 * dp);
+                tile.setBackground(getDrawable(R.drawable.glass_tile));
                 tile.setOnClickListener(v -> startActivity(launch));
                 // Equal-width columns: width 0 + weight 1.
                 GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
@@ -480,7 +503,7 @@ public class KioskActivity extends Activity {
         if (grid.getChildCount() == 0) {
             TextView empty = new TextView(this);
             empty.setText("No apps available");
-            empty.setTextColor(0xFF6B7280);
+            empty.setTextColor(getColor(R.color.text_secondary));
             empty.setPadding(0, (int) (24 * dp), 0, (int) (24 * dp));
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
                     GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(0, 4, GridLayout.CENTER));
@@ -601,11 +624,12 @@ public class KioskActivity extends Activity {
     }
 
     private void showAdminMenu() {
-        String[] items = {"Exit kiosk", "Change password", "Uninstall kiosk app", "Choose allowed apps", "Server address",
+        String[] items = {"Exit kiosk", "Change password", "Uninstall kiosk app", "Choose allowed apps",
+                "Server address (" + (DeviceService.production(this) ? "Production" : "Debug") + ")",
                 monitorOnly(this) ? "Switch to kiosk mode" : "Switch to monitor-only (no lock)",
                 prefs().getString(PREF_SINGLE_APP, "").isEmpty() ? "App pinning…"
                         : "App pinning… (" + appLabel(prefs().getString(PREF_SINGLE_APP, "")) + ")",
-                "Link device ID"};
+                "Link device ID", "Theme: " + prefs().getString(PREF_THEME, "auto")};
         new AlertDialog.Builder(this)
                 .setTitle("Admin")
                 .setItems(items, (d, which) -> {
@@ -623,6 +647,10 @@ public class KioskActivity extends Activity {
                     }
                     if (which == 7) {
                         linkDeviceId();
+                        return;
+                    }
+                    if (which == 8) {
+                        chooseTheme();
                         return;
                     }
                     if (which == 6) {
@@ -680,6 +708,20 @@ public class KioskActivity extends Activity {
             });
         }
         b.show();
+    }
+
+    private void chooseTheme() {
+        String[] values = {"auto", "light", "dark"};
+        int current = java.util.Arrays.asList(values).indexOf(prefs().getString(PREF_THEME, "auto"));
+        new AlertDialog.Builder(this)
+                .setTitle("Theme")
+                .setSingleChoiceItems(new String[]{"Auto (follow system)", "Light", "Dark"}, current, (d, i) -> {
+                    prefs().edit().putString(PREF_THEME, values[i]).commit();
+                    d.dismiss();
+                    recreate();
+                })
+                .setOnCancelListener(d -> scheduleSingleApp())
+                .show();
     }
 
     private void linkDeviceId() {

@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
@@ -39,6 +40,11 @@ public class SetupActivity extends Activity {
     private float dp;
 
     @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(KioskActivity.themed(base));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         dp = getResources().getDisplayMetrics().density;
@@ -57,14 +63,38 @@ public class SetupActivity extends Activity {
         return getSharedPreferences("kiosk", MODE_PRIVATE);
     }
 
-    // Screen 1: server address (pre-filled) + Device ID created in the portal.
+    // Screen 1: Production (cloud) or Debug (local server IP), then the Device ID created in the portal.
     private void showLink() {
         LinearLayout col = column("Set up this device", "Step 1 of 2 · Create the Device ID in the portal first (Devices → Add device).");
-        EditText server = field("Server address", DeviceService.serverUrl(this), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        String prodUrl = getString(R.string.server_url);
+        boolean[] prod = {DeviceService.production(this)};
+        Uri cur = Uri.parse(DeviceService.serverUrl(this));
+        EditText ip = field("Local server IP, e.g. 192.168.68.50",
+                prod[0] ? "" : cur.getHost() + (cur.getPort() > 0 && cur.getPort() != 8080 ? ":" + cur.getPort() : ""),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        TextView prodText = label(prodUrl);
+        prodText.setTextSize(18);
+        LinearLayout modes = new LinearLayout(this);
+        Button prodBtn = button("Production"), debugBtn = button("Debug");
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, px(56), 1);
+        half.setMarginEnd(px(8));
+        modes.addView(prodBtn, half);
+        modes.addView(debugBtn, new LinearLayout.LayoutParams(0, px(56), 1));
+        Runnable pick = () -> {
+            pill(prodBtn, prod[0]);
+            pill(debugBtn, !prod[0]);
+            prodText.setVisibility(prod[0] ? View.VISIBLE : View.GONE);
+            ip.setVisibility(prod[0] ? View.GONE : View.VISIBLE);
+        };
+        prodBtn.setOnClickListener(v -> { prod[0] = true; pick.run(); });
+        debugBtn.setOnClickListener(v -> { prod[0] = false; pick.run(); });
+        pick.run();
         EditText code = field("4-digit Device ID", prefs().getString(DeviceService.PREF_CODE, ""), InputType.TYPE_CLASS_NUMBER);
         code.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(4)});
-        col.addView(label("Server address"));
-        col.addView(server);
+        col.addView(label("Server"));
+        col.addView(modes);
+        col.addView(prodText);
+        col.addView(ip);
         col.addView(label("Device ID"));
         col.addView(code);
         TextView msg = new TextView(this);
@@ -74,10 +104,10 @@ public class SetupActivity extends Activity {
         Button connect = button("Connect");
         col.addView(connect, buttonParams());
         connect.setOnClickListener(v -> {
-            String u = server.getText().toString().trim().replaceAll("/+$", "");
+            String u = prod[0] ? prodUrl : localUrl(ip.getText().toString());
             String c = code.getText().toString().trim();
-            if (!u.matches("https?://.+")) {
-                error(msg, "Server address must start with http:// or https://");
+            if (u == null) {
+                error(msg, "Enter the local server IP, e.g. 192.168.68.50 (or 192.168.68.50:8080)");
                 return;
             }
             if (!c.matches("\\d{4}")) {
@@ -86,7 +116,7 @@ public class SetupActivity extends Activity {
             }
             prefs().edit().putString(DeviceService.PREF_SERVER, u).commit();
             connect.setEnabled(false);
-            msg.setTextColor(0xFF6B7280);
+            msg.setTextColor(getColor(R.color.text_secondary));
             msg.setText("Connecting…");
             new Thread(() -> {
                 String err = link(c);
@@ -121,6 +151,17 @@ public class SetupActivity extends Activity {
         return err;
     }
 
+    // "192.168.68.50" or "192.168.68.50:9000" -> http://IP:PORT (port 8080 by default); null if not a valid IPv4.
+    static String localUrl(String in) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})(?::(\\d{1,5}))?").matcher(in.trim());
+        if (!m.matches()) return null;
+        for (int i = 1; i <= 4; i++) if (Integer.parseInt(m.group(i)) > 255) return null;
+        int port = m.group(5) == null ? 8080 : Integer.parseInt(m.group(5));
+        if (port < 1 || port > 65535) return null;
+        return "http://" + m.group(1) + "." + m.group(2) + "." + m.group(3) + "." + m.group(4) + ":" + port;
+    }
+
     // Screen 2: allowed apps, same list as the admin menu's "Allowed apps".
     private void showApps() {
         LinearLayout col = column("Choose allowed apps", "Step 2 of 2 · Linked as Device ID " + prefs().getString(DeviceService.PREF_CODE, "")
@@ -135,6 +176,7 @@ public class SetupActivity extends Activity {
             CheckBox cb = new CheckBox(this);
             cb.setText(e.getKey());
             cb.setTextSize(18);
+            cb.setTextColor(getColor(R.color.text_primary));
             cb.setPadding(px(8), px(10), 0, px(10));
             cb.setChecked(chosen.contains(e.getValue()));
             cb.setOnCheckedChangeListener((b, on) -> {
@@ -159,20 +201,20 @@ public class SetupActivity extends Activity {
         col.setPadding(px(32), px(32), px(32), px(32));
         // Company logo, same image as the home screen.
         android.widget.ImageView logo = new android.widget.ImageView(this);
-        logo.setImageResource(R.drawable.wallpaper);
+        logo.setImageResource(R.drawable.logo);
         logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, px(140));
         lp.bottomMargin = px(24);
         col.addView(logo, lp);
         TextView t = new TextView(this);
         t.setText(title);
-        t.setTextColor(0xFF1D2129);
+        t.setTextColor(getColor(R.color.text_primary));
         t.setTextSize(28);
         t.setTypeface(null, android.graphics.Typeface.BOLD);
         col.addView(t);
         TextView s = new TextView(this);
         s.setText(sub);
-        s.setTextColor(0xFF6B7280);
+        s.setTextColor(getColor(R.color.text_secondary));
         s.setTextSize(16);
         s.setPadding(0, px(8), 0, px(16));
         col.addView(s);
@@ -182,7 +224,7 @@ public class SetupActivity extends Activity {
     private TextView label(String text) {
         TextView l = new TextView(this);
         l.setText(text);
-        l.setTextColor(0xFF1D2129);
+        l.setTextColor(getColor(R.color.text_secondary));
         l.setTextSize(14);
         l.setPadding(0, px(12), 0, 0);
         return l;
@@ -194,6 +236,8 @@ public class SetupActivity extends Activity {
         e.setText(value);
         e.setInputType(type);
         e.setTextSize(20);
+        e.setTextColor(getColor(R.color.text_primary));
+        e.setHintTextColor(getColor(R.color.text_secondary));
         e.setSingleLine(true);
         return e;
     }
@@ -203,7 +247,18 @@ public class SetupActivity extends Activity {
         b.setText(text);
         b.setTextSize(20);
         b.setAllCaps(false);
+        pill(b, true);
         return b;
+    }
+
+    // Selected = solid accent; otherwise glass.
+    private void pill(Button b, boolean on) {
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        g.setCornerRadius(px(18));
+        g.setColor(on ? getColor(R.color.accent) : getColor(R.color.glass_fill));
+        if (!on) g.setStroke(px(1), getColor(R.color.glass_edge));
+        b.setBackground(g);
+        b.setTextColor(on ? 0xFFFFFFFF : getColor(R.color.text_primary));
     }
 
     private LinearLayout.LayoutParams buttonParams() {
@@ -214,13 +269,20 @@ public class SetupActivity extends Activity {
 
     private ScrollView scroll(View content) {
         ScrollView s = new ScrollView(this);
-        s.setBackgroundColor(0xFFFFFFFF);
-        s.addView(content);
+        s.setBackground(getDrawable(R.drawable.bg_gradient));
+        s.setFillViewport(true);
+        // Content on a glass card over the gradient.
+        content.setBackground(getDrawable(R.drawable.glass));
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(-1, -2);
+        lp.setMargins(px(20), px(24), px(20), px(24));
+        android.widget.FrameLayout wrap = new android.widget.FrameLayout(this);
+        wrap.addView(content, lp);
+        s.addView(wrap);
         return s;
     }
 
     private void error(TextView msg, String text) {
-        msg.setTextColor(0xFFD93025);
+        msg.setTextColor(getColor(R.color.err));
         msg.setText(text);
     }
 
