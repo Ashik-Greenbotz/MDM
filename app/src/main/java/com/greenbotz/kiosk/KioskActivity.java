@@ -93,7 +93,7 @@ public class KioskActivity extends Activity {
     // Device ID arrives from the server in the background; show it as soon as it's saved.
     private final SharedPreferences.OnSharedPreferenceChangeListener codeListener = (p, key) -> {
         if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
-        if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showServerStatus);
+        if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showStatus);
         if (PREF_APPS.equals(key)) runOnUiThread(this::renderApps);
     };
 
@@ -126,10 +126,6 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
-        findViewById(R.id.serverStatus).setOnClickListener(v -> {
-            showServerAddress = !showServerAddress;
-            showServerStatus();
-        });
         findViewById(R.id.overrideCorner).setOnClickListener(v -> {
             handler.removeCallbacks(openSingleApp);
             if (isPinned(this) && PinOverlay.tap()) askOverridePin();
@@ -153,7 +149,7 @@ public class KioskActivity extends Activity {
         showDeviceCode();
         prefs().registerOnSharedPreferenceChangeListener(codeListener);
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        showServerStatus();
+        showStatus();
         if (monitorOnly(this)) {
             unlock();
             return;
@@ -218,19 +214,6 @@ public class KioskActivity extends Activity {
         handler.removeCallbacks(openSingleApp);
         prefs().unregisterOnSharedPreferenceChangeListener(codeListener);
         unregisterReceiver(batteryReceiver);
-    }
-
-    // Pill above Online/Offline: did the last check-in reach the portal server? Tap to show/hide the address.
-    private boolean showServerAddress;
-
-    private void showServerStatus() {
-        Uri u = Uri.parse(DeviceService.serverUrl(this));
-        String host = u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
-        boolean ok = prefs().getBoolean(DeviceService.PREF_SERVER_OK, false);
-        TextView s = findViewById(R.id.serverStatus);
-        s.setText("●  Server" + (showServerAddress ? " · " + host : "")); // green = reached, red = not
-        s.setTextColor(ok ? 0xFF1E8E3E : 0xFFD93025);
-        s.setBackground(rounded(ok ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
     }
 
     private void showDeviceCode() {
@@ -310,9 +293,13 @@ public class KioskActivity extends Activity {
 
     private void watchInternet() {
         TextView status = findViewById(R.id.status);
-        showOnline(status, false, 0);
+        showStatus();
         status.setOnClickListener(v -> {
             if (!online) showWifiPicker();
+            else {
+                showServerAddress = !showServerAddress;
+                showStatus();
+            }
         });
         getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(
                 new ConnectivityManager.NetworkCallback() {
@@ -322,12 +309,19 @@ public class KioskActivity extends Activity {
                         boolean ok = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
                         int icon = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ? R.drawable.ic_wifi
                                 : caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ? R.drawable.ic_ethernet : 0;
-                        runOnUiThread(() -> showOnline(status, ok, icon));
+                        runOnUiThread(() -> {
+                            online = ok;
+                            netIcon = icon;
+                            showStatus();
+                        });
                     }
 
                     @Override
                     public void onLost(Network n) {
-                        runOnUiThread(() -> showOnline(status, false, 0));
+                        runOnUiThread(() -> {
+                            online = false;
+                            showStatus();
+                        });
                     }
                 });
     }
@@ -339,16 +333,26 @@ public class KioskActivity extends Activity {
         return g;
     }
 
-    // Online: Wi-Fi or Ethernet icon in the pill (a dot if neither). Offline: red, tap to pick Wi-Fi.
-    private void showOnline(TextView status, boolean online, int icon) {
-        this.online = online;
-        if (!online) icon = 0;
-        int color = online ? 0xFF1E8E3E : 0xFFD93025;
-        status.setText(online ? (icon != 0 ? "Online" : "●  Online") : "●  Offline · tap to connect Wi-Fi");
+    // One pill. Green "Online": internet + portal server reached. Yellow: internet but the server isn't answering.
+    // Red: no internet, tap to pick Wi-Fi. Online, a tap shows/hides the server address.
+    private int netIcon;
+    private boolean showServerAddress;
+
+    private void showStatus() {
+        TextView status = findViewById(R.id.status);
+        boolean server = prefs().getBoolean(DeviceService.PREF_SERVER_OK, false);
+        int icon = online ? netIcon : 0;
+        int color = !online ? 0xFFD93025 : server ? 0xFF1E8E3E : 0xFFB06000;
+        String text = !online ? "Offline · tap to connect Wi-Fi" : server ? "Online" : "Online · server offline";
+        if (online && showServerAddress) {
+            Uri u = Uri.parse(DeviceService.serverUrl(this));
+            text += " · " + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
+        }
+        status.setText(icon != 0 ? text : "●  " + text);
         status.setTextColor(color);
         status.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
         status.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
-        status.setBackground(rounded(online ? 0xFFE6F4EA : 0xFFFCE8E6, 999));
+        status.setBackground(rounded(!online ? 0xFFFCE8E6 : server ? 0xFFE6F4EA : 0xFFFEF3C7, 999));
     }
 
     // Own Wi-Fi list instead of the Settings panel, which links on to the rest of Settings.

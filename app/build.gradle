@@ -14,8 +14,8 @@ android {
         applicationId "com.greenbotz.kiosk"
         minSdk 28
         targetSdk 35
-        versionCode 24
-        versionName "10.8"
+        versionCode 25
+        versionName "10.9"
         resValue "string", "server_key", localProps.getProperty("server.key", "change-me-device-key")
     }
 }
