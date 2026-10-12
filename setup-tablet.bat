@@ -3,7 +3,7 @@ rem One-time setup for a new tablet connected by USB (USB debugging on, all acco
 rem Installs the kiosk app, makes it device owner, and starts kiosk mode.
 rem Phones / Telpo terminals that should only be monitored (not locked): setup-tablet.bat monitor
 cd /d "%~dp0"
-set APK=Kiosk app phase2.apk
+set APK=final apk\mdmkiosk app.apk
 if not exist "%APK%" set APK=app\build\outputs\apk\debug\app-debug.apk
 
 adb devices
@@ -25,7 +25,7 @@ rem Portal screenshots on Android 9/10: allow screen capture without the "Start 
 adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow
 adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode %MODE%
 echo.
-echo Done. The tablet should now show the kiosk screen and appear on the dashboard within a minute.
+echo Done. On the tablet, finish setup: Production or Debug, Device ID, allowed apps.
 pause
 exit /b 0
 
