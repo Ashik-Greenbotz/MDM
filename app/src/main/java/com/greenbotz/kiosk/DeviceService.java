@@ -104,6 +104,16 @@ public class DeviceService extends Service {
         }
     }
 
+    // Production = the built-in server (cloud key); any other server is a local/debug one (local key).
+    static boolean production(Context ctx) {
+        String prod = Uri.parse(ctx.getString(R.string.server_url)).getHost();
+        return prod != null && prod.equals(Uri.parse(serverUrl(ctx)).getHost());
+    }
+
+    static String key(Context ctx) {
+        return ctx.getString(production(ctx) ? R.string.server_key : R.string.server_key_debug);
+    }
+
     static String serverUrl(Context ctx) {
         return ctx.getSharedPreferences("kiosk", MODE_PRIVATE)
                 .getString(PREF_SERVER, ctx.getString(R.string.server_url));
@@ -223,6 +233,10 @@ public class DeviceService extends Service {
 
     // Runs on the `net` thread.
     private void report() {
+        // Fresh install: no check-ins until setup picks a server (or QR provisioning set one), else every
+        // Debug install would first appear on production as a junk device. Commands only arrive via report().
+        SharedPreferences sp = getSharedPreferences("kiosk", MODE_PRIVATE);
+        if (!sp.getBoolean(SetupActivity.PREF_SETUP_DONE, true) && !sp.contains(PREF_SERVER)) return;
         try {
             BatteryManager bm = getSystemService(BatteryManager.class);
             SharedPreferences prefs = getSharedPreferences("kiosk", MODE_PRIVATE);
@@ -256,6 +270,8 @@ public class DeviceService extends Service {
             int battery = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
             if (battery >= 0) d.put("battery", battery); // mains-powered terminals report Integer.MIN_VALUE
             d.put("charging", bm.isCharging());
+            Boolean relay = relayState();
+            if (relay != null) d.put("relay", relay);
             d.put("kioskLocked", !monitor && System.currentTimeMillis() >= unlockUntil);
             d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
@@ -275,7 +291,11 @@ public class DeviceService extends Service {
             String code = reply.optString("code");
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
             boolean maint = reply.optBoolean("maintenance");
-            if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) prefs.edit().putBoolean(PREF_MAINTENANCE, maint).commit();
+            if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) {
+                prefs.edit().putBoolean(PREF_MAINTENANCE, maint).commit();
+                // Door follows maintenance on the change only, so manual relay commands win until the next change.
+                if (reply.optBoolean("relayLink", true) && relayState() != null) handler.post(() -> setRelay(maint, 0));
+            }
             // Keep the maintenance screen up (also covers reboots and an app coming to the front).
             if (maint && !maintenanceShowing && !KioskActivity.monitorOnly(this)) {
                 handler.post(() -> startActivity(new Intent(this, MaintenanceActivity.class)
@@ -338,7 +358,7 @@ public class DeviceService extends Service {
         try {
             c.setConnectTimeout(10000);
             c.setReadTimeout(60000);
-            c.setRequestProperty("X-Device-Key", ctx.getString(R.string.server_key));
+            c.setRequestProperty("X-Device-Key", key(ctx));
             if (c.getResponseCode() != 200) throw new Exception("image HTTP " + c.getResponseCode());
             try (InputStream in = c.getInputStream()) {
                 return android.graphics.BitmapFactory.decodeStream(in);
@@ -413,7 +433,7 @@ public class DeviceService extends Service {
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");
-            c.setRequestProperty("X-Device-Key", ctx.getString(R.string.server_key));
+            c.setRequestProperty("X-Device-Key", key(ctx));
             try (OutputStream out = c.getOutputStream()) {
                 out.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
@@ -437,7 +457,7 @@ public class DeviceService extends Service {
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");
-            c.setRequestProperty("X-Device-Key", getString(R.string.server_key));
+            c.setRequestProperty("X-Device-Key", key(this));
             try (OutputStream out = c.getOutputStream()) {
                 out.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
@@ -468,6 +488,7 @@ public class DeviceService extends Service {
         // Slow jobs run on their own thread so check-ins keep going.
         if (type.equals("screenshot")) screenshot();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
+        if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
             new Thread(() -> {
                 try {
@@ -497,6 +518,39 @@ public class DeviceService extends Service {
         handler.postDelayed(() -> net.execute(this::report), 3000);
     }
 
+    // ---- door relay (Telpo F8: sysfs file; other devices have none) ----
+    private static final File RELAY = new File("/sys/class/gpio-ctrl/relay1/enable");
+    private final Runnable relayOff = () -> setRelay(false, 0);
+
+    // null = this device has no relay.
+    private static Boolean relayState() {
+        if (!RELAY.exists()) return null;
+        try (BufferedReader r = new BufferedReader(new java.io.FileReader(RELAY))) {
+            return "1".equals(r.readLine().trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // seconds > 0: pulse (on now, off after N s). A new call cancels a pending pulse. Runs on the main thread.
+    private void setRelay(boolean on, int seconds) {
+        handler.removeCallbacks(relayOff);
+        if (!RELAY.exists()) {
+            event(this, "Relay: this device has no relay");
+            return;
+        }
+        boolean value = on || seconds > 0;
+        try (java.io.FileWriter w = new java.io.FileWriter(RELAY)) {
+            w.write(value ? "1" : "0");
+        } catch (Exception e) {
+            Log.w(TAG, "relay write failed", e);
+            event(this, "Relay failed: " + e.getMessage());
+            return;
+        }
+        if (seconds > 0) handler.postDelayed(relayOff, seconds * 1000L);
+        net.execute(this::report);
+    }
+
     // Portal "Allowed apps": same effect as the admin menu's app picker. KioskActivity redraws its tiles via its pref listener.
     private void setAllowedApps(JSONArray pkgs) {
         if (pkgs == null) return;
@@ -522,7 +576,7 @@ public class DeviceService extends Service {
         try {
             c.setConnectTimeout(10000);
             c.setReadTimeout(60000);
-            c.setRequestProperty("X-Device-Key", getString(R.string.server_key));
+            c.setRequestProperty("X-Device-Key", key(this));
             if (c.getResponseCode() != 200) throw new Exception("download HTTP " + c.getResponseCode());
             try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(dest)) {
                 byte[] buf = new byte[64 * 1024];
@@ -621,7 +675,7 @@ public class DeviceService extends Service {
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
-            c.setRequestProperty("X-Device-Key", getString(R.string.server_key));
+            c.setRequestProperty("X-Device-Key", key(this));
             c.setRequestProperty("X-Device-Id", deviceId());
             byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
             try (OutputStream out = c.getOutputStream()) {
@@ -733,7 +787,7 @@ public class DeviceService extends Service {
                 c.setRequestMethod("POST");
                 c.setDoOutput(true);
                 c.setRequestProperty("Content-Type", "image/jpeg");
-                c.setRequestProperty("X-Device-Key", getString(R.string.server_key));
+                c.setRequestProperty("X-Device-Key", key(this));
                 c.setRequestProperty("X-Device-Id", deviceId());
                 try (OutputStream o = c.getOutputStream()) {
                     if (jpeg != null) o.write(jpeg);

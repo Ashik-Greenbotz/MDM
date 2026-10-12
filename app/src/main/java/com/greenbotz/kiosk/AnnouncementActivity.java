@@ -24,6 +24,11 @@ public class AnnouncementActivity extends Activity {
     };
 
     @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(KioskActivity.themed(base));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String id = getIntent().getStringExtra("id"), image = getIntent().getStringExtra("image");
@@ -37,14 +42,14 @@ public class AnnouncementActivity extends Activity {
 
         TextView title = new TextView(this);
         title.setText("Announcement");
-        title.setTextColor(0xFF1D2129);
+        title.setTextColor(getColor(R.color.text_primary));
         title.setTextSize(28);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         col.addView(title);
 
         TextView text = new TextView(this);
         text.setText(getIntent().getStringExtra("text"));
-        text.setTextColor(0xFF1D2129);
+        text.setTextColor(getColor(R.color.text_primary));
         text.setTextSize(20);
         text.setPadding(0, pad / 2, 0, pad / 2);
         col.addView(text);
@@ -72,6 +77,11 @@ public class AnnouncementActivity extends Activity {
         ack.setText("Acknowledge");
         ack.setTextSize(22);
         ack.setAllCaps(false);
+        ack.setTextColor(0xFFFFFFFF);
+        android.graphics.drawable.GradientDrawable accent = new android.graphics.drawable.GradientDrawable();
+        accent.setColor(getColor(R.color.accent));
+        accent.setCornerRadius(20 * dp);
+        ack.setBackground(accent);
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, Math.round(72 * dp));
         bp.topMargin = pad;
         ack.setOnClickListener(v -> {
@@ -81,10 +91,15 @@ public class AnnouncementActivity extends Activity {
         col.addView(ack, bp);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(0xFFFFFFFF);
+        scroll.setBackground(getDrawable(R.drawable.bg_gradient));
         scroll.setFillViewport(true);
-        col.setGravity(Gravity.CENTER_HORIZONTAL);
-        scroll.addView(col);
+        // Same glass card as the setup screens.
+        col.setBackground(getDrawable(R.drawable.glass));
+        android.widget.FrameLayout wrap = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
+        lp.setMargins(pad, pad, pad, pad);
+        wrap.addView(col, lp);
+        scroll.addView(wrap);
         setContentView(scroll);
     }
 

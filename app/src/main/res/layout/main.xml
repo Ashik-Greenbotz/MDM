@@ -1,38 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Kiosk home screen, "glass" look: gradient background, translucent panels. Colours in values(-night)/colors.xml. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FFFFFF">
+    android:background="@drawable/bg_gradient">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- Header: internet status (left), clock (right) -->
+        <!-- Header: status (left), clock panel (right) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
+            android:gravity="top"
             android:orientation="horizontal"
             android:padding="20dp">
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/status"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/status"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:drawablePadding="6dp"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="8dp"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
+                android:drawablePadding="6dp"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp"
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
             <View
                 android:layout_width="0dp"
@@ -42,15 +37,19 @@
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:background="@drawable/glass"
+                android:elevation="4dp"
                 android:gravity="end"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:paddingHorizontal="20dp"
+                android:paddingVertical="14dp">
 
                 <TextClock
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:format12Hour="h:mm a"
                     android:format24Hour="HH:mm"
-                    android:textColor="#1D2129"
+                    android:textColor="@color/text_primary"
                     android:textSize="28sp"
                     android:textStyle="bold" />
 
@@ -59,7 +58,7 @@
                     android:layout_height="wrap_content"
                     android:format12Hour="EEEE, d MMMM"
                     android:format24Hour="EEEE, d MMMM"
-                    android:textColor="#6B7280"
+                    android:textColor="@color/text_secondary"
                     android:textSize="14sp" />
 
                 <!-- Battery level, kept live by a battery receiver -->
@@ -71,7 +70,7 @@
                     android:drawablePadding="4dp"
                     android:drawableStart="@drawable/ic_battery"
                     android:gravity="center_vertical"
-                    android:textColor="#6B7280"
+                    android:textColor="@color/text_secondary"
                     android:textSize="14sp" />
 
                 <!-- 4-digit Device ID from the portal -->
@@ -81,13 +80,13 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
                     android:fontFamily="monospace"
-                    android:textColor="#1D2129"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Wallpaper logo -->
+        <!-- Logo (light version in drawable-night) -->
         <ImageView
             android:layout_width="match_parent"
             android:layout_height="0dp"
@@ -95,32 +94,33 @@
             android:contentDescription="@null"
             android:padding="40dp"
             android:scaleType="fitCenter"
-            android:src="@drawable/wallpaper" />
+            android:src="@drawable/logo" />
 
         <!-- Allowed apps, picked from the admin menu -->
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#F4F5F7">
+            android:layout_marginHorizontal="16dp"
+            android:background="@drawable/glass"
+            android:elevation="4dp">
 
             <GridLayout
                 android:id="@+id/apps"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:columnCount="4"
-                android:padding="12dp" />
+                android:padding="10dp" />
         </ScrollView>
 
         <!-- Footer on every kiosk home screen -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#F4F5F7"
             android:gravity="center"
             android:paddingBottom="10dp"
-            android:paddingTop="2dp"
+            android:paddingTop="10dp"
             android:text="@string/footer"
-            android:textColor="#9AA0A6"
+            android:textColor="@color/text_secondary"
             android:textSize="12sp" />
     </LinearLayout>
 
