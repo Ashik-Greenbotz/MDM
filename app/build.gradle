@@ -1,13 +1,21 @@
 plugins { id "com.android.application" }
 
+// Device key (must match DEVICE_KEY on the server) is read from local.properties, which is not in git:
+//   server.key=<the key>
+def localProps = new Properties()
+def lp = rootProject.file("local.properties")
+if (lp.exists()) lp.withInputStream { localProps.load(it) }
+
 android {
     namespace "com.greenbotz.kiosk"
     compileSdk 35
+    buildFeatures { resValues true }
     defaultConfig {
         applicationId "com.greenbotz.kiosk"
         minSdk 28
         targetSdk 35
-        versionCode 18
-        versionName "10.4"
+        versionCode 24
+        versionName "10.8"
+        resValue "string", "server_key", localProps.getProperty("server.key", "change-me-device-key")
     }
 }

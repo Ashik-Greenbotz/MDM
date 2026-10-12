@@ -22,8 +22,8 @@ const STATIC = {
 };
 const PUBLIC_PAGES = ["/login", "/logo.png", "/manifest.json"];
 const SESSION_MS = 12 * 60 * 60 * 1000;
-const ONLINE_MS = 90 * 1000;
-const OFFLINE_ALERT_MS = 2 * 60 * 1000; // a restart takes about a minute, so no alarm for that
+const ONLINE_MS = Number(process.env.ONLINE_MS || 90 * 1000);
+const OFFLINE_ALERT_MS = Number(process.env.OFFLINE_ALERT_MS || 2 * 60 * 1000); // a restart takes about a minute, so no alarm for that
 const LOW_BATTERY = 20;
 const HISTORY_EVERY_MS = 5 * 60 * 1000, HISTORY_KEEP = 288; // 24 h of 5-minute samples
 // Devices take the server's time zone (fixes terminals shipped on UTC). Override with TIME_ZONE=Asia/Singapore etc.
@@ -35,7 +35,7 @@ const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
 const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "install", "file", "logs"];
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "apps", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot"],
@@ -56,6 +56,7 @@ const store = {
   },
   async write(key, buf) {
     if (CLOUD) return bucket.file(key).save(buf, { resumable: false });
+    await fs.promises.mkdir(path.dirname(local(key)), { recursive: true });
     await fs.promises.writeFile(local(key) + ".tmp", buf);
     await fs.promises.rename(local(key) + ".tmp", local(key));
   },
@@ -72,7 +73,7 @@ const appKey = id => `uploads/apps/${id}.apk`, fileKey = id => `uploads/files/${
 if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs"]) fs.mkdirSync(local(dir), { recursive: true });
 
 let devices = {};
-const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], kioskApp: null };
+const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], announcements: [], whatsapp: [], waOutbox: [], waHistory: [], kioskApp: null };
 // Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
 // ("Add device", kept in portal.pending) and type it on the device to link it.
 const usedCodes = () => new Set([...Object.values(devices).map(d => d.code), ...portal.pending.map(x => x.code)]);
@@ -245,7 +246,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
@@ -288,19 +289,110 @@ function commandFrom(body) {
     if (pkg && !/^[\w.]{3,200}$/.test(pkg)) throw new Error("bad app");
     return { type, package: pkg, name: pkg ? body.appName || pkg : "off" };
   }
+  if (type === "apps") {
+    const packages = Array.isArray(body.packages) ? body.packages.map(String) : null;
+    if (!packages || packages.length > 300 || packages.some(x => !/^[\w.]{3,200}$/.test(x))) throw new Error("bad app list");
+    return { type, packages, name: `${packages.length} allowed app${packages.length === 1 ? "" : "s"}` };
+  }
   if (!Object.values(COMMANDS).flat().includes(type)) throw new Error("unknown command");
   return { type };
+}
+
+// ---- WhatsApp (CallMeBot, free): alerts go to each number in portal.whatsapp [{ name, phone, apikey }] ----
+// Each person sends "I allow callmebot to send me messages" to +34 644 71 81 99 on WhatsApp and gets their API key.
+// Messages wait in portal.waOutbox (saved with portal.json, so a restart keeps them) and go out one at a time.
+// A failed send is retried every WA_RETRY_MS, up to WA_TRIES times. An item is only removed once its send works,
+// so nothing is sent twice. Offline alerts repeat every WA_REMIND_MS until the device is back.
+const WA_REMIND_MS = Number(process.env.WA_REMIND_MS || 60 * 60 * 1000), WA_RETRY_MS = Number(process.env.WA_RETRY_MS || 5 * 60 * 1000), WA_TRIES = 12;
+const CALLMEBOT_URL = process.env.CALLMEBOT_URL || "https://api.callmebot.com/whatsapp.php";
+const waTime = t => {
+  const o = { timeZone: TIME_ZONE };
+  return `${new Date(t).toLocaleDateString("en-GB", { ...o, day: "numeric", month: "long", year: "numeric" })}, ${
+    new Date(t).toLocaleTimeString("en-US", { ...o, hour: "numeric", minute: "2-digit" })}`;
+};
+function waText(type, d, a) {
+  const head = `Site: ${d.group || "No site"}\n\nDevice Name: ${label(d)}\n\nDevice ID: ${d.code || "-"}`;
+  if (type === "online") return `✅ DEVICE BACK ONLINE\n\n${head}\n\nBack Online Time: ${waTime(a.resolvedAt)}\n\nStatus: ONLINE`;
+  if (type === "offline" || type === "reminder") {
+    const hours = Math.max(1, Math.round((Date.now() - d.lastSeen) / 3600000));
+    return `🚨 DEVICE OFFLINE ${type === "reminder" ? `REMINDER (offline for ${hours} h)` : "ALERT"}\n\n${head}\n\nLast Device Online Time: ${waTime(d.lastSeen)}\n\nStatus: OFFLINE`;
+  }
+  return `🚨 ${a.text}\n\n${head}\n\nTime: ${waTime(a.at)}`; // battery, crash
+}
+// Queues one message per number. The key (alert + type + reminder number) is never queued or sent twice.
+function waQueue(type, d, a, n = 0) {
+  const key = `${a.id}:${type}:${n}`;
+  if (portal.waHistory.some(h => h.key === key)) return;
+  const text = waText(type, d, a);
+  for (const r of portal.whatsapp) {
+    if (portal.waOutbox.some(x => x.key === key && x.phone === r.phone)) continue;
+    portal.waOutbox.push({ key, alertId: a.id, type, phone: r.phone, text, tries: 0, dueAt: Date.now() });
+  }
+  dirty = true;
+}
+async function callmebot(phone, apikey, text) {
+  const res = await fetch(`${CALLMEBOT_URL}?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apikey)}`,
+    { signal: AbortSignal.timeout(20000) });
+  const body = (await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  // CallMeBot answers 200 with an error text for a wrong key or number
+  if (!res.ok || /error|invalid|not (been )?(activated|registered)|wrong/i.test(body)) throw new Error(`HTTP ${res.status} ${body.slice(0, 150)}`);
+}
+let waBusy = false;
+async function waSend() {
+  if (waBusy || !portal.waOutbox.length) return;
+  waBusy = true;
+  try {
+    for (const x of portal.waOutbox.filter(x => x.dueAt <= Date.now())) {
+      const r = portal.whatsapp.find(r => r.phone === x.phone), name = r?.name || x.phone;
+      try {
+        if (!r) throw Object.assign(new Error("number removed"), { drop: true });
+        await callmebot(r.phone, r.apikey, x.text);
+        portal.waOutbox = portal.waOutbox.filter(y => y !== x);
+        portal.waHistory.push({ key: x.key, type: x.type, phone: x.phone, at: Date.now() });
+        if (portal.waHistory.length > 1000) portal.waHistory.splice(0, portal.waHistory.length - 1000);
+        log(null, "whatsapp", `WhatsApp ${x.type} sent to ${name}`);
+      } catch (e) {
+        x.tries++;
+        x.dueAt = Date.now() + WA_RETRY_MS;
+        const giveUp = e.drop || x.tries >= WA_TRIES;
+        if (giveUp) portal.waOutbox = portal.waOutbox.filter(y => y !== x);
+        log(null, "whatsapp", `WhatsApp ${x.type} to ${name} failed (try ${x.tries}${giveUp ? ", gave up" : ", will retry"}): ${e.message}`);
+      }
+      dirty = true;
+      await new Promise(ok => setTimeout(ok, Number(process.env.WA_GAP_MS ?? 3000))); // CallMeBot refuses messages sent too close together
+    }
+  } finally { waBusy = false; }
+}
+// Hourly reminders for offline devices. The schedule (a.waNextAt) is saved with the alert, so it survives a restart.
+function waRemind() {
+  if (!portal.whatsapp.length) return;
+  for (const a of portal.alerts) {
+    if (a.kind !== "offline" || a.resolvedAt || !a.waNextAt || Date.now() < a.waNextAt) continue;
+    const d = devices[a.deviceId];
+    if (!d) continue;
+    a.waReminders = (a.waReminders || 0) + 1;
+    a.waNextAt += WA_REMIND_MS * Math.max(1, Math.ceil((Date.now() - a.waNextAt) / WA_REMIND_MS)); // skip hours missed while the server was down
+    waQueue("reminder", d, a, a.waReminders);
+  }
 }
 
 // ---- alerts: opened when a condition starts, resolved when it ends (crashes stay until acknowledged) ----
 function setAlert(d, kind, on, text) {
   const open = portal.alerts.find(a => a.deviceId === d.id && a.kind === kind && !a.resolvedAt);
   if (on && !open) {
-    portal.alerts.push({ id: rid(), deviceId: d.id, kind, text, at: Date.now() });
+    const a = { id: rid(), deviceId: d.id, kind, text, at: Date.now() };
+    if (kind === "offline") a.waNextAt = a.at + WA_REMIND_MS;
+    portal.alerts.push(a);
     log(d.id, "alert", text);
+    waQueue(kind, d, a);
   } else if (!on && open) {
     open.resolvedAt = Date.now();
     log(d.id, "resolved", `${kind} alert cleared`);
+    if (kind === "offline") {
+      // back online: cancel whatever is still waiting for this alert, then send the recovery message
+      portal.waOutbox = portal.waOutbox.filter(x => x.alertId !== open.id);
+      waQueue("online", d, open);
+    }
   }
 }
 function checkAlerts() {
@@ -337,6 +429,46 @@ function runDueTasks() {
   }
 }
 
+// ---- daily device logs: logs/<id>/<YYYY-MM-DD>.txt, filled from every log upload ----
+// Tablets keep only their last 3000 log lines, so the portal asks every online Android device for logs at minute 55
+// of every hour (23:55 is the last pull of the day). Each upload adds the lines newer than the last saved one.
+// ponytail: lines that scroll out of the tablet's buffer between two pulls are lost; pull more often if that matters.
+const LOG_DAYS = 30, LOG_PULL_MINUTE = Number(process.env.LOG_PULL_MINUTE ?? 55);
+const dayKey = (id, day) => `logs/${id}/${day}.txt`;
+async function saveDailyLogs(d, text) {
+  const now = zoned(), year = now.getFullYear(), month = now.getMonth() + 1, byDay = new Map();
+  let last = d.logLast || "";
+  for (const line of text.split("\n")) {
+    const m = /^(\d\d)-(\d\d) (\d\d:\d\d:\d\d\.\d{3})/.exec(line); // logcat -v time: "10-12 16:43:33.210 ..."
+    if (!m) continue;
+    const day = `${Number(m[1]) > month ? year - 1 : year}-${m[1]}-${m[2]}`, stamp = `${day} ${m[3]}`;
+    if (stamp <= (d.logLast || "")) continue;
+    if (stamp > last) last = stamp;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(line);
+  }
+  for (const [day, lines] of byDay) {
+    const old = (await store.read(dayKey(d.id, day))) || "";
+    await store.write(dayKey(d.id, day), Buffer.from(old + lines.join("\n") + "\n"));
+    if (!(d.logDays ||= []).includes(day)) d.logDays.push(day);
+  }
+  d.logLast = last;
+  d.logDays = (d.logDays || []).sort();
+  while (d.logDays.length > LOG_DAYS) await store.remove(dayKey(d.id, d.logDays.shift()));
+  dirty = true;
+}
+let lastLogPull = "";
+function pullLogs() {
+  const now = zoned(), hour = now.toDateString() + now.getHours();
+  if (now.getMinutes() !== LOG_PULL_MINUTE || lastLogPull === hour) return;
+  lastLogPull = hour;
+  for (const d of Object.values(devices)) {
+    if (Date.now() - d.lastSeen > ONLINE_MS || !COMMANDS[typeOf(d)].includes("logs") || d.queue?.some(c => c.type === "logs")) continue;
+    (d.queue ||= []).push({ type: "logs", id: rid(), at: Date.now(), auto: true }); // not logged: would be 24 events a day per device
+    dirty = true;
+  }
+}
+
 // Alerts, scheduled tasks and saving, at most every 5 s. The office PC runs it on a timer. In the cloud the
 // function only has CPU while handling a request, so it runs at the start of requests (devices check in every 10 s).
 // ponytail: a task only fires if some request arrives during its minute; add a Cloud Scheduler ping if no device is online then.
@@ -346,6 +478,9 @@ async function tick() {
   lastTick = Date.now();
   checkAlerts();
   runDueTasks();
+  pullLogs();
+  waRemind();
+  waSend().catch(e => console.error("whatsapp:", e.message));
   await flush();
 }
 
@@ -404,8 +539,13 @@ async function handler(req, res) {
         }
       }
       for (const e of Array.isArray(body.events) ? body.events.slice(0, 20) : []) log(d.id, "device", String(e).slice(0, 500));
+      for (const id of Array.isArray(body.acks) ? body.acks.slice(0, 50) : []) {
+        const a = portal.announcements.find(x => x.id === id);
+        if (a && a.deviceIds.includes(d.id) && !a.acks[d.id]) { a.acks[d.id] = Date.now(); log(d.id, "announcement", `${label(d)} acknowledged "${a.text.slice(0, 60) || "image"}"`); }
+      }
       if (typeof body.crash === "string" && body.crash) {
         portal.alerts.push({ id: rid(), deviceId: d.id, kind: "crash", text: `App crashed on ${label(d)}`, detail: body.crash.slice(0, 4000), at: Date.now() });
+        waQueue("crash", d, portal.alerts[portal.alerts.length - 1]);
         log(d.id, "alert", `App crashed on ${label(d)}: ${body.crash.split("\n")[0].slice(0, 200)}`);
       }
       if (!d.historyAt || Date.now() - d.historyAt >= HISTORY_EVERY_MS) {
@@ -418,10 +558,14 @@ async function handler(req, res) {
       if (command) {
         d.lastCommand = command.type;
         d.lastCommandAt = Date.now();
-        log(d.id, "delivered", `${command.type} delivered`);
+        if (command.auto) d.autoLogsAt = Date.now();
+        else log(d.id, "delivered", `${command.type} delivered`);
       }
+      // Oldest announcement this device hasn't acknowledged: sent on every check-in until it is.
+      const an = portal.announcements.find(a => a.deviceIds.includes(d.id) && !a.acks[d.id]);
+      const announcement = an ? { id: an.id, text: an.text, image: an.image ? `/download/file/${an.image}` : null } : null;
       dirty = true;
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance });
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, announcement });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -447,9 +591,11 @@ async function handler(req, res) {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
       const id = String(req.headers["x-device-id"] || "");
       if (!devices[id]) return send(res, 404, { error: "unknown device" });
-      await store.write(`logs/${id}.txt`, await readBody(req, 2 * 1024 * 1024));
+      const text = await readBody(req, 2 * 1024 * 1024);
+      await store.write(`logs/${id}.txt`, text);
       devices[id].logsAt = Date.now();
-      log(id, "logs", "Logs uploaded");
+      await saveDailyLogs(devices[id], text.toString());
+      if (Date.now() - (devices[id].autoLogsAt || 0) > 120000) log(id, "logs", "Logs uploaded"); // hourly pulls stay quiet
       return send(res, 200, { ok: true });
     }
     // Screenshot from a device (JPEG body), or ?error=... when it couldn't take one.
@@ -545,6 +691,9 @@ async function handler(req, res) {
         kioskApp: portal.kioskApp, sites: portal.sites.filter(x => siteOk(u, x.name)),
         pending: portal.pending.filter(x => siteOk(u, x.group)),
         users: u.admin ? portal.users.map(publicUser) : undefined, modules: MODULES,
+        announcements: u.admin ? portal.announcements : [],
+        whatsapp: u.admin ? portal.whatsapp : undefined,
+        lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
       });
     }
     if (req.method === "GET" && p === "/api/events") {
@@ -567,6 +716,25 @@ async function handler(req, res) {
       if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [] });
       const logs = await store.read(`logs/${d.id}.txt`);
       return logs ? send(res, 200, logs, "text/plain; charset=utf-8") : send(res, 404, { error: "no logs yet" });
+    }
+    // Saved daily logs between two times: ?from=2026-10-12T08:00&to=2026-10-12T17:30 (TIME_ZONE wall clock)
+    m = /^\/api\/devices\/([\w-]+)\/logs\/download$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]];
+      if (!d) return send(res, 404, { error: "no such device" });
+      if (!can(u, "devices") || !sees(u, d)) return deny();
+      const from = String(url.searchParams.get("from") || "").replace("T", " "), to = String(url.searchParams.get("to") || "").replace("T", " ");
+      if (!/^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(from) || !/^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(to) || from > to) return send(res, 400, { error: "pick a From and To time" });
+      let out = `${label(d)} (Device ID ${d.code}) logs ${from} to ${to}\n\n`;
+      for (const day of (d.logDays || []).filter(x => x >= from.slice(0, 10) && x <= to.slice(0, 10))) {
+        const text = ((await store.read(dayKey(d.id, day))) || "").toString();
+        for (const line of text.split("\n")) {
+          const t = `${day} ${line.slice(6, 11)}`;
+          if (line && t >= from && t <= to) out += line + "\n";
+        }
+      }
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Content-Disposition": disposition(`${label(d)}-logs-${from}-${to}.txt`) });
+      return res.end(out);
     }
     if (req.method === "POST" && p === "/api/devices/new") {
       if (!can(u, "devices", "enroll") || !siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
@@ -618,6 +786,41 @@ async function handler(req, res) {
       return send(res, 400, { error: "unknown action" });
     }
     // Maintenance mode: show the full-screen maintenance image on the chosen devices until turned off.
+    // Announcements: a message and/or image shown on the devices until someone taps Acknowledge. Admins only.
+    if (req.method === "POST" && p === "/api/announcements") {
+      if (!u.admin) return deny();
+      const text = String(body.text || "").trim().slice(0, 1000), image = body.image ? String(body.image) : null;
+      if (image && !portal.files.some(f => f.id === image)) return send(res, 400, { error: "image not found, upload it again" });
+      if (!text && !image) return send(res, 400, { error: "write a message or pick an image" });
+      const list = pick(body.target).filter(d => COMMANDS[typeOf(d)].includes("unlock"));
+      if (!list.length) return send(res, 400, { error: "no kiosk devices selected" });
+      portal.announcements.unshift({ id: rid(), text, image, at: Date.now(), by, deviceIds: list.map(d => d.id), acks: {} });
+      portal.announcements = portal.announcements.slice(0, 200);
+      log(null, "announcement", `Announcement sent to ${list.length} device${list.length === 1 ? "" : "s"} by ${by}`);
+      return ok({ count: list.length });
+    }
+    if (req.method === "POST" && p === "/api/announcements/delete") {
+      if (!u.admin) return deny();
+      portal.announcements = portal.announcements.filter(a => a.id !== body.id);
+      return ok();
+    }
+    // WhatsApp numbers for alerts. Admins only (the API keys are secrets).
+    if (req.method === "POST" && p === "/api/whatsapp") {
+      if (!u.admin) return deny();
+      const list = (Array.isArray(body.list) ? body.list : []).slice(0, 20).map(r => ({
+        name: String(r.name || "").trim().slice(0, 60), phone: String(r.phone || "").replace(/[^\d+]/g, ""), apikey: String(r.apikey || "").trim().slice(0, 40) }));
+      const bad = list.find(r => !/^\+\d{8,15}$/.test(r.phone) || !r.apikey);
+      if (bad) return send(res, 400, { error: `Check ${bad.name || bad.phone || "a row"}: phone needs + and country code (e.g. +6591234567), and an API key` });
+      portal.whatsapp = list;
+      if (body.test) {
+        for (const r of list) {
+          try { await callmebot(r.phone, r.apikey, `✅ Test from the device portal: WhatsApp alerts are on (sent by ${by}).`); }
+          catch (e) { return send(res, 400, { error: `${r.name || r.phone}: ${e.message}` }); }
+        }
+      }
+      log(null, "whatsapp", `WhatsApp alert numbers updated by ${by} (${list.length})`);
+      return ok();
+    }
     if (req.method === "POST" && p === "/api/maintenance") {
       if (!can(u, "devices", "sites", "overview")) return deny();
       const list = mine(pick(body.target));
@@ -628,7 +831,7 @@ async function handler(req, res) {
       return ok({ count: list.length });
     }
     if (req.method === "POST" && p === "/api/sites") {
-      if (!can(u, "sites") || (body.oldName ? !siteOk(u, body.oldName) : !allSites(u))) return deny();
+      if (!can(u, "sites") || (body.oldName ? !u.admin : !allSites(u))) return deny(); // only admins edit sites
       const name = String(body.name || "").slice(0, 60).trim();
       if (!name) return send(res, 400, { error: "site name required" });
       const site = portal.sites.find(x => x.name.toLowerCase() === name.toLowerCase());
@@ -651,7 +854,7 @@ async function handler(req, res) {
       return ok();
     }
     if (req.method === "POST" && p === "/api/sites/delete") {
-      if (!can(u, "sites") || !allSites(u)) return deny();
+      if (!u.admin) return deny(); // only admins delete sites
       for (const x of portal.users) x.sites = (x.sites || []).filter(s => s !== body.name);
       portal.sites = portal.sites.filter(x => x.name !== body.name);
       for (const d of Object.values(devices)) if (d.group === body.name) d.group = "";

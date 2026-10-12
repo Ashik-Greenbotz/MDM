@@ -22,28 +22,27 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <!-- Portal server reachable? Set from DeviceService check-ins -->
                 <TextView
-                    android:id="@+id/status"
+                    android:id="@+id/serverStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
                     android:paddingHorizontal="14dp"
                     android:paddingVertical="8dp"
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
-                <!-- Connection detail: Wi-Fi name, or Ethernet IP -->
                 <TextView
-                    android:id="@+id/netInfo"
+                    android:id="@+id/status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:drawablePadding="7dp"
+                    android:drawablePadding="6dp"
                     android:gravity="center_vertical"
-                    android:textColor="#6B7280"
-                    android:textSize="13sp"
-                    android:visibility="gone" />
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="8dp"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <View
@@ -71,6 +70,18 @@
                     android:layout_height="wrap_content"
                     android:format12Hour="EEEE, d MMMM"
                     android:format24Hour="EEEE, d MMMM"
+                    android:textColor="#6B7280"
+                    android:textSize="14sp" />
+
+                <!-- Battery level, kept live by a battery receiver -->
+                <TextView
+                    android:id="@+id/battery"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:drawablePadding="4dp"
+                    android:drawableStart="@drawable/ic_battery"
+                    android:gravity="center_vertical"
                     android:textColor="#6B7280"
                     android:textSize="14sp" />
 

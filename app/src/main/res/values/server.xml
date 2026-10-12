@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Default kiosk server; can be changed per tablet from the admin menu ("Server address"). -->
+<!-- Default kiosk server; can be changed per tablet from the admin menu ("Server address").
+     The device key is set in local.properties (server.key=...), see app/build.gradle. -->
 <resources>
-    <string name="server_url" translatable="false">http://192.168.68.50:8080</string>
-    <!-- Must match DEVICE_KEY on the server. -->
-    <string name="server_key" translatable="false">change-me-device-key</string>
+    <string name="server_url" translatable="false">https://mdm.gbotz.site</string>
     <string name="screenshot_service_description">Lets the device portal take a screenshot of this screen when an admin asks for one. Reads no screen content.</string>
     <string name="footer">2026 © Interlock Security Systems · Developed by Ashik</string>
 </resources>
