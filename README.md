@@ -113,7 +113,7 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `AnnouncementActivity.java` | Full-screen announcements from the portal, with Acknowledge. |
 | `MaintenanceActivity.java` | Maintenance-mode screen. |
 | `ScreenshotService.java`, `ScreenshotActivity.java` | Portal screenshots: accessibility service, or screen capture on Android 9/10. |
-| `PinOverlay.java` | App pinning override: invisible bottom-left square over the pinned app, 6 taps open the override PIN. |
+| `PinOverlay.java` | App pinning override: invisible top-right square over the pinned app, 6 taps open the override PIN. |
 | `ProvisioningActivity.java`, `AdminReceiver.java`, `BootReceiver.java` | Device-owner setup by QR, device admin, start on boot. |
 | `res/layout/main.xml` | Home screen layout. |
 | `res/values(-night)/` | Light/dark colours and themes (glass look). |

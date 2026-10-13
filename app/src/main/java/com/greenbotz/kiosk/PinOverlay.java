@@ -10,7 +10,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 
-// App pinning, manual override: an invisible square in the bottom-left corner on top of the pinned app.
+// App pinning, manual override: an invisible square in the top-right corner on top of the pinned app.
 // 6 taps within 3 s open the kiosk screen's override PIN prompt (works offline).
 // Needs "draw over other apps", granted once over ADB (setup-tablet.bat); without it, Home -> kiosk screen still works.
 final class PinOverlay {
@@ -35,7 +35,7 @@ final class PinOverlay {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.START;
+        lp.gravity = Gravity.TOP | Gravity.END;
         view = new View(app);
         view.setOnTouchListener((v, e) -> {
             if (e.getAction() == MotionEvent.ACTION_DOWN && tap()) {
