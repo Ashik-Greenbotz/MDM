@@ -16,7 +16,7 @@ rem Fails harmlessly if it is already device owner; fails for real if an account
 set MODE=kiosk
 if /i "%~1"=="monitor" set MODE=monitor
 echo Mode: %MODE%
-rem Lets the App pinning override corner (6 taps bottom-left) sit on top of the pinned app.
+rem Lets the App pinning override corner (6 taps top-right) sit on top of the pinned app.
 adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow
 rem Portal screenshots (Android 11+). Note: replaces any other accessibility services on the device.
 adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService

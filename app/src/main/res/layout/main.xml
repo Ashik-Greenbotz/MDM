@@ -138,14 +138,7 @@
         android:textSize="18sp"
         android:visibility="gone" />
 
-    <!-- App pinning manual override: tap 6 times within 3 seconds, then the override PIN -->
-    <View
-        android:id="@+id/overrideCorner"
-        android:layout_width="70dp"
-        android:layout_height="70dp"
-        android:layout_gravity="bottom|start" />
-
-    <!-- Invisible admin hotspot: tap 6 times within 3 seconds -->
+    <!-- Invisible admin hotspot: tap 6 times within 3 seconds (while an app is pinned: the override PIN) -->
     <View
         android:id="@+id/corner"
         android:layout_width="120dp"

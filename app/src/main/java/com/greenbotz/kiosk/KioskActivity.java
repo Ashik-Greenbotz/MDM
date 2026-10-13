@@ -76,7 +76,7 @@ public class KioskActivity extends Activity {
     static final String PREF_MODE = "mode";
     // App pinning: package that runs full screen; the kiosk screen only shows briefly to reopen it.
     static final String PREF_SINGLE_APP = "single_app";
-    // Manual override while an app is pinned: 6 taps bottom-left + this PIN. Checked on the device, so it works offline.
+    // Manual override while an app is pinned: 6 taps top-right + this PIN. Checked on the device, so it works offline.
     // ponytail: one fixed PIN for every device; make it per-device / settable from the portal if it leaks.
     private static final String OVERRIDE_PIN = "9499";
     static final String EXTRA_OVERRIDE = "override";
@@ -143,10 +143,6 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
-        findViewById(R.id.overrideCorner).setOnClickListener(v -> {
-            handler.removeCallbacks(openSingleApp);
-            if (isPinned(this) && PinOverlay.tap()) askOverridePin();
-        });
         overridePending = getIntent().getBooleanExtra(EXTRA_OVERRIDE, false);
         // Mode is picked once, on the first launch by setup-tablet.bat; after that only the admin menu changes it.
         if (!prefs().contains(PREF_MODE)) {
@@ -544,7 +540,7 @@ public class KioskActivity extends Activity {
             pkgs.add(getPackageName());
             dpm.setLockTaskPackages(admin, pkgs.toArray(new String[0]));
             // Home button returns to this screen; recents and notifications stay blocked.
-            // App pinned: no Home button at all (way out is the bottom-left override or Unpin from the portal).
+            // App pinned: no Home button at all (way out is the top-right override or Unpin from the portal).
             dpm.setLockTaskFeatures(admin, (isPinned(this) ? 0 : DevicePolicyManager.LOCK_TASK_FEATURE_HOME)
                     | DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS);
             setHomeAlias(true);
@@ -589,6 +585,11 @@ public class KioskActivity extends Activity {
 
     private void onCornerTap() {
         handler.removeCallbacks(openSingleApp); // admin is trying to get in: stay on this screen
+        // Same corner as the overlay on top of the pinned app, so it asks for the override PIN there too.
+        if (isPinned(this)) {
+            if (PinOverlay.tap()) askOverridePin();
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         if (now - firstTapAt > TAP_WINDOW_MS) {
             firstTapAt = now;
