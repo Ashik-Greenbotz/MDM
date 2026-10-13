@@ -518,15 +518,18 @@ public class DeviceService extends Service {
         handler.postDelayed(() -> net.execute(this::report), 3000);
     }
 
-    // ---- door relay (Telpo F8: sysfs file; other devices have none) ----
+    // ---- door relay (Telpo F8, F10B: sysfs file; other devices have none) ----
     private static final File RELAY = new File("/sys/class/gpio-ctrl/relay1/enable");
+    // F10B (rk3568) is wired the other way: "0" opens the door, "1" locks it.
+    private static final boolean RELAY_INVERTED = "F10B".equals(Build.MODEL);
+    private static final String RELAY_ON = RELAY_INVERTED ? "0" : "1", RELAY_OFF = RELAY_INVERTED ? "1" : "0";
     private final Runnable relayOff = () -> setRelay(false, 0);
 
     // null = this device has no relay.
     private static Boolean relayState() {
         if (!RELAY.exists()) return null;
         try (BufferedReader r = new BufferedReader(new java.io.FileReader(RELAY))) {
-            return "1".equals(r.readLine().trim());
+            return RELAY_ON.equals(r.readLine().trim());
         } catch (Exception e) {
             return null;
         }
@@ -541,7 +544,7 @@ public class DeviceService extends Service {
         }
         boolean value = on || seconds > 0;
         try (java.io.FileWriter w = new java.io.FileWriter(RELAY)) {
-            w.write(value ? "1" : "0");
+            w.write(value ? RELAY_ON : RELAY_OFF);
         } catch (Exception e) {
             Log.w(TAG, "relay write failed", e);
             event(this, "Relay failed: " + e.getMessage());
