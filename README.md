@@ -49,18 +49,19 @@ other Android / Telpo (lock screen, ring, restart, screenshot, install app, send
 
 Tablet admin menu: 6 taps top-right → password. **Server address** changes the server; **Theme** is Auto (follows the system), Light or Dark.
 
-## Door relay (Telpo F8)
-The Telpo F8 intercom has a relay for a door lock. On its device page, **Relay (door)**:
+## Door relay (Telpo F8, F10B)
+The Telpo F8 and F10B intercoms have a relay for a door lock. On its device page, **Relay (door)**:
 - **Relay ON** / **Relay OFF**, or **⚡ Pulse** N seconds (on, then off by itself: opens the door).
 - **Maintenance mode switches the relay** (ticked by default): relay ON when maintenance starts, OFF when it ends.
 
-The card shows the state the tablet reports. Needs app 10.10 or newer. The app writes `1` / `0` to `/sys/class/gpio-ctrl/relay1/enable`.
+The card shows the state the tablet reports. Needs app 10.10 or newer. The app writes `1` / `0` to `/sys/class/gpio-ctrl/relay1/enable` (on / off). The F10B is wired the other way, so on it the app writes `0` for on (door open) and `1` for off.
 
 ## Our devices (13 Oct 2026)
 | Device | Android | Connection | Production Device ID |
 |---|---|---|---|
 | Telpo F8 intercom (door relay) | 11 | ADB over Wi-Fi `192.168.68.51:5555` | 5846 |
 | Samsung Galaxy Tab A11 | 16 | ADB over USB (`R8YL405XLNY`) | 8177 |
+| F10B intercom (rk3568, door relay) | 11 | ADB over Wi-Fi `192.168.1.181:5555` | |
 
 Both run app 10.12 on Production. Still to do in the production portal: delete the old offline devices 6201 (old F8) and 7041 (old Samsung), rename 5846 and 8177 and put them in their sites, and test the relay (Relay OFF, ON, Pulse, maintenance on/off).
 
