@@ -20,14 +20,14 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 
 ## Portal pages
 - **Overview**: totals, devices per type and per site, open alerts, **🛠 Maintenance on all / off all**. **🗺 Map** (top bar) opens satellite view of all devices, with a **site** filter and a **device name / ID search**. A device without its own GPS shows at its site's coordinates (hollow marker); set them in Sites → Edit.
-- **Devices**: search/filter, tick devices for bulk commands (including **🛠 Maintenance on / off**), click a row for its page.
-- **Device page**: 24 h health chart, commands, activity, **Model…** (device model, onsite / technical team, technician), **Allowed apps** (the apps on the tablet's home screen), **Relay (door)** (see below), and **logs**: pulled from the tablet every hour, kept 30 days, download a From/To range.
+- **Devices**: **Total / Online / Offline** tiles on top (click one to filter). **Add device** asks for the device type and shows its install steps (tablets in 4 steps: 1 download the latest app (the one marked **Use for QR** on Apps & files), 2 prepare the tablet, 3 ADB install + device owner commands, 4 configure with the Device ID; Windows / Linux: one command to paste, with this portal's address and PC key filled in; ESP32: the two sketch lines). Search/filter, tick devices for bulk commands (including **🛠 Maintenance on / off**), click a row for its page.
+- **Device page**: **Performance** gauges (CPU load with the processor / chip name, RAM, Storage (ROM), Temperature with its sensor; green / amber / red), 24 h health chart (battery, CPU, memory, storage), **Details** (model, OS, LAN IP and public IP, and everything the device reports: CPU, cores, memory, disks, Windows build, BIOS, MAC, screen, network, battery health…), **Remote access** card on PCs (RustDesk ID / password / Connect, SSH on / off with the commands to copy), commands, activity, **Model…** (device model, onsite / technical team, technician), **Allowed apps** (the apps on the tablet's home screen), **Relay (door)** (see below), and **logs**: pulled from the tablet every hour, kept 30 days, download a From/To range.
 - **Sites**: **+ Add site**, **Edit name / location / coordinates** on each site card (**Find address** searches OneMap), add devices to a site, send a command to a whole site. Only admins can edit or delete sites.
-- **Alerts**: offline > 2 min, battery < 20 %, app crash (raised and cleared automatically). Open alerts sound a **battleship alarm** (`dashboard/alarm.wav`, mixkit) in the portal until someone clicks **Acknowledge** (the sound button mutes it; the browser only plays sound after the first click on the page).
+- **Alerts**: offline > 2 min, battery < 20 %, app crash, and **high CPU (≥ 90 %), RAM (≥ 95 %), storage (≥ 95 %) or temperature (≥ 75 °C)** (raised and cleared automatically; a health alert clears only below the amber level, 70 % / 80 % / 80 % / 60 °C, so a value sitting at the limit doesn't send a WhatsApp every minute). Open alerts sound a **battleship alarm** (`dashboard/alarm.wav`, mixkit) in the portal until someone clicks **Acknowledge** (the sound button mutes it; the browser only plays sound after the first click on the page).
   **Max announces** every new alert in the middle of the screen and reads it aloud (muted with the speaker button in his chat): which device, which site, and when the automatic ticket will be opened. When the automatic ticket is created he comes back: assigned to whom and what happens next, or "no technician is assigned yet, please check and assign" (click the message to open the ticket).
   **💬 WhatsApp alerts** (admin): each number gets a WhatsApp message (CallMeBot, free) for every new alert, a reminder every hour while a device stays offline, and a message when it is back online. The dialog shows how to add a number. Check: `node functions/test-whatsapp.js`.
 - **Scheduled tasks**: a command at a set time on chosen days (e.g. restart a site every night).
-- **Apps & files**: upload an .apk (up to 2 GB) and install it silently on devices (OTA); send files to Download/Kiosk.
+- **Apps & files**: upload an .apk (up to 2 GB) with optional **release notes** (kept as a record with who uploaded it; click the Release notes column to read or edit them later) and install it silently on devices (OTA); send files to Download/Kiosk. **Install on devices… / Send to devices…** lists the sites: point at a site (or tap it) to see its devices and tick them, or tick a whole site / All sites.
 - **Enroll devices**: one form (site, mode, Wi-Fi) makes a token and a QR code for factory-reset Android devices.
 - **Announcements** (admin): a message (text, optional image) shown full screen on the tablets until someone taps **Acknowledge**.
 - **Technical Team**: see [Technical team and tickets](#technical-team-and-tickets).
@@ -38,7 +38,10 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 - On a phone: open the portal and "Add to Home screen" to use it like an app.
 
 Commands by device type: kiosk tablets (unlock, lock, single app, allowed apps, relay, lock screen, ring, restart, screenshot, install app, send file, get logs),
-other Android / Telpo (lock screen, ring, restart, screenshot, install app, send file, get logs), Windows / Linux / IoT agents (restart).
+other Android / Telpo (lock screen, ring, restart, screenshot, install app, send file, get logs), Windows PCs (restart, shut down, lock screen, log off, show message, screenshot, run a PowerShell command as SYSTEM with its output on the device page (admins only), send a file / run an installer, get logs), Linux / IoT agents (restart).
+
+**Windows PCs**: easiest is Devices → **Add device** → Windows PC, which gives one command to paste into admin PowerShell (it downloads the agent from the portal). Or copy `agents\agent.ps1` + `agents\install-agent.bat` to the PC and run the .bat as administrator. Both need the PC key (`AGENT_KEY` in `functions/.env`; tablets keep `DEVICE_KEY`). The agent runs at start-up as SYSTEM (also on battery), checks in every 10 s and updates itself when `agents/agent.ps1` gets a higher `$Version`.
+**PC remote access** (commands on the device): **Set up remote desktop** installs RustDesk (free) and sets a password only portal admins see; connect with the RustDesk app on your own PC using the ID shown. **SSH on / off** runs Microsoft's OpenSSH server (`ssh <user>@<PC IP>` in the office, the Windows password); with the server's SSH tunnel (`TUNNEL_PASSWORD`, production) the PC also keeps a reverse tunnel like the tablets, so SSH works from anywhere. If Windows says an OpenSSH install is waiting for a restart, restart the PC once.
 
 ## Adding a tablet
 1. In the portal: **Devices → Add device** creates a 4-digit **Device ID**.
@@ -121,6 +124,7 @@ Max is the 3D robot from `dashboard/max.glb` (`IPR_Mascot_v6`, 48 animations), d
 - **New alerts**: he flies to the red alarm bar, waves and says what happened.
 - **Page tips**: on the first visit to a page in a session, he flies to the heading with a one-line tip.
 - **Tour**: "Show me around" in the chat makes him fly down the menu, explaining each page.
+- **Sleep**: 🌙 in the chat header puts him to sleep in his corner (dimmed, 💤, no tips or fidgets), remembered per browser. An alert still wakes him: he flies to the middle, says what to do, then goes back to sleep. Click him to wake him up.
 - **Staying put**: ✈ in the chat header keeps him in his corner. He also stays still when the system asks for reduced motion.
 - **Fallback**: without WebGL, or if the model can't load, the flat robot button is used.
 
@@ -158,6 +162,8 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
   </map>
   ```
   `adb push` it to `/data/local/tmp/`, then in one `adb shell`: `run-as com.greenbotz.kiosk` copy it into `shared_prefs/`, kill the app, copy it again (the running app can write its old prefs back). In Git Bash, `export MSYS_NO_PATHCONV=1` first so `/data/...` paths aren't rewritten.
+- **Maintenance screen drops out every minute or two (production, pinned app)**: fixed in app 10.17. A check-in that got a non-JSON reply (proxy / redirect page) was read as "maintenance off". Install 10.17 or newer.
+- **CPU load on Android**: Android 8+ blocks apps from reading total CPU use. Where the tablet allows it (Telpo F8) the app measures it; otherwise (Samsung) it estimates it from the CPU clock speed and the portal says "estimated". Temperature: the chip sensor where readable, else the battery sensor. PCs: the ACPI thermal zone (board temperature). ESP32: its chip sensor.
 - **Linking without Devices → Add device**: a tablet gets its own 4-digit ID on its first check-in (the first **Connect**). Type that ID (portal device list, or `code` in `shared_prefs/kiosk.xml`) and tap **Connect** again.
 
 ## Files
@@ -178,9 +184,9 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `firebase.json`, `.firebaserc`, `storage.rules` | Firebase Hosting / Functions / Storage setup. |
 | `.github/workflows/` | `docker-deploy.yml`: a push to `main` builds and deploys the cloud portal. `pr-check.yml`: checks PRs to `main`. |
 | `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
-| `agents/` | Monitoring agents: `agent.ps1` (Windows), `agent.sh` (Linux), `esp32.ino` (IoT). |
+| `agents/` | Monitoring agents: `agent.ps1` (Windows; `install-agent.bat` installs it as a start-up task, run as administrator), `agent.sh` (Linux), `esp32.ino` (IoT). |
 
-### Tablet app (`app/`, current version 10.15)
+### Tablet app (`app/`, current version 10.18)
 | Path | What |
 |---|---|
 | `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |
@@ -189,7 +195,7 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `SetupActivity.java` | First-run setup: Production/Debug server, Device ID, device model, usage, allowed apps. |
 | `Relay.java` | Door relay per device model (file, ON/OFF values, root), or the portal's verified setup. |
 | `TechHomeActivity.java` | Technical team tablets: the technician's tickets (My Tasks), work summary & updates, photos (camera / gallery), resolve. |
-| `DeviceService.java` | Checks in with the portal every 10 s and runs its commands (apps, relay, lock screen, reboot, ring, screenshot, install, file, logs, unlock/lock, single app). |
+| `DeviceService.java` | Checks in with the portal every 10 s (health: CPU load, RAM, storage, temperature, device IP, system details) and runs its commands (apps, relay, lock screen, reboot, ring, screenshot, install, file, logs, unlock/lock, single app). |
 | `AnnouncementActivity.java` | Full-screen announcements from the portal, with Acknowledge. |
 | `MaintenanceActivity.java` | Maintenance-mode screen. |
 | `ScreenshotService.java`, `ScreenshotActivity.java` | Portal screenshots: accessibility service, or screen capture on Android 9/10. |
@@ -203,13 +209,13 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 ### Built apps (not in git, they contain device keys)
 | Path | What |
 |---|---|
-| `final apk/mdmkiosk app.apk` | Final app 10.12. One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. |
-| `Cloud APK/Kiosk app v10.12.apk` | Same build, 10.12. |
+| `final apk/mdmkiosk app.apk` | Latest app 10.18. One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. Also upload it on the portal's Apps & files and click **Use for QR**, so Add device links to it. |
+| `Cloud APK/Kiosk app v10.18.apk` | Same build, 10.18. `Kiosk app v10.12.apk` is the previous one. |
 | `Kiosk app cloud.apk`, `Kiosk app local.apk`, `Kiosk app phase2.apk` | Older builds. |
 
 ## Security
 - Device keys live only in `local.properties` (not in git): `server.key` (production) and `server.key.debug` (= `DEVICE_KEY` in `functions/.env`, the office PC server). Gradle builds them into the APK, so APK files stay out of git too.
-- Also not in git: `functions/.env` (admin login, `DEVICE_KEY`) and `server/` (`portal.json` holds the WhatsApp numbers and CallMeBot keys).
+- Also not in git: `functions/.env` (admin login, `DEVICE_KEY`) and `server/` (`portal.json` holds the WhatsApp numbers and CallMeBot keys; `server/wireguard/` holds the VPN hub's private keys).
 - Change the default `ADMIN_PASSWORD` and `DEVICE_KEY` on any server reachable from outside. Plain http is only acceptable on the office network.
 - The tablet APK is debuggable (`run-as` works, which the troubleshooting steps use), so anyone with USB debugging on a tablet can read the app's data. Make a signed release build before tablets go to customers.
 - Next phase: remote screen control (VNC), screen recording, remote ADB and the secure tunnel.

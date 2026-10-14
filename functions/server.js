@@ -25,12 +25,19 @@ const SESSION_MS = 12 * 60 * 60 * 1000;
 const ONLINE_MS = Number(process.env.ONLINE_MS || 90 * 1000);
 const OFFLINE_ALERT_MS = Number(process.env.OFFLINE_ALERT_MS || 2 * 60 * 1000); // a restart takes about a minute, so no alarm for that
 const LOW_BATTERY = 20;
+// Health alerts: [field, name, red level (opens the alert), amber level (clears it), unit]. Same colours as the portal's gauges.
+// Clearing below amber, not red, so a value hovering at the limit doesn't open a new alert (and WhatsApp) every minute.
+const HEALTH_ALERTS = [["cpu", "CPU load", 90, 70, "%"], ["ram", "RAM usage", 95, 80, "%"], ["disk", "Storage (ROM) usage", 95, 80, "%"], ["temp", "Temperature", 75, 60, "°C"]];
 const HISTORY_EVERY_MS = 5 * 60 * 1000, HISTORY_KEEP = 288; // 24 h of 5-minute samples
 // Devices take the server's time zone (fixes terminals shipped on UTC). Override with TIME_ZONE=Asia/Singapore etc.
 // Remote SSH: tablets hold a reverse tunnel to this sshd (the "tunnel" container). Off when no password is set.
 const TUNNEL_HOST = process.env.TUNNEL_HOST || "", TUNNEL_PORT = Number(process.env.TUNNEL_PORT || 2222);
 const TUNNEL_USER = process.env.TUNNEL_USER || "tunnel", TUNNEL_PASSWORD = process.env.TUNNEL_PASSWORD || "";
 const sshPort = d => 20000 + Number(d.code); // Device IDs are 1000-9999, so 21000-29999
+// WireGuard VPN: one hub (this server's wireguard/hub.conf, applied by WG_SYNC), every device and admin laptop a peer.
+// Addresses in 10.66.0.0/16: hub 10.66.255.1, device = 10.66.<ID / 256>.<ID % 256>, admins 10.66.255.2-254. Off when WG_ENDPOINT is empty.
+const WG_ENDPOINT = process.env.WG_ENDPOINT || "", WG_SYNC = process.env.WG_SYNC || "", WG_PORT = Number(process.env.WG_PORT || 51820);
+const vpnAddr = d => `10.66.${Number(d.code) >> 8}.${Number(d.code) & 255}`;
 const TIME_ZONE = process.env.TIME_ZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
 // A Date whose local fields show the wall clock in TIME_ZONE (cloud servers run on UTC).
 const zoned = () => new Date(new Date().toLocaleString("en-US", { timeZone: TIME_ZONE }));
@@ -42,11 +49,14 @@ const COMMANDS = {
   "android-kiosk": ["unlock", "lock", "singleapp", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
-  windows: ["reboot"],
+  windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
   linux: ["reboot"],
   iot: ["reboot"],
 };
 const typeOf = d => (COMMANDS[d.type] ? d.type : "android-kiosk");
+// Windows agent self-update: a PC with an older $Version downloads agents/agent.ps1 and restarts it.
+const AGENT_PS1 = path.join(__dirname, "..", "agents", "agent.ps1");
+const AGENT_VERSION = (() => { try { return Number(/\$Version = (\d+)/.exec(fs.readFileSync(AGENT_PS1, "utf8"))[1]); } catch { return 0; } })();
 
 // Device models picked on the tablet's setup screen (or in the portal). Devices set up before app 10.14 have none.
 const MODELS = ["Samsung Tablet", "Telpo F10", "Telpo F8", "Telpo F10B", "Telpo VCP", "Akuvox", "Others"];
@@ -171,7 +181,9 @@ function whoIs(req) {
   const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":");
   return same(user, ADMIN_USER) && same(rest.join(":"), ADMIN_PASSWORD) ? ROOT : null;
 }
-const isDevice = req => same(req.headers["x-device-key"] || "", DEVICE_KEY);
+// AGENT_KEY (optional): a second key for PC agents (Windows / Linux), so the tablets' key (built into the app) stays private.
+const AGENT_KEY = process.env.AGENT_KEY || "";
+const isDevice = req => { const k = req.headers["x-device-key"] || ""; return same(k, DEVICE_KEY) || (!!AGENT_KEY && same(k, AGENT_KEY)); };
 
 // Slow down password guessing: 5 wrong tries per IP, then locked out for a minute.
 const failures = new Map();
@@ -270,7 +282,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "vpnUp"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
@@ -279,6 +291,7 @@ function queue(list, cmd, by) {
   for (const d of list) {
     if (!COMMANDS[typeOf(d)].includes(cmd.type)) continue;
     (d.queue ||= []).push({ ...cmd, id: rid(), at: Date.now() });
+    if (cmd.type === "remote") d.remotePass = cmd.password;
     if (d.queue.length > 20) d.queue.shift();
     log(d.id, "command", `${cmd.type}${cmd.name ? " " + cmd.name : ""} queued${by ? " by " + by : ""}`);
     n++;
@@ -287,9 +300,54 @@ function queue(list, cmd, by) {
   return n;
 }
 
+// WireGuard key pair (X25519, base64 like "wg genkey"), from Node's crypto: no wg tool needed on the server.
+function wgKeys() {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("x25519");
+  const raw = (k, part) => Buffer.from(k.export({ format: "jwk" })[part], "base64url").toString("base64");
+  return { priv: raw(privateKey, "d"), pub: raw(publicKey, "x") };
+}
+const vpnHub = () => (portal.vpnHub ||= wgKeys());
+// Writes the hub's config (full for "installtunnelservice", stripped for "wg syncconf") and applies it with WG_SYNC.
+function writeVpnHub() {
+  if (!WG_ENDPOINT) return;
+  const peers = [
+    ...Object.values(devices).filter(d => d.vpn && d.vpnKey && d.code).map(d => [`${label(d)} (${d.code})`, d.vpnKey.pub, vpnAddr(d)]),
+    ...(portal.vpnAdmins || []).map(a => [`admin ${a.username}`, a.pub, a.address]),
+  ].map(([n, pub, ip]) => `\n[Peer]\n# ${n.replace(/[\r\n]/g, " ")}\nPublicKey = ${pub}\nAllowedIPs = ${ip}/32\n`).join("");
+  const iface = `[Interface]\nPrivateKey = ${vpnHub().priv}\nListenPort = ${WG_PORT}\n`;
+  const dir = path.join(DATA_DIR, "wireguard");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "mdm-hub.conf"), iface + "Address = 10.66.255.1/16\n" + peers);
+  fs.writeFileSync(path.join(dir, "mdm-hub-sync.conf"), iface + peers);
+  if (WG_SYNC) require("node:child_process").exec(WG_SYNC.replace("{file}", path.join(dir, "mdm-hub-sync.conf")), (e, out, err) => { if (e) console.log("WG_SYNC failed:", (err || e.message).trim()); });
+}
+// VPN on/off per device (tablets, Windows, Linux). The key pair is made once and kept.
+function setVpn(d, on, by) {
+  if (!["android-kiosk", "windows", "linux"].includes(typeOf(d)) || !d.code || !!d.vpn === on) return;
+  d.vpn = on;
+  if (on && !d.vpnKey) d.vpnKey = wgKeys();
+  log(d.id, "vpn", `VPN ${on ? "on, " + vpnAddr(d) : "off"} (by ${by})`);
+  dirty = true;
+  writeVpnHub();
+}
+// An admin's own laptop / phone on the VPN: one peer per portal login, made once. Returns its WireGuard config text.
+function vpnAdminConf(username) {
+  const list = (portal.vpnAdmins ||= []);
+  let a = list.find(x => x.username === username);
+  if (!a) {
+    const used = new Set(list.map(x => x.address));
+    let n = 2; while (used.has(`10.66.255.${n}`) && n < 254) n++;
+    a = { username, address: `10.66.255.${n}`, ...wgKeys(), at: Date.now() };
+    list.push(a);
+    dirty = true;
+    writeVpnHub();
+  }
+  return `[Interface]\n# ${username} on the device portal VPN\nPrivateKey = ${a.priv}\nAddress = ${a.address}/32\n\n[Peer]\nPublicKey = ${vpnHub().pub}\nEndpoint = ${WG_ENDPOINT}\nAllowedIPs = 10.66.0.0/16\nPersistentKeepalive = 25\n`;
+}
+
 // Remote SSH on/off. The login password is made once per device and kept.
 function setSsh(d, on, by) {
-  if (typeOf(d) !== "android-kiosk" || !!d.ssh === on) return;
+  if (!["android-kiosk", "windows"].includes(typeOf(d)) || !!d.ssh === on) return;
   d.ssh = on;
   if (on && !d.sshPass) d.sshPass = crypto.randomBytes(12).toString("base64url");
   log(d.id, "ssh", `Remote SSH ${on ? "on" : "off"} (by ${by})`);
@@ -315,7 +373,20 @@ function commandFrom(body) {
   if (type === "file") {
     const f = portal.files.find(x => x.id === body.fileId);
     if (!f) throw new Error("pick an uploaded file");
-    return { type, url: `/download/file/${f.id}`, sha256: f.sha256, name: f.name };
+    // run (Windows agent): start it after the download, e.g. an installer (.msi silently; .exe with the given args)
+    return { type, url: `/download/file/${f.id}`, sha256: f.sha256, name: f.name, ...(body.run ? { run: true, args: String(body.args || "").slice(0, 500) } : {}) };
+  }
+  if (type === "message") {
+    const text = String(body.text || "").trim().slice(0, 500);
+    if (!text) throw new Error("type the message");
+    return { type, text, name: text.slice(0, 40) };
+  }
+  // Windows remote desktop (RustDesk): the agent installs it and sets this password; queue() keeps it on the device
+  if (type === "remote") return { type, password: crypto.randomBytes(9).toString("base64url") };
+  if (type === "run") {
+    const script = String(body.script || "").trim();
+    if (!script || script.length > 8000) throw new Error("type a command (up to 8000 characters)");
+    return { type, script, name: script.split("\n")[0].slice(0, 60) };
   }
   if (type === "singleapp") {
     const pkg = String(body.package || "");
@@ -452,6 +523,10 @@ function checkAlerts() {
     setAlert(d, "offline", offline, `${label(d)} offline since ${new Date(d.lastSeen).toLocaleString("en-GB", { timeZone: TIME_ZONE })}`);
     if (offline) autoTicket(d, portal.alerts.find(a => a.deviceId === d.id && a.kind === "offline" && !a.resolvedAt));
     setAlert(d, "battery", !offline && d.battery != null && d.battery < LOW_BATTERY && !d.charging, `${label(d)} battery low (${d.battery}%)`);
+    for (const [k, name, red, amber, unit] of HEALTH_ALERTS) {
+      const open = portal.alerts.some(a => a.deviceId === d.id && a.kind === k && !a.resolvedAt), v = d[k];
+      setAlert(d, k, online && v != null && v >= (open ? amber : red), `${label(d)} ${name} high (${v}${unit})`);
+    }
   }
   // Keep the last 1000 resolved alerts.
   const resolved = portal.alerts.filter(a => a.resolvedAt);
@@ -1201,6 +1276,14 @@ async function handler(req, res) {
       const d = devices[body.id] || (devices[body.id] = { id: body.id, firstSeen: Date.now() });
       const wasOnline = d.lastSeen && Date.now() - d.lastSeen < ONLINE_MS;
       for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
+      // Windows remote access as the agent sees it (SSH server, RustDesk ID)
+      if (body.remote && typeof body.remote === "object") {
+        const r = body.remote;
+        d.remote = { ssh: !!r.ssh, sshInstalled: !!r.sshInstalled, sshUser: String(r.sshUser || "").slice(0, 40), rustdesk: !!r.rustdesk,
+          rustdeskId: /^\d{6,12}$/.test(r.rustdeskId || "") ? r.rustdeskId : null, log: String(r.log || "").slice(0, 200), at: Date.now() };
+      } else delete d.remote;
+      // Device IP: only a real LAN IPv4 from this check-in; a missing one is cleared rather than shown stale.
+      if (!("localIp" in body) || !/^(\d{1,3}\.){3}\d{1,3}$/.test(d.localIp) || /^(0\.|127\.|169\.254\.)/.test(d.localIp)) delete d.localIp;
       for (const k of ["info", "relayInfo"]) if (d[k] !== undefined && (!d[k] || typeof d[k] !== "object" || Array.isArray(d[k]))) delete d[k];
       // Model / usage chosen on the tablet: sent only after a change there, so a portal edit isn't undone by the next check-in.
       if (body.config && typeof body.config === "object") setConfig(d, body.config, "the device");
@@ -1256,7 +1339,10 @@ async function handler(req, res) {
       const rp = relayProfile(d);
       const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null } : null;
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, announcement, ssh,
+      const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
+      const vpn = d.vpn && d.vpnKey && WG_ENDPOINT ? { on: true, address: vpnAddr(d) + "/32", privateKey: d.vpnKey.priv, hubPublicKey: vpnHub().pub,
+        endpoint: WG_ENDPOINT, allowed: "10.66.0.0/16", keepalive: 25 } : { on: false };
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, announcement, ssh, vpn, agentUpdate,
         config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
@@ -1289,6 +1375,25 @@ async function handler(req, res) {
       await saveDailyLogs(devices[id], text.toString());
       if (Date.now() - (devices[id].autoLogsAt || 0) > 120000) log(id, "logs", "Logs uploaded"); // hourly pulls stay quiet
       return send(res, 200, { ok: true });
+    }
+    // Result of a PC command (run, install, message …): kept on the device (shown on its page) and in its activity.
+    if (req.method === "POST" && p === "/api/command-result") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const d = devices[String(req.headers["x-device-id"] || "")];
+      if (!d) return send(res, 404, { error: "unknown device" });
+      const body = await readJson(req);
+      d.lastResult = { at: Date.now(), type: String(body.type || "").slice(0, 20), name: String(body.name || "").slice(0, 80), ok: body.ok !== false,
+        output: String(body.output ?? "").slice(-20000) };
+      log(d.id, "result", `${d.lastResult.type}${d.lastResult.name ? " " + d.lastResult.name : ""}: ${d.lastResult.ok ? "done" : "failed"}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
+    // The PC agent scripts: the Windows agent's self-update and the install commands from "Add device" (device key or admin).
+    const agentFile = /^\/download\/(agent\.ps1|agent\.sh)$/.exec(p)?.[1];
+    if (req.method === "GET" && agentFile) {
+      if (!isDevice(req) && !whoIs(req)?.admin) return send(res, 401, { error: "device key or admin login required" });
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      return res.end(fs.readFileSync(path.join(__dirname, "..", "agents", agentFile)));
     }
     // Screenshot from a device (JPEG body), or ?error=... when it couldn't take one.
     if (req.method === "POST" && p === "/api/screenshot") {
@@ -1435,9 +1540,13 @@ async function handler(req, res) {
       return send(res, 200, {
         now: Date.now(), commands: COMMANDS,
         me: { ...publicUser(u), allSites: all, modules: u.admin ? MODULES : u.modules || [] },
-        devices: mine(Object.values(devices)).map(({ history, token, queue: q, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null,
+        devices: mine(Object.values(devices)).map(({ history, token, queue: q, remotePass, vpnKey, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null,
+          vpnAddress: d.vpn && d.code ? vpnAddr(d) : null,
+          remotePass: u.admin ? remotePass : undefined, // RustDesk password: admins only
+          sshLan: d.remote?.ssh && d.localIp ? `ssh ${d.remote.sshUser || "user"}@${d.localIp}` : null,
           relayProfile: relayProfile(d), techName: techOf(d)?.name || null,
-          sshCmd: d.code && `ssh -J ${TUNNEL_USER}@${TUNNEL_HOST || String(req.headers.host || "").replace(/:\d+$/, "")}:${TUNNEL_PORT} -p ${sshPort(d)} kiosk@localhost` })),
+          sshCmd: d.code && `ssh -J ${TUNNEL_USER}@${TUNNEL_HOST || String(req.headers.host || "").replace(/:\d+$/, "")}:${TUNNEL_PORT} -p ${sshPort(d)} ${typeOf(d) === "windows" ? d.remote?.sshUser || "user" : "kiosk"}@localhost` })),
+        vpnReady: !!WG_ENDPOINT, vpnMine: !!(portal.vpnAdmins || []).find(x => x.username === u.username), // VPN: admins put their own laptop / phone on it
         sshReady: !!TUNNEL_PASSWORD, sshTunnelPass: can(u, "devices") ? TUNNEL_PASSWORD : undefined,
         alerts: portal.alerts.filter(a => (!a.resolvedAt || Date.now() - a.resolvedAt < 7 * 86400000) && sees(u, devices[a.deviceId])),
         tasks: can(u, "tasks") ? portal.tasks.filter(t => all || siteOk(u, t.target?.group)) : [],
@@ -1448,6 +1557,7 @@ async function handler(req, res) {
         users: u.admin ? portal.users.map(publicUser) : undefined, modules: MODULES,
         announcements: u.admin ? portal.announcements : [],
         whatsapp: u.admin ? portal.whatsapp : undefined,
+        agentKey: u.admin ? AGENT_KEY || null : undefined, // shown in "Add device" for Windows / Linux / IoT
         lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
         models: MODELS, relayProfiles: RELAY_PROFILES, relayIfaces: RELAY_IFACES,
         categories: CATEGORIES, priorities: PRIORITIES, statuses: STATUS, flow: FLOW,
@@ -1510,7 +1620,7 @@ async function handler(req, res) {
       portal.pending = portal.pending.filter(x => x.code !== body.code || !siteOk(u, x.group));
       return ok();
     }
-    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|ssh|delete|config|relaycfg)$/.exec(p);
+    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|ssh|vpn|delete|config|relaycfg)$/.exec(p);
     if (req.method === "POST" && m) {
       const d = devices[m[1]];
       if (!d || !sees(u, d)) return send(res, 404, { error: "no such device" });
@@ -1545,6 +1655,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
+        if (body.type === "run" && !u.admin) return deny("Only admins can run commands on devices");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
@@ -1554,6 +1665,10 @@ async function handler(req, res) {
         log(d.id, "relay", `Relay follows maintenance mode: ${d.relayLink ? "yes" : "no"} (by ${by})`);
       } else if (m[2] === "ssh") {
         setSsh(d, !!body.on, by);
+      } else if (m[2] === "vpn") {
+        if (!u.admin) return deny("Only admins can turn the VPN on or off");
+        if (!WG_ENDPOINT) return send(res, 400, { error: "The VPN isn't set up on this server (WG_ENDPOINT)" });
+        setVpn(d, !!body.on, by);
       } else if (m[2] === "name") {
         d.name = String(body.name || "").slice(0, 80).trim();
       } else if (m[2] === "group") {
@@ -1570,9 +1685,15 @@ async function handler(req, res) {
       if (!can(u, "devices", "sites")) return deny();
       const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
+      if (body.action === "command" && body.type === "run" && !u.admin) return deny("Only admins can run commands on devices");
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");
+        return ok({ count: list.length });
+      }
+      if (body.action === "vpn") {
+        if (!u.admin) return deny("Only admins can turn the VPN on or off");
+        for (const d of list) setVpn(d, !!body.on, by + " (bulk)");
         return ok({ count: list.length });
       }
       if (body.action === "group") {
@@ -1756,10 +1877,20 @@ async function handler(req, res) {
         if (CLOUD) return send(res, 400, { error: "use /api/upload/start" });
         info = await receiveFile(req, keyOf(id));
       }
-      if (kind === "app") portal.apps.push({ id, label: String(url.searchParams.get("label") || name.replace(/\.apk$/i, "")).slice(0, 80), ...info, at: Date.now() });
+      const notes = String(url.searchParams.get("notes") || "").slice(0, 2000); // optional release notes, kept as a record
+      if (kind === "app") portal.apps.push({ id, label: String(url.searchParams.get("label") || name.replace(/\.apk$/i, "")).slice(0, 80), ...info, at: Date.now(), notes, by: u.username });
       else portal.files.push({ id, name, ...info, at: Date.now() });
-      log(null, "upload", `${kind === "app" ? "App" : "File"} "${name}" uploaded`);
+      log(null, "upload", `${kind === "app" ? "App" : "File"} "${name}" uploaded by ${u.username}${kind === "app" && notes ? " (with release notes)" : ""}`);
       return ok({ id });
+    }
+    m = /^\/api\/apps\/([a-f0-9]{16})\/notes$/.exec(p);
+    if (req.method === "POST" && m) {
+      if (!can(u, "apps")) return deny();
+      const a = portal.apps.find(x => x.id === m[1]);
+      if (!a) return send(res, 404, { error: "app not found" });
+      a.notes = String(body.notes || "").slice(0, 2000);
+      log(null, "upload", `Release notes updated for "${a.label}" by ${u.username}`);
+      return ok();
     }
     m = /^\/api\/(apps|files)\/([a-f0-9]{16})\/(delete|kiosk)$/.exec(p);
     if (req.method === "POST" && m) {
@@ -1768,6 +1899,13 @@ async function handler(req, res) {
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
       return ok();
+    }
+    // The signed-in admin's own laptop / phone on the VPN: its WireGuard config (file or QR for the WireGuard app).
+    if (req.method === "POST" && p === "/api/vpn/me") {
+      if (!u.admin) return deny("Only admins can join the VPN");
+      if (!WG_ENDPOINT) return send(res, 400, { error: "The VPN isn't set up on this server (WG_ENDPOINT)" });
+      const conf = vpnAdminConf(u.username);
+      return ok({ conf, address: (portal.vpnAdmins || []).find(x => x.username === u.username)?.address });
     }
     // ---------------- Max (assistant module) ----------------
     if (req.method === "POST" && p === "/api/assistant") {
@@ -1940,6 +2078,8 @@ if (require.main === module) {
     setInterval(tick, 1000); // tick itself waits 5 s between runs
     http.createServer(handler).listen(PORT, () => {
       console.log(`Device portal running. Open http://localhost:${PORT}  (login: ${ADMIN_USER})`);
+      writeVpnHub(); // VPN hub config from the saved peers (only when WG_ENDPOINT is set)
+      if (WG_ENDPOINT) console.log(`VPN hub: ${WG_ENDPOINT}, config in ${path.join(DATA_DIR, "wireguard")}`);
       if (!process.env.ADMIN_PASSWORD) console.log("WARNING: default admin password in use, set ADMIN_PASSWORD");
       if (!process.env.DEVICE_KEY) console.log("WARNING: default device key in use, set DEVICE_KEY (and server_key in the app)");
     });

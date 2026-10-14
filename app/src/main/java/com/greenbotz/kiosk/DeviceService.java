@@ -110,6 +110,27 @@ public class DeviceService extends Service {
         return prod != null && prod.equals(Uri.parse(serverUrl(ctx)).getHost());
     }
 
+    // Device IP: the IPv4 address of the network the tablet actually uses (Wi-Fi or Ethernet). WifiManager's
+    // getIpAddress() says 0.0.0.0 on some devices, and "first interface" picked tunnels / mobile data before.
+    private String localIp() {
+        try {
+            android.net.ConnectivityManager cm = getSystemService(android.net.ConnectivityManager.class);
+            android.net.LinkProperties lp = cm == null ? null : cm.getLinkProperties(cm.getActiveNetwork());
+            if (lp != null) for (android.net.LinkAddress la : lp.getLinkAddresses()) {
+                java.net.InetAddress a = la.getAddress();
+                if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress() && !a.isLinkLocalAddress()) return a.getHostAddress();
+            }
+            // No active network reported: a real LAN interface (Wi-Fi / Ethernet), never a tunnel or mobile data.
+            for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || !ni.getName().matches("(wlan|eth|en).*")) continue;
+                for (java.net.InetAddress a : java.util.Collections.list(ni.getInetAddresses()))
+                    if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress() && !a.isLinkLocalAddress()) return a.getHostAddress();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
     static String key(Context ctx) {
         return ctx.getString(production(ctx) ? R.string.server_key : R.string.server_key_debug);
     }
@@ -428,7 +449,14 @@ public class DeviceService extends Service {
             for (int n; (n = i.read(chunk)) > 0; ) buf.write(chunk, 0, n);
         }
         JSONObject j;
-        try { j = new JSONObject(buf.toString("UTF-8")); } catch (Exception e) { j = new JSONObject(); }
+        try {
+            j = new JSONObject(buf.toString("UTF-8"));
+        } catch (Exception e) {
+            // A redirect or proxy page is not a reply: read as {} it meant "maintenance off" and dropped the maintenance
+            // screen until the next check-in. A plain Exception, so callers treat it like a network failure and retry.
+            if (status < 400) throw new Exception("Bad reply from server: HTTP " + status);
+            j = new JSONObject();
+        }
         if (status >= 400) throw new HttpError(status, j.optString("error", "HTTP " + status));
         return j;
     }
@@ -544,40 +572,125 @@ public class DeviceService extends Service {
         return a;
     }
 
-    // RAM / storage used (%), battery temperature and Wi-Fi signal. Android doesn't let apps read CPU load.
+    // CPU load %: real use since the last check-in from /proc/stat where the system allows it (Android 7 and many
+    // terminals, e.g. Telpo F8), otherwise an estimate from each core's clock speed (newer Android blocks /proc/stat).
+    private long prevBusy = -1, prevTotal;
+    private String cpuSource = "";
+    // Chip name (e.g. rk3399, mt6789); Build.HARDWARE is often a generic board name on older Android.
+    private static String boardPlatform() {
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(Runtime.getRuntime().exec(new String[]{"getprop", "ro.board.platform"}).getInputStream()))) {
+            String p = r.readLine();
+            if (p != null && !p.trim().isEmpty()) return p.trim();
+        } catch (Exception ignored) {
+        }
+        return Build.HARDWARE;
+    }
+
+    private String tempSource = "";
+    private static Double socTemp() {
+        java.io.File[] zones = new java.io.File("/sys/class/thermal").listFiles((dir, n) -> n.startsWith("thermal_zone"));
+        if (zones != null) for (java.io.File z : zones) {
+            try (java.io.BufferedReader t = new java.io.BufferedReader(new java.io.FileReader(new java.io.File(z, "type")));
+                 java.io.BufferedReader v = new java.io.BufferedReader(new java.io.FileReader(new java.io.File(z, "temp")))) {
+                if (!t.readLine().toLowerCase(java.util.Locale.US).matches(".*(soc|cpu).*")) continue;
+                double c = Long.parseLong(v.readLine().trim()) / 1000.0;
+                if (c > 0 && c < 150) return Math.round(c * 10) / 10.0;
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private Integer cpuLoad() {
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader("/proc/stat"))) {
+            String[] f = r.readLine().trim().split("\\s+"); // cpu user nice system idle iowait irq softirq steal
+            long idle = Long.parseLong(f[4]) + Long.parseLong(f[5]), total = 0;
+            for (int i = 1; i < Math.min(f.length, 9); i++) total += Long.parseLong(f[i]);
+            long busy = total - idle, dBusy = busy - prevBusy, dTotal = total - prevTotal;
+            boolean first = prevBusy < 0;
+            prevBusy = busy; prevTotal = total;
+            cpuSource = "Measured";
+            if (!first && dTotal > 0) return (int) Math.round(100.0 * dBusy / dTotal);
+            return (int) Math.round(100.0 * busy / total); // first sample: average since boot
+        } catch (Exception ignored) {
+        }
+        long cur = 0, max = 0;
+        for (int i = 0; i < Runtime.getRuntime().availableProcessors(); i++) {
+            String dir = "/sys/devices/system/cpu/cpu" + i + "/cpufreq/";
+            try (java.io.BufferedReader c = new java.io.BufferedReader(new java.io.FileReader(dir + "scaling_cur_freq"));
+                 java.io.BufferedReader m = new java.io.BufferedReader(new java.io.FileReader(dir + "cpuinfo_max_freq"))) {
+                cur += Long.parseLong(c.readLine().trim());
+                max += Long.parseLong(m.readLine().trim());
+            } catch (Exception ignored) { // core offline
+            }
+        }
+        if (max == 0) return null;
+        cpuSource = "Estimated from CPU clock speed";
+        return (int) Math.round(100.0 * cur / max);
+    }
+
+    // RAM / storage used (%), CPU load, battery temperature and Wi-Fi signal.
     @SuppressWarnings("deprecation")
     private void putHealth(JSONObject d) throws Exception {
+        Integer cpu = cpuLoad();
+        if (cpu != null) d.put("cpu", Math.max(0, Math.min(100, cpu)));
         ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
         getSystemService(ActivityManager.class).getMemoryInfo(mi);
         d.put("ram", Math.round(100.0 * (mi.totalMem - mi.availMem) / mi.totalMem));
         StatFs fs = new StatFs(Environment.getDataDirectory().getPath());
         d.put("disk", Math.round(100.0 * (fs.getTotalBytes() - fs.getAvailableBytes()) / fs.getTotalBytes()));
         Intent batt = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        if (batt != null && batt.hasExtra(android.os.BatteryManager.EXTRA_TEMPERATURE)) {
+        // Temperature: the chip (SoC / CPU) sensor where the system lets apps read it (Telpo), else the battery sensor
+        // (mains-powered terminals report a fake battery value there).
+        Double soc = socTemp();
+        if (soc != null) d.put("temp", soc);
+        else if (batt != null && batt.hasExtra(android.os.BatteryManager.EXTRA_TEMPERATURE)) {
             d.put("temp", batt.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) / 10.0);
         }
+        tempSource = soc != null ? "CPU chip sensor" : "Battery sensor";
         WifiManager wm = getApplicationContext().getSystemService(WifiManager.class);
         if (wm != null && wm.getConnectionInfo() != null && wm.getConnectionInfo().getNetworkId() != -1) {
             d.put("signal", wm.getConnectionInfo().getRssi());
-            int ip = wm.getConnectionInfo().getIpAddress();
-            d.put("localIp", (ip & 255) + "." + (ip >> 8 & 255) + "." + (ip >> 16 & 255) + "." + (ip >> 24 & 255));
         }
-        // No Wi-Fi IP (e.g. Telpo F8 on Ethernet): first non-loopback IPv4 of any interface.
-        if (!d.has("localIp")) {
-            java.util.Enumeration<java.net.NetworkInterface> nis = java.net.NetworkInterface.getNetworkInterfaces();
-            while (nis != null && nis.hasMoreElements() && !d.has("localIp")) {
-                for (java.net.InetAddress a : java.util.Collections.list(nis.nextElement().getInetAddresses())) {
-                    if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress()) {
-                        d.put("localIp", a.getHostAddress());
-                        break;
-                    }
-                }
-            }
-        }
+        String lip = localIp();
+        if (lip != null) d.put("localIp", lip);
         JSONObject info = new JSONObject();
         info.put("Memory", String.format(java.util.Locale.US, "%.1f of %.1f GB free", mi.availMem / 1e9, mi.totalMem / 1e9));
         info.put("Storage", String.format(java.util.Locale.US, "%.1f of %.1f GB free", fs.getAvailableBytes() / 1e9, fs.getTotalBytes() / 1e9));
         info.put("Mode", KioskActivity.monitorOnly(this) ? "Monitor only" : "Kiosk");
+        // System details for the portal's device page (shown as-is in its Details list).
+        info.put("Manufacturer", Build.MANUFACTURER + " · " + Build.DEVICE);
+        info.put("Android", Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ") · patch " + Build.VERSION.SECURITY_PATCH);
+        info.put("Build", Build.DISPLAY);
+        info.put("CPU", (Build.VERSION.SDK_INT >= 31 && !Build.UNKNOWN.equals(Build.SOC_MODEL) ? Build.SOC_MANUFACTURER + " " + Build.SOC_MODEL : boardPlatform())
+                + " · " + Runtime.getRuntime().availableProcessors() + " cores · " + Build.SUPPORTED_ABIS[0]);
+        if (!cpuSource.isEmpty()) info.put("CPU load", cpuSource);
+        if (!tempSource.isEmpty()) info.put("Temperature sensor", tempSource);
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader("/proc/loadavg"))) {
+            String[] l = r.readLine().split(" ");
+            info.put("Load average", l[0] + " · " + l[1] + " · " + l[2] + " (1 / 5 / 15 min)");
+        } catch (Exception ignored) { // blocked on newer Android
+        }
+        info.put("Kernel", System.getProperty("os.version"));
+        android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
+        getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRealMetrics(dm);
+        info.put("Screen", dm.widthPixels + " × " + dm.heightPixels + " · " + dm.densityDpi + " dpi");
+        android.net.ConnectivityManager cm = getSystemService(android.net.ConnectivityManager.class);
+        android.net.NetworkCapabilities nc = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
+        if (nc == null) info.put("Network", "None");
+        else if (nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) info.put("Network", "Ethernet");
+        else if (nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) && wm != null && wm.getConnectionInfo() != null) {
+            android.net.wifi.WifiInfo wi = wm.getConnectionInfo();
+            info.put("Network", "Wi-Fi · " + (wi.getFrequency() > 4000 ? "5 GHz" : "2.4 GHz") + " · " + wi.getLinkSpeed() + " Mbps · " + wi.getRssi() + " dBm");
+        } else info.put("Network", nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) ? "Mobile data" : "Other");
+        if (batt != null && batt.getBooleanExtra(android.os.BatteryManager.EXTRA_PRESENT, false)) {
+            int h = batt.getIntExtra(android.os.BatteryManager.EXTRA_HEALTH, 1);
+            String health = h == 2 ? "Good" : h == 3 ? "Overheating" : h == 4 ? "Dead" : h == 5 ? "Over voltage" : h == 7 ? "Cold" : h == 6 ? "Failure" : "Unknown";
+            int plug = batt.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0);
+            int mv = batt.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 0); // 0 on mains-powered terminals
+            info.put("Battery", health + (mv > 1000 ? String.format(java.util.Locale.US, " · %.2f V", mv / 1000.0) : "")
+                    + (plug == 1 ? " · on charger" : plug == 2 ? " · on USB" : plug == 4 ? " · wireless charging" : " · on battery"));
+        }
         d.put("info", info);
     }
 

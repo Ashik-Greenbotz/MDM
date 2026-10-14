@@ -1,7 +1,6 @@
 .git
 .github
 app
-agents
 gradle
 /*.apk
 /*.jpg

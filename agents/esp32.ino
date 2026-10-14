@@ -28,8 +28,11 @@ void loop() {
     String body = "{\"id\":\"" + deviceId + "\",\"type\":\"iot\",\"deviceName\":\"" + NAME +
                   "\",\"model\":\"ESP32\",\"os\":\"Arduino\",\"localIp\":\"" + WiFi.localIP().toString() +
                   "\",\"uptime\":" + String(millis() / 1000) +
+                  // chip temperature (built-in sensor, rough) and heap used %, for the portal's gauges and alerts
+                  ",\"temp\":" + String(temperatureRead(), 1) +
+                  ",\"ram\":" + String(100 * (ESP.getHeapSize() - ESP.getFreeHeap()) / ESP.getHeapSize()) +
                   ",\"info\":{\"Wi-Fi signal\":\"" + String(WiFi.RSSI()) + " dBm\",\"Free memory\":\"" +
-                  String(ESP.getFreeHeap() / 1024) + " KB\"}}";
+                  String(ESP.getFreeHeap() / 1024) + " KB\",\"Temperature sensor\":\"ESP32 chip sensor\"}}";
     int code = http.POST(body);
     String reply = http.getString();
     http.end();
