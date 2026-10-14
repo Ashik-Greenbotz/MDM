@@ -479,8 +479,7 @@ public class KioskActivity extends Activity {
         // Technical team tablets: the normal home screen plus a "My tickets" tile first
         if (TechHomeActivity.wanted(this)) {
             int open = TechHomeActivity.openCount(this);
-            Drawable icon = getDrawable(android.R.drawable.ic_menu_agenda).mutate();
-            icon.setTint(getColor(R.color.accent));
+            Drawable icon = getDrawable(R.drawable.tech_icon);
             icon.setBounds(0, 0, (int) (64 * dp), (int) (64 * dp));
             TextView tile = new TextView(this);
             tile.setText(open > 0 ? "My tickets (" + open + ")" : "My tickets");

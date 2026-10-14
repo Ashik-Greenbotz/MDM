@@ -11,4 +11,8 @@
     <color name="warn">#FFFBBF24</color>
     <color name="err">#FFFF7A6E</color>
     <color name="accent">#FF5B8CFF</color>
+    <color name="glass_sheen">#33FFFFFF</color>
+    <color name="glass_rim">#66FFFFFF</color>
+    <color name="glow_brand">#80F7931E</color>
+    <color name="glow_blue">#995B8CFF</color>
 </resources>

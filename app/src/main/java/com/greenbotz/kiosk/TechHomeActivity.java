@@ -53,8 +53,8 @@ public class TechHomeActivity extends Activity {
     private static final String PREF_CACHE = "tech_cache";
     private static final long POLL_MS = 15 * 1000;
     private static final int PICK_CAMERA = 1, PICK_GALLERY = 2;
-    private static final String[] NOTE_KINDS = {"note", "finding", "work", "parts"};
-    private static final String[] NOTE_NAMES = {"Progress note", "Troubleshooting finding", "Work performed", "Parts / replacement"};
+    private static final String[] NOTE_KINDS = {"note", "work", "pending", "finding", "next", "parts"};
+    private static final String[] NOTE_NAMES = {"Work summary / progress", "Work completed", "Pending items", "Issue encountered", "Next steps / follow-up", "Parts / replacement"};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private JSONObject home;          // last /api/tech/home reply
@@ -246,7 +246,7 @@ public class TechHomeActivity extends Activity {
         scroll.addView(col);
         scroll.post(() -> scroll.scrollTo(0, y));
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(getDrawable(R.drawable.bg_gradient));
+        root.setBackground(getDrawable(R.drawable.bg_tech));
         root.addView(scroll);
         View corner = new View(this); // invisible admin corner, same as the kiosk screen
         corner.setOnClickListener(v -> cornerTap());
@@ -259,6 +259,11 @@ public class TechHomeActivity extends Activity {
         String name = tech != null ? tech.optString("name") : prefs().getString(DeviceService.PREF_TECH_NAME, "");
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        android.widget.ImageView logo = new android.widget.ImageView(this); // technician icon, same as the home screen "My tickets" tile
+        logo.setImageResource(R.drawable.tech_icon);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(px(64), px(64));
+        lp.setMarginEnd(px(14));
+        row.addView(logo, lp);
         LinearLayout names = new LinearLayout(this);
         names.setOrientation(LinearLayout.VERTICAL);
         names.addView(text(name.isEmpty() ? "Technician tablet" : "Hi, " + name, 26, R.color.text_primary, true));
@@ -274,23 +279,6 @@ public class TechHomeActivity extends Activity {
             if (error == null) col.addView(text("Loading your tickets…", 16, R.color.text_secondary, false));
             return;
         }
-        // Availability, shown in the portal (only counts while this tablet is online)
-        String av = tech.optString("availability", "unknown");
-        LinearLayout avail = new LinearLayout(this);
-        String[][] opts = {{"available", "Available"}, {"busy", "Busy"}, {"off", "Off duty"}};
-        for (String[] o : opts) {
-            Button b = button(o[1], o[0].equals(av));
-            b.setOnClickListener(v -> new Thread(() -> {
-                try {
-                    DeviceService.techCall(this, "POST", "/api/tech/availability", new JSONObject().put("status", o[0]));
-                    runOnUiThread(this::load);
-                } catch (Exception e) {
-                    runOnUiThread(() -> toast("Couldn't change availability: " + e.getMessage()));
-                }
-            }).start());
-            avail.addView(b, weight(o[0].equals("off") ? 0 : 8));
-        }
-        col.addView(avail, margins(-1, 0, 0, 14));
     }
 
     private void list(LinearLayout col) {
@@ -298,7 +286,7 @@ public class TechHomeActivity extends Activity {
         back.setOnClickListener(v -> finish());
         col.addView(back, margins(-2, 0, 0, 10));
         if (home.optJSONObject("tech") == null) return;
-        List<JSONObject> all = tickets(), active = new ArrayList<>(), recent = new ArrayList<>();
+        List<JSONObject> all = tickets(), active = new ArrayList<>();
         int newAcc = 0, prog = 0, hold = 0, waiting = 0;
         for (JSONObject t : all) {
             String s = t.optString("status");
@@ -307,16 +295,15 @@ public class TechHomeActivity extends Activity {
             if (s.equals("on_hold")) hold++;
             if (s.equals("resolved")) waiting++;
             if (!s.equals("resolved") && !s.equals("closed") && !s.equals("cancelled")) active.add(t);
-            else recent.add(t);
         }
         GridLayout g = new GridLayout(this);
         g.setColumnCount(getResources().getConfiguration().screenWidthDp >= 600 ? 5 : 3);
         String[][] tiles = {{String.valueOf(active.size() + waiting), "Assigned"}, {String.valueOf(newAcc), "New / accepted"},
-                {String.valueOf(prog), "In progress"}, {String.valueOf(hold), "On hold"}, {String.valueOf(waiting), "Awaiting closure"}};
+                {String.valueOf(prog), "In progress"}, {String.valueOf(hold), "On hold"}, {String.valueOf(active.size()), "Overall open tickets"}};
         for (String[] t : tiles) {
             LinearLayout tile = new LinearLayout(this);
             tile.setOrientation(LinearLayout.VERTICAL);
-            tile.setBackground(getDrawable(R.drawable.glass_tile));
+            tile.setBackground(getDrawable(R.drawable.glass_hi));
             tile.setPadding(px(14), px(12), px(14), px(12));
             tile.addView(text(t[0], 28, R.color.text_primary, true));
             tile.addView(text(t[1], 13, R.color.text_secondary, false));
@@ -331,35 +318,15 @@ public class TechHomeActivity extends Activity {
             int pa = prio(a.optString("priority")), pb = prio(b.optString("priority"));
             return pa != pb ? pb - pa : Long.compare(a.optLong("due", Long.MAX_VALUE), b.optLong("due", Long.MAX_VALUE));
         });
-        col.addView(text("Your work", 20, R.color.text_primary, true), margins(-1, 8, 0, 6));
+        col.addView(text("My Tasks", 20, R.color.text_primary, true), margins(-1, 8, 0, 6));
         if (active.isEmpty()) col.addView(text("No open tickets right now.", 16, R.color.text_secondary, false), margins(-1, 0, 0, 8));
         for (JSONObject t : active) col.addView(ticketCard(t), margins(-1, 0, 0, 10));
-        // Recent updates: the latest history entries made by someone else (portal, system)
-        List<JSONObject[]> updates = new ArrayList<>();
-        String me = home.optJSONObject("tech").optString("name") + " (tablet)";
-        for (JSONObject t : all) {
-            JSONArray tl = t.optJSONArray("timeline");
-            for (int i = 0; tl != null && i < tl.length(); i++) if (!me.equals(tl.optJSONObject(i).optString("by"))) updates.add(new JSONObject[]{t, tl.optJSONObject(i)});
-        }
-        updates.sort((a, b) -> Long.compare(b[1].optLong("at"), a[1].optLong("at")));
-        if (!updates.isEmpty()) col.addView(text("Recent updates", 20, R.color.text_primary, true), margins(-1, 14, 0, 6));
-        for (int i = 0; i < Math.min(6, updates.size()); i++) {
-            JSONObject t = updates.get(i)[0], e = updates.get(i)[1];
-            TextView u = text(t.optString("no") + " · " + time(e.optLong("at")) + "\n" + e.optString("by") + ": " + describe(e), 14, R.color.text_primary, false);
-            u.setBackground(card());
-            u.setPadding(px(14), px(10), px(14), px(10));
-            String id = t.optString("id");
-            u.setOnClickListener(v -> { openTicket = id; render(); });
-            col.addView(u, margins(-1, 0, 0, 6));
-        }
-        if (!recent.isEmpty()) col.addView(text("Resolved and closed (last 7 days)", 20, R.color.text_primary, true), margins(-1, 14, 0, 6));
-        for (JSONObject t : recent) col.addView(ticketCard(t), margins(-1, 0, 0, 10));
     }
 
     private View ticketCard(JSONObject t) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setBackground(getDrawable(R.drawable.glass));
+        c.setBackground(getDrawable(R.drawable.glass_hi));
         c.setPadding(px(16), px(14), px(16), px(14));
         LinearLayout top = new LinearLayout(this);
         top.addView(text(t.optString("no") + "  " + t.optString("priority").toUpperCase(), 13, prioColor(t.optString("priority")), true), new LinearLayout.LayoutParams(0, -2, 1));
@@ -385,6 +352,17 @@ public class TechHomeActivity extends Activity {
         col.addView(back, margins(-2, 0, 0, 10));
         col.addView(ticketCard(t), margins(-1, 0, 0, 10));
         String id = t.optString("id"), s = t.optString("status");
+        // Status buttons the technician may use (closing is portal-only), right under the ticket
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        if (s.equals("assigned")) row.addView(action("Accept ticket", () -> move(id, "accepted", null)), margins(-1, 0, 0, 8));
+        if (s.equals("accepted") || s.equals("on_hold")) row.addView(action(s.equals("on_hold") ? "Resume work" : "Start work", () -> move(id, "in_progress", null)), margins(-1, 0, 0, 8));
+        if (s.equals("accepted") || s.equals("in_progress")) row.addView(action("Put on hold…", () -> ask("Put on hold", "Why is the work on hold?", 1, txt -> move(id, "on_hold", txt))), margins(-1, 0, 0, 8));
+        if (s.equals("in_progress")) row.addView(action("Submit as resolved…", () -> ask("Submit as resolved",
+                "Completion summary: what was wrong and what you did. An admin closes the ticket in the portal after checking it.", 10, txt -> move(id, "resolved", txt))), margins(-1, 0, 0, 8));
+        if (s.equals("resolved")) row.addView(text("Submitted. Waiting for the portal to close it.", 15, R.color.ok, true));
+        if (s.equals("closed") || s.equals("cancelled")) row.addView(text("This ticket is " + t.optString("statusLabel").toLowerCase() + ".", 15, R.color.text_secondary, true));
+        col.addView(row, margins(-1, 0, 0, 10));
         LinearLayout box = section(col, "Details");
         String full = t.optString("desc");
         box.addView(text((full.isEmpty() ? "No description." : full) + "\n\nCategory: " + t.optString("category"), 15, R.color.text_primary, false));
@@ -395,22 +373,10 @@ public class TechHomeActivity extends Activity {
                     + "(" + Uri.encode(t.optString("site", "Site")) + ")")), "No maps app on this tablet"));
             box.addView(nav, margins(-2, 10, 0, 0));
         }
-        // Status actions the technician may take (closing is portal-only)
-        LinearLayout acts = section(col, "Actions");
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        if (s.equals("assigned")) row.addView(action("Accept ticket", () -> move(id, "accepted", null)), margins(-1, 0, 0, 8));
-        if (s.equals("accepted") || s.equals("on_hold")) row.addView(action(s.equals("on_hold") ? "Resume work" : "Start work", () -> move(id, "in_progress", null)), margins(-1, 0, 0, 8));
-        if (s.equals("accepted") || s.equals("in_progress")) row.addView(action("Put on hold…", () -> ask("Put on hold", "Why is the work on hold?", 1, txt -> move(id, "on_hold", txt))), margins(-1, 0, 0, 8));
-        if (s.equals("in_progress")) row.addView(action("Submit as resolved…", () -> ask("Submit as resolved",
-                "Completion summary: what was wrong and what you did. An admin closes the ticket in the portal after checking it.", 10, txt -> move(id, "resolved", txt))), margins(-1, 0, 0, 8));
-        if (s.equals("resolved")) row.addView(text("Submitted. Waiting for the portal to close it.", 15, R.color.ok, true));
-        if (s.equals("closed") || s.equals("cancelled")) row.addView(text("This ticket is " + t.optString("statusLabel").toLowerCase() + ".", 15, R.color.text_secondary, true));
-        acts.addView(row);
         if (!s.equals("closed") && !s.equals("cancelled")) {
             // Notes
-            LinearLayout notes = section(col, "Add to the ticket");
-            Button kind = SetupActivity.picker(this, "Type of note", NOTE_NAMES, draftKind);
+            LinearLayout notes = section(col, "Add Work Summary & Updates");
+            Button kind = SetupActivity.picker(this, "Type of update", NOTE_NAMES, draftKind);
             notes.addView(kind, margins(-1, 0, 0, 4));
             EditText note = new EditText(this);
             note.setHint("Write here…");
@@ -424,10 +390,10 @@ public class TechHomeActivity extends Activity {
                 @Override public void afterTextChanged(android.text.Editable e) { }
             });
             notes.addView(note);
-            Button add = button("Add note", true);
+            Button add = button("Add update", true);
             add.setOnClickListener(v -> {
                 String txt = note.getText().toString().trim();
-                if (txt.isEmpty()) { toast("Write the note first"); return; }
+                if (txt.isEmpty()) { toast("Write the update first"); return; }
                 try {
                     send(id, "note", new JSONObject().put("kind", NOTE_KINDS[draftKind[0]]).put("text", txt), () -> { draft = ""; note.setText(""); });
                 } catch (Exception ignored) {
@@ -613,7 +579,7 @@ public class TechHomeActivity extends Activity {
     private LinearLayout section(LinearLayout col, String title) {
         LinearLayout s = new LinearLayout(this);
         s.setOrientation(LinearLayout.VERTICAL);
-        s.setBackground(getDrawable(R.drawable.glass));
+        s.setBackground(getDrawable(R.drawable.glass_hi));
         s.setPadding(px(16), px(14), px(16), px(16));
         s.addView(text(title, 17, R.color.text_primary, true), margins(-1, 0, 0, 8));
         col.addView(s, margins(-1, 0, 0, 10));
@@ -651,12 +617,8 @@ public class TechHomeActivity extends Activity {
         return t;
     }
 
-    private GradientDrawable card() {
-        GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(px(14));
-        g.setColor(getColor(R.color.glass_fill));
-        g.setStroke(px(1), getColor(R.color.glass_edge));
-        return g;
+    private android.graphics.drawable.Drawable card() {
+        return getDrawable(R.drawable.glass_hi);
     }
 
     private LinearLayout.LayoutParams margins(int width, int top, int end, int bottom) {
@@ -697,7 +659,7 @@ public class TechHomeActivity extends Activity {
         JSONObject st = home.optJSONObject("statuses");
         String kind = e.optString("kind"), text = e.optString("text");
         if (kind.equals("status") && st != null) return "Status: " + st.optString(e.optString("to")) + (text.isEmpty() ? "" : "\n" + text);
-        String head = kind.equals("finding") ? "Finding: " : kind.equals("work") ? "Work performed: " : kind.equals("parts") ? "Parts: " : kind.equals("admin") ? "Portal: " : "";
+        String head = kind.equals("finding") ? "Issue: " : kind.equals("work") ? "Work completed: " : kind.equals("pending") ? "Pending: " : kind.equals("next") ? "Next steps: " : kind.equals("parts") ? "Parts: " : kind.equals("admin") ? "Portal: " : "";
         return head + text;
     }
 

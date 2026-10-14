@@ -18,7 +18,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "server");
 const DASHBOARD_DIR = path.join(__dirname, "..", "dashboard");
 const STATIC = {
   "/": ["index.html", "text/html; charset=utf-8"], "/login": ["login.html", "text/html; charset=utf-8"],
-  "/logo.png": ["logo.png", "image/png"], "/max.png": ["max.png", "image/png"], "/max.glb": ["max.glb", "model/gltf-binary"], "/manifest.json": ["manifest.json", "application/manifest+json"],
+  "/logo.png": ["logo.png", "image/png"], "/max.png": ["max.png", "image/png"], "/max.glb": ["max.glb", "model/gltf-binary"], "/alarm.wav": ["alarm.wav", "audio/wav"], "/manifest.json": ["manifest.json", "application/manifest+json"],
 };
 const PUBLIC_PAGES = ["/login", "/logo.png", "/max.png", "/max.glb", "/manifest.json"];
 const SESSION_MS = 12 * 60 * 60 * 1000;
@@ -533,13 +533,13 @@ function techPlace(t) {
   return b ? { at: b, source: "base" } : null;
 }
 // Connectivity comes from the technician's tablet check-ins (online / offline / unknown = no tablet or never seen).
-// Available only when the technician has set "available" on that tablet and it is online: an online tablet alone isn't enough.
+// Available = active technician with an online tablet (the tablet has no Available / Busy / Off duty buttons since app 10.15).
 function techState(t) {
   const ds = techDevices(t), seen = Math.max(0, ...ds.map(d => d.lastSeen || 0));
   const connectivity = !seen ? "unknown" : ds.some(isOnline) ? "online" : "offline";
   const mine = portal.tickets.filter(k => k.techId === t.id), active = mine.filter(k => !WAITING.includes(k.status));
   return {
-    connectivity, availability: !t.active ? "inactive" : connectivity !== "online" ? "unknown" : t.availability || "unknown",
+    connectivity, availability: !t.active ? "inactive" : connectivity !== "online" ? "unknown" : "available",
     lastSeen: seen || null, lastActivity: Math.max(seen, t.lastActivity || 0) || null,
     active: active.length, current: (active.find(k => k.status === "in_progress") || active[0])?.no || null,
     resolved: mine.filter(k => k.status === "resolved").length, closed: mine.filter(k => k.status === "closed").length,
@@ -899,6 +899,11 @@ function maxTool(u, name, a, out) {
     const by = {};
     for (const d of vis) { const s = (by[d.group || "(no site)"] ||= { site: d.group || "(no site)", devices: 0, online: 0, offline: 0, openTickets: 0 }); s.devices++; isOnline(d) ? s.online++ : s.offline++; }
     for (const t of tickets || []) if (!DONE.includes(t.status) && by[t.site || "(no site)"]) by[t.site || "(no site)"].openTickets++;
+    // the last three offline alerts per site, newest first
+    for (const x of portal.alerts.slice().reverse()) {
+      const d = devices[x.deviceId], st = x.kind === "offline" && d && sees(u, d) && by[d.group || "(no site)"];
+      if (st && (st.lastOffline ||= []).length < 3) st.lastOffline.push(`${x.text} (${waTime(x.at)})`);
+    }
     return { sites: Object.values(by).sort((x, y) => y.offline - x.offline) };
   }
   if (name === "list_alerts") {
@@ -1022,9 +1027,14 @@ function localMax(u, q) {
       + (Array.isArray(r.openTickets) && r.openTickets.length ? `\n\nOpen tickets:\n${tl(r.openTickets)}` : ""));
   }
   if (has("site") && has("offline", "most", "worst", "which", "summary", "health")) {
+    // Just the site name(s) with the most offline devices and each one's last three offline alerts (read aloud).
     const r = run("sites_summary"), top = r.sites[0];
-    if (top) go("#/sites", { site: top.site === "(no site)" ? "" : top.site }, top.offline ? `${top.site} has the most offline: ${top.offline} of ${top.devices}` : "Every site is fully online.");
-    return r.sites.length ? reply(`| Site | Devices | Online | Offline | Open tickets |\n|---|---|---|---|---|\n${r.sites.map(s => `| ${s.site} | ${s.devices} | ${s.online} | ${s.offline} | ${s.openTickets} |`).join("\n")}`) : reply("No sites with devices yet.");
+    if (!top) return reply("No sites with devices yet.");
+    if (!top.offline) { go("#/sites", "#view h2", "Every site is fully online."); return reply("Every site is fully online."); }
+    const text = r.sites.filter(x => x.offline === top.offline)
+      .map(x => `${x.site}. Last offline alerts: ${x.lastOffline?.length ? x.lastOffline.join("; ") : "none recorded"}.`).join("\n\n");
+    go("#/sites", { site: top.site === "(no site)" ? "" : top.site }, text);
+    return reply(text);
   }
   if (has("offline", "down", "not online", "disconnected")) {
     const m = /(?:more than|over|longer than|at least)?\s*(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|half)\s*(?:an\s*)?(hour|hr|h\b|minute|min|day)/.exec(t);
@@ -1052,11 +1062,13 @@ function localMax(u, q) {
     if (has("fewest", "least", "lowest")) list = list.sort((a, b) => a.activeTickets - b.activeTickets);
     if (has("available") && !has("fewest")) {
       const av = list.filter(x => x.availability === "available");
-      if (!av.length) { go("#/team/workload", "#teamBody .health-list", "Nobody is Available right now"); return reply("Nobody is marked **Available** on their tablet right now."); }
-      list = av;
+      if (!av.length) { const none = "Nobody is available right now (no technician has their tablet online)."; go("#/team/workload", "#teamBody .health-list", none); return reply(none); }
+      // just the names (read aloud once: the pointing text is the same words)
+      const names = `Available: ${av.map(x => x.name).join(", ")}.`;
+      go("#/team/workload", "#teamBody .health-list", names);
+      return reply(names);
     }
-    go("#/team/workload", "#teamBody .health-list", has("available") && !has("fewest") ? `Available: ${list.map(x => x.name).join(", ")}`
-      : `Fewest tickets: ${list.slice().sort((a, b) => a.activeTickets - b.activeTickets)[0].name}`);
+    go("#/team/workload", "#teamBody .health-list", `Fewest tickets: ${list.slice().sort((a, b) => a.activeTickets - b.activeTickets)[0].name}`);
     return reply(`| Technician | Status | Available | Active tickets | Current |\n|---|---|---|---|---|\n${list.map(x => `| ${x.name} | ${x.connectivity} | ${x.availability} | ${x.activeTickets} | ${x.currentTicket || "–"} |`).join("\n")}`);
   }
   if (has("today", "summar") && has("work", "ticket", "technical", "team", "today")) {
@@ -1340,7 +1352,7 @@ async function handler(req, res) {
           if (body.to === t.status) return send(res, 200, { ok: true, repeat: true }); // a retry of a move that already happened
           moveTicket(t, String(body.to || ""), "tech", who, body.text);
         } else {
-          const kind = ["note", "finding", "work", "parts"].includes(body.kind) ? body.kind : "note", text = String(body.text || "").trim();
+          const kind = ["note", "finding", "work", "parts", "pending", "next"].includes(body.kind) ? body.kind : "note", text = String(body.text || "").trim();
           if (!text) return send(res, 400, { error: "Write something first" });
           tnote(t, who, kind, text);
         }
@@ -1390,7 +1402,7 @@ async function handler(req, res) {
     const page = req.method === "GET" && STATIC[p];
     if (page && (PUBLIC_PAGES.includes(p) || whoIs(req))) {
       // images and the 3D Max model (6 MB) may be cached for a day; pages never are
-      if (/\.(png|glb)$/.test(p)) {
+      if (/\.(png|glb|wav)$/.test(p)) {
         res.writeHead(200, { "Content-Type": page[1], "Cache-Control": "public, max-age=86400" });
         return res.end(fs.readFileSync(path.join(DASHBOARD_DIR, page[0])));
       }

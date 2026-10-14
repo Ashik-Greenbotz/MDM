@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ticket screen glass. ponytail: no backdrop blur (needs Android 12; the F8 is 11), the glow in bg_tech makes the glass read. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <solid android:color="@color/glass_fill" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <gradient android:angle="270" android:startColor="@color/glass_sheen" android:centerColor="#00FFFFFF" android:endColor="#00FFFFFF" android:centerY="0.55" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <stroke android:width="1.2dp" android:color="@color/glass_rim" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+</layer-list>

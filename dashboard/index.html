@@ -75,7 +75,8 @@
     background: linear-gradient(var(--accent), var(--accent2)); box-shadow: 0 0 12px var(--accent); }
   nav a .c { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   nav a .c.bad { color: #fff; background: var(--bad); padding: 0 7px; border-radius: 10px; font-weight: 700; }
-  main { padding: 28px 32px 96px; max-width: 1500px; width: 100%; min-width: 0; } /* bottom room for the Max button */
+  main { padding: 28px 32px 96px; max-width: 1500px; width: 100%; min-width: 0; display: flex; flex-direction: column; } /* bottom room for the Max button */
+  main > footer { margin-top: auto; } /* copyright line always at the bottom of the page */
   main h2 { margin: 0 0 4px; font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
   main .lead { color: var(--muted); margin: 0 0 22px; font-size: 15px; }
   @media (max-width: 800px) {
@@ -229,9 +230,11 @@
     animation: spin .9s linear infinite; box-shadow: 0 0 24px var(--accent-soft); }
   @keyframes spin { to { transform: rotate(360deg); } }
   #mapDlg { width: min(1300px, calc(100vw - 24px)); height: min(860px, calc(100vh - 24px)); padding: 0; overflow: hidden; }
-  #mapDlg .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-  #mapDlg .bar h2 { margin: 0; flex: 1; font-size: 16px; }
-  #map { height: calc(100% - 53px); }
+  #mapDlg[open] { display: flex; flex-direction: column; }
+  #mapDlg .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  #mapDlg .bar h2 { margin: 0; flex: 1; font-size: 16px; white-space: nowrap; }
+  #mapDlg .bar input { width: 220px; max-width: 100%; }
+  #map { flex: 1; min-height: 0; }
   .leaflet-popup-content { font: 13px/1.45 -apple-system, "Segoe UI", sans-serif; }
 
   .menu { position: fixed; z-index: 2000; background: var(--glass); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px);
@@ -287,6 +290,9 @@
   .tl { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; overflow-wrap: anywhere; }
   .tl-i { font-size: 16px; line-height: 1.4; }
   .mini-map { height: 260px; border-top: 1px solid var(--line); }
+  .k-banner { margin: 0 0 12px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--warn); background: var(--warn-soft); }
+  .k-banner.ok { border-color: var(--ok); background: var(--ok-soft); }
+  .k-banner b.st { color: var(--warn); } .k-banner.ok b.st { color: var(--ok); }
   /* Max, the assistant: floating robot button + chat panel */
   #maxBtn { position: fixed; right: 20px; bottom: 20px; z-index: 1500; width: 64px; height: 64px; padding: 0; border-radius: 50%; border: 1px solid var(--edge);
     background: radial-gradient(circle at 50% 40%, #fff, #ffe9cc); box-shadow: 0 10px 30px rgba(242,140,0,.35); animation: bob 3.5s ease-in-out infinite; }
@@ -330,6 +336,7 @@
     border-radius: 16px; background: var(--dlg); color: var(--text); border: 1px solid var(--edge); box-shadow: var(--shadow-hi); font-size: 13px; line-height: 1.4;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); pointer-events: auto; cursor: pointer; animation: zoom .25s var(--ease); }
   .max-bubble.below { bottom: auto; top: 92%; }
+  .max-bubble.announce { max-width: min(440px, 86vw); font-size: 15px; padding: 12px 16px; }
   .max-bubble.left { left: auto; right: 60%; transform: none; }
   .max-bubble.bad { border-color: var(--bad); color: var(--bad); }
   .max-spot { outline: 3px solid var(--accent) !important; outline-offset: 4px; box-shadow: 0 0 0 10px var(--accent-soft) !important; border-radius: 12px; transition: outline-color .3s; }
@@ -366,7 +373,10 @@
 </div>
 <div id="toasts"></div>
 <dialog id="mapDlg">
-  <div class="bar"><h2>Device locations</h2><span class="meta">🟢 online · 🔴 offline</span>
+  <div class="bar"><h2>Device locations</h2>
+    <select id="mapSite" aria-label="Site"></select>
+    <input id="mapQ" type="search" placeholder="Search device name or ID" aria-label="Search device name or ID">
+    <span class="meta" id="mapCount"></span><span class="meta">🟢 online · 🔴 offline · hollow = at its site (no GPS)</span>
     <form method="dialog"><button class="btn">Close</button></form></div>
   <div id="map"></div>
 </dialog>
@@ -492,6 +502,7 @@ async function refresh() {
   $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}` : "";
   renderNav();
   renderAlarm();
+  watchAutoTickets();
   renderMaint();
   $("maxBtn").hidden = !S.assistant?.allowed || !$("maxPanel").hidden;
   if ($("maxBot")) $("maxBot").hidden = !S.assistant?.allowed;
@@ -502,44 +513,60 @@ async function refresh() {
 // ---------------- offline alarm ----------------
 // Sounds while any offline alert is open and not acknowledged; again for every new one. Browsers only allow sound
 // after the user has clicked somewhere on the page once, so the first click (any click) unlocks it.
-let audio, soundOn = true, siren = null;
+let soundOn = true, siren = null;
 try { soundOn = localStorage.getItem("alarmSound") !== "off"; } catch {}
 const alarmAlerts = () => S.alerts.filter(a => !a.resolvedAt && !a.ackAt);
-// Fire-alarm siren: a sawtooth wailing 650 -> 1500 Hz every second, with a square wave an octave down.
-// It plays until stopSiren(). With seconds set, it stops by itself (the test burst when sound is turned on).
+// Alarm sound: mixkit "battleship alarm" (dashboard/alarm.wav), looped until stopSiren().
+// With seconds set, it stops by itself (the test burst when sound is turned on).
+const alarmSound = new Audio("/alarm.wav");
+alarmSound.loop = true;
+alarmSound.preload = "auto";
 function startSiren(seconds) {
   if (siren) return;
-  try {
-    audio ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (audio.state === "suspended") audio.resume();
-    const g = audio.createGain(), lfo = audio.createOscillator(), depth = audio.createGain();
-    g.gain.value = 0.6;
-    lfo.type = "triangle"; lfo.frequency.value = 1;   // one wail per second
-    depth.gain.value = 425;                          // 1075 Hz ± 425 = 650 … 1500 Hz
-    lfo.connect(depth);
-    const oscs = [["sawtooth", 1075, 1], ["square", 537.5, 0.5]].map(([type, f, k]) => {
-      const o = audio.createOscillator(), mix = audio.createGain(), sweep = audio.createGain();
-      o.type = type; o.frequency.value = f; mix.gain.value = k * 0.5;
-      sweep.gain.value = f / 1075;
-      depth.connect(sweep).connect(o.frequency);
-      o.connect(mix).connect(g);
-      return o;
-    });
-    g.connect(audio.destination);
-    [lfo, ...oscs].forEach(o => o.start());
-    siren = { stop: () => { [lfo, ...oscs].forEach(o => { try { o.stop(); } catch {} }); g.disconnect(); } };
-    if (seconds) setTimeout(stopSiren, seconds * 1000);
-  } catch {}
+  alarmSound.currentTime = 0;
+  alarmSound.play().catch(() => {}); // blocked until the first click on the page; the click handler below starts it then
+  siren = { stop: () => alarmSound.pause() };
+  if (seconds) setTimeout(stopSiren, seconds * 1000);
 }
 function stopSiren() { if (siren) { siren.stop(); siren = null; } }
-document.addEventListener("click", () => { try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {} }, { once: true });
+// Max announces in the middle of the screen, one message at a time, and reads it aloud (unless the alarm sound is muted).
+// Without the 3D Max (no WebGL) the message is a toast.
+let announceQ = Promise.resolve();
+function announce(text, { ms = 12000, ...opts } = {}) {
+  announceQ = announceQ.then(() => new Promise(done => {
+    if (!window.MaxBot || !$("maxBot") || $("maxBot").hidden) { toast(text, opts.tone === "bad"); return done(); }
+    bot("announce", text, { ms, ...opts });
+    setTimeout(done, ms + 1500);
+  }));
+}
+function announceAlert(a) {
+  const d = dev(a.deviceId), s = S.ticketSettings, where = d?.group ? ` at ${d.group}` : "";
+  if (a.kind !== "offline") return announce(`Alert${where}: ${a.text}. Please check the device.`, { tone: "bad", onClick: () => (location.hash = "#/alerts") });
+  const next = d?.usage === "tech" || !s?.autoTickets ? "Please check its power and network."
+    : `If it stays offline for ${s.ticketAfterMin} minutes, I'll open a ticket${s.autoAssign ? " and assign the nearest available technician" : ""}.`;
+  announce(`Alert: ${d ? label(d) + (d.code ? " (" + d.code + ")" : "") : "a device"}${where} is offline. ${next}`, { tone: "bad", onClick: () => (location.hash = "#/alerts") });
+}
+// Automatic tickets show up as a ticketId on the offline alert. Max says who got it, or asks someone to assign it.
+let seenTickets = null;
+function watchAutoTickets() {
+  const ids = [...new Set(S.alerts.filter(a => a.ticketId).map(a => a.ticketId))];
+  const fresh = seenTickets ? ids.filter(id => !seenTickets.has(id)) : [];
+  seenTickets = new Set(ids);
+  for (const id of fresh) api(`/api/tickets/${id}`).then(t => {
+    const open = () => (location.hash = `#/ticket/${t.id}`);
+    if (t.techName) announce(`Automatic ticket ${t.no}: ${t.title}. It is assigned to ${t.techName}, who sees it on their tablet: they accept it, fix it on site and submit it as resolved. Then check and close it here.`, { onClick: open });
+    else announce(`Automatic ticket ${t.no}: ${t.title}. No technician is assigned yet. Please check and assign one. Click here to open the ticket.`, { tone: "bad", onClick: open });
+  }).catch(() => {}); // no access to tickets: nothing to say
+}
+document.addEventListener("click", () => { if (siren && alarmSound.paused) alarmSound.play().catch(() => {}); }, { once: true });
 const KIND_TEXT = { offline: "offline", battery: "low battery", crash: "app crash" };
 let seenAlerts = null;
 function renderAlarm() {
   const list = alarmAlerts();
   const fresh = seenAlerts ? list.filter(a => !seenAlerts.has(a.id)) : [];
   seenAlerts = new Set(list.map(a => a.id));
-  if (fresh.length) setTimeout(() => bot("alert", $("alarmBar").firstElementChild, `${fresh.length > 1 ? fresh.length + " new alerts" : "New alert"}: ${fresh[0].text}`), 300);
+  for (const a of fresh.slice(0, 3)) announceAlert(a);
+  if (fresh.length > 3) announce(`${fresh.length - 3} more new alerts. Open Alerts to see them all.`, { onClick: () => (location.hash = "#/alerts") });
   $("soundBtn").innerHTML = ico(soundOn ? "volume-2" : "volume-x");
   $("soundBtn").title = soundOn ? "Alarm sound on (click to mute)" : "Alarm sound muted (click to turn on)";
   if (!list.length) { $("alarmBar").innerHTML = ""; stopSiren(); return; }
@@ -1968,6 +1995,7 @@ VIEWS.ticket = async (id, first) => {
   if (first) {
     $("view").innerHTML = `<p><a href="#/team/tickets">← Tickets</a></p>
       <div class="row" style="margin-bottom:12px"><h2 id="kTitle2" style="margin:0"></h2><span id="kPills"></span><span class="grow" style="flex:1"></span><span class="row" id="kBtns"></span></div>
+      <div id="kBanner"></div>
       <div class="cols">
         <div><div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="kKv"></dl></div></div>
           <div class="card"><h3>Description</h3><div class="pad" id="kDescBox"></div></div>
@@ -2009,6 +2037,10 @@ VIEWS.ticket = async (id, first) => {
   if (!t) { $("view").innerHTML = `<p class="empty">Ticket not found. <a href="#/team/tickets">Back to tickets</a></p>`; return; }
   $("kTitle2").innerHTML = `<span class="code" style="font-size:16px">${esc(t.no)}</span> ${esc(t.title)}`;
   $("kPills").innerHTML = `${tPill(t)} ${pPill(t.priority)}`;
+  // Current status with the remarks of the change that set it (on hold reason, resolution, return reason), on top
+  const last = t.timeline.filter(e => e.kind === "status" && e.to === t.status).pop();
+  $("kBanner").innerHTML = last?.text ? `<div class="k-banner ${t.status === "on_hold" ? "" : "ok"}"><b class="st">${esc(S.statuses[t.status])}</b>
+    <span class="meta">· ${esc(last.by)} · ${when(last.at)}</span><div style="white-space:pre-wrap;margin-top:4px"><b>Remarks:</b> ${esc(last.text)}</div></div>` : "";
   const role = S.canClose ? "close" : "portal", moves = Object.entries(S.flow[t.status] || {}).filter(([, need]) => RANK[role] >= RANK[need]);
   $("kBtns").innerHTML = (["closed", "cancelled"].includes(t.status) ? "" : `<button class="btn" id="kEdit">Edit</button>`) + moves.map(([to]) =>
     `<button class="btn ${to === "closed" ? "primary" : to === "cancelled" ? "danger" : ""}" data-move="${to}">${t.status === "resolved" && to === "in_progress" ? "Return for more work" : MOVE_TEXT[to]}</button>`).join("")
@@ -2021,7 +2053,7 @@ VIEWS.ticket = async (id, first) => {
   $("kFilesBox").innerHTML = t.files.map(f => { const src = `/api/tickets/${t.id}/files/${f.id}`; return f.type.startsWith("image/")
     ? `<a href="${src}" target="_blank" title="${esc(f.name)} · ${esc(f.by)}"><img src="${src}" alt="${esc(f.name)}" loading="lazy"></a>`
     : `<a class="btn" href="${src}" target="_blank">📄 ${esc(f.name)}</a>`; }).join("") || `<span class="meta">No files yet.</span>`;
-  const KIND = { created: "📝", status: "🔁", assign: "👷", note: "💬", finding: "🔎", work: "🛠", parts: "📦", admin: "💬", internal: "🔒", file: "📎", offline: "🔴", online: "🟢", edit: "✏️" };
+  const KIND = { created: "📝", status: "🔁", assign: "👷", note: "💬", finding: "🔎", work: "🛠", parts: "📦", pending: "⏳", next: "➡️", admin: "💬", internal: "🔒", file: "📎", offline: "🔴", online: "🟢", edit: "✏️" };
   $("kTimeline").innerHTML = t.timeline.slice().reverse().map(e => `<div class="tl"><span class="tl-i">${KIND[e.kind] || "•"}</span><div>
     <div><b>${esc(e.by)}</b> ${e.to && e.kind === "status" ? `· ${esc(S.statuses[e.from])} → <b>${esc(S.statuses[e.to])}</b>` : e.kind === "internal" ? `· <span class="meta">internal note</span>` : e.kind !== "note" && e.kind !== "admin" ? `· <span class="meta">${esc(e.kind)}</span>` : ""}
       <span class="meta">· ${when(e.at)}</span></div>${e.text ? `<div style="white-space:pre-wrap">${esc(e.text)}</div>` : ""}</div></div>`).join("");
@@ -2089,27 +2121,49 @@ function drawMap() {
     b.default.addTo(map);
     L.control.layers(b.all).addTo(map);
   }
-  const seen = new Set();
+  // Filters: site and a name / ID search. A device without its own GPS fix is drawn at its site's coordinates (hollow marker).
+  const site = $("mapSite").value, q = $("mapQ").value.trim().toLowerCase(), seen = new Set(), perSite = {};
+  let none = 0;
   for (const d of S.devices) {
-    if (d.lat == null) continue;
+    if (site && (d.group || "") !== (site === "__none" ? "" : site)) continue;
+    if (q && ![label(d), d.code, d.id].some(x => String(x || "").toLowerCase().includes(q))) continue;
+    const at = siteOf(d.group || ""), own = d.lat != null;
+    if (!own && at.lat == null) { none++; continue; }
     seen.add(d.id);
-    const popup = `<b>${esc(label(d))}</b><br>${isOnline(d) ? "Online" : "Offline"}${d.battery != null ? " · battery " + d.battery + "%" : ""}<br>
-      <span class="meta">±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
-    markers[d.id] ||= L.circleMarker([d.lat, d.lng], { radius: 9, weight: 3, fillOpacity: .95 }).addTo(map);
-    markers[d.id].setLatLng([d.lat, d.lng]).setStyle({ color: "#fff", fillColor: isOnline(d) ? "#22c55e" : "#ef4444" }).bindPopup(popup);
+    // ponytail: devices sharing a site's point get a small spiral offset so each one can be clicked
+    const k = own ? 0 : (perSite[d.group] = (perSite[d.group] || 0) + 1) - 1;
+    const ll = own ? [d.lat, d.lng] : [at.lat + 0.00006 * Math.sqrt(k) * Math.cos(k * 2.4), at.lng + 0.00006 * Math.sqrt(k) * Math.sin(k * 2.4)];
+    const popup = `<b>${esc(label(d))}</b>${d.code ? " · " + esc(d.code) : ""}<br>${esc(d.group || "No site")}<br>${isOnline(d) ? "Online" : "Offline"}${d.battery != null ? " · battery " + d.battery + "%" : ""}<br>
+      <span class="meta">${own ? `±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}` : "Shown at the site's location (no GPS from this device)"}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
+    markers[d.id] ||= L.circleMarker(ll, { radius: 9, weight: 3 }).addTo(map);
+    const col = isOnline(d) ? "#22c55e" : "#ef4444";
+    markers[d.id].setLatLng(ll).setStyle(own ? { color: "#fff", fillColor: col, fillOpacity: .95 } : { color: col, fillColor: "#fff", fillOpacity: .85 }).bindPopup(popup);
   }
   for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
+  $("mapCount").textContent = `${seen.size} on map${none ? ` · ${none} without a location` : ""}`;
   const pts = Object.values(markers).map(m => m.getLatLng());
   if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 }); fitted = true; }
 }
+function fillMapSites() {
+  const sel = $("mapSite"), v = sel.value;
+  sel.innerHTML = options([["", "All sites"], ...groups().map(g => g ? [g, g] : ["__none", "No site"])], v);
+}
+function fitMap() {
+  const pts = Object.values(markers).map(m => m.getLatLng());
+  if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 });
+}
+$("mapSite").onchange = () => { drawMap(); fitMap(); };
+$("mapQ").oninput = () => { drawMap(); fitMap(); };
 function openMap(d) {
+  fillMapSites();
+  $("mapSite").value = ""; $("mapQ").value = ""; // the dialog always opens on all devices
   $("mapDlg").showModal();
   drawMap();
   map.invalidateSize();
   if (Array.isArray(d)) {
     const pts = d.filter(x => markers[x.id]).map(x => markers[x.id].getLatLng()), n = d.length - pts.length;
     if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 });
-    if (n) toast(`${n} device${n > 1 ? "s have" : " has"} no location`);
+    if (n) toast(`${n} device${n > 1 ? "s have" : " has"} no location (no GPS and the site has no coordinates)`);
     return;
   }
   if (d) {
@@ -2117,8 +2171,6 @@ function openMap(d) {
     map.setView(markers[d.id].getLatLng(), 18);
     markers[d.id].openPopup();
   }
-  const n = S.devices.filter(x => x.lat == null).length;
-  if (!d && n) toast(`${n} device${n > 1 ? "s have" : " has"} no location (no GPS or not an Android device)`);
 }
 $("mapBtn").onclick = () => openMap();
 const THEME_ICON = { auto: "sun-moon", light: "sun", dark: "moon" };
@@ -2146,8 +2198,8 @@ $("logout").onclick = async () => { await fetch("/api/logout", { method: "POST" 
 // nothing happens until the user presses Confirm, which calls the normal endpoint (same permission checks as the buttons).
 const MAX_HINTS = ["Show me around", "Which devices are offline?", "Devices offline for more than 1 hour", "Which sites have the most offline devices?", "Show the open tickets",
   "Who is available in the technical team?", "Tickets awaiting closure", "Summarise today's technical work"];
-let maxChat = [], maxBusy = false, maxSpeakOn = false;
-try { maxChat = JSON.parse(sessionStorage.getItem("maxChat") || "[]"); maxSpeakOn = localStorage.getItem("maxSpeak") === "on"; } catch {}
+let maxChat = [], maxBusy = false, maxSpeakOn = true, talking = false; // talking: see maxHello
+try { maxChat = JSON.parse(sessionStorage.getItem("maxChat") || "[]"); maxSpeakOn = localStorage.getItem("maxSpeak") !== "off"; } catch {}
 const maxSave = () => { try { sessionStorage.setItem("maxChat", JSON.stringify(maxChat.slice(-40))); } catch {} };
 // Small Markdown subset: **bold**, lists, | tables |, and [[device:1234]] / [[ticket:T-00001]] links.
 function maxMd(text) {
@@ -2202,6 +2254,12 @@ async function maxGo(nav, text, proposals) {
 async function maxAsk(text) {
   text = text.trim();
   if (!text || maxBusy) return;
+  if (/show me around|\btour\b|guide me|walk me through/i.test(text) && window.MaxBot) {
+    maxChat.push({ role: "user", text }, { role: "assistant", text: "Sure, follow me! I'll open every part of the portal and explain it." });
+    maxSave(); maxRender();
+    talking = false; maxOpen(false);
+    return bot("tour");
+  }
   maxChat.push({ role: "user", text });
   maxBusy = true;
   maxRender();
@@ -2211,7 +2269,7 @@ async function maxAsk(text) {
     maxChat.push({ role: "assistant", text: r.text, proposals: r.proposals });
     maxSay(r.text);
     if (r.nav?.hash) maxGo(r.nav, r.text, r.proposals); else bot("answered", r.text, r.proposals);
-  } catch (e) { maxChat.push({ role: "assistant", text: e.message, err: true }); bot("talk", e.message); }
+  } catch (e) { maxChat.push({ role: "assistant", text: e.message, err: true }); bot("talk", e.message); maxSay(e.message); }
   maxBusy = false;
   maxSave();
   maxRender();
@@ -2232,38 +2290,68 @@ function maxListen() {
     for (const r of e.results) (r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript));
     $("maxIn").value = final || interim; // shows what was heard while speaking
   };
-  rec.onerror = e => toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
+  rec.onerror = e => e.error === "no-speech" && talking ? (talking = false) : e.error === "aborted" ? null : toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
     : e.error === "no-speech" ? "Didn't hear anything" : "Voice input stopped: " + e.error, e.error !== "no-speech");
-  rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); if (final.trim()) { $("maxIn").value = ""; maxAsk(final); } };
+  rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); if (final.trim()) { $("maxIn").value = ""; maxAsk(final); } else talking = false; };
   $("maxMic").classList.add("rec");
   try { rec.start(); } catch (e) { rec = null; $("maxMic").classList.remove("rec"); toast("Couldn't start the microphone: " + e.message, true); }
 }
-function maxSay(text) {
-  if (!maxSpeakOn || !("speechSynthesis" in window)) return;
-  speechSynthesis.cancel();
+// Max's voice. maxSay: a chat answer, interrupts whatever he was saying. maxVoice: anything shown in his bubble (tips,
+// pointing, alerts, the tour), queued after what he is saying; skipped if he just said the same words.
+let lastSpoken = "", lastSpokenAt = 0;
+function speakQueue(text) {
+  lastSpoken = text; lastSpokenAt = Date.now();
   const u = new SpeechSynthesisUtterance(text.replace(/\[\[(?:device|ticket):([^\]]+)\]\]/g, "$1").replace(/[*|#•]/g, " ").replace(/\s+/g, " ").slice(0, 1200));
   u.onstart = () => { $("maxStop").hidden = false; };
-  u.onend = u.onerror = () => { $("maxStop").hidden = true; };
+  u.onend = u.onerror = () => {
+    if (speechSynthesis.speaking || speechSynthesis.pending) return; // more to say
+    $("maxStop").hidden = true;
+    if (talking && !$("maxPanel").hidden) maxListen(); // talk mode: his turn is over, listen again
+  };
   speechSynthesis.speak(u);
+}
+function maxSay(text) {
+  if (!(maxSpeakOn || talking) || !("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();
+  speakQueue(text);
+}
+function maxVoice(text) {
+  if (!(maxSpeakOn || talking) || !("speechSynthesis" in window) || !text) return;
+  if (text === lastSpoken && Date.now() - lastSpokenAt < 15000) return;
+  speakQueue(text);
+}
+// Talk mode: clicking Max opens the chat, he says hello out loud and listens. Spoken questions get spoken answers and
+// he listens again after each one, until nothing is heard, something is typed, or the chat is closed.
+
+function maxHello() {
+  if (!Rec) return; // no voice input in this browser: the chat box is enough
+  if (rec) { rec.onend = rec.onerror = null; rec.abort(); rec = null; $("maxMic").classList.remove("rec"); } // its end must not stop talk mode
+  talking = true;
+  const first = (S.me?.name || "").split(" ")[0];
+  const hi = `Hi${first ? " " + first : ""}, I'm Max. How can I help you?`;
+  maxSay(hi); // first: the bubble below then sees it was just said
+  bot("say", hi, 5000);
+  bot("greet");
+  if (!("speechSynthesis" in window)) maxListen();
 }
 function maxSpeakBtn() {
   $("maxSpeak").innerHTML = ico(maxSpeakOn ? "volume-2" : "volume-x");
-  $("maxSpeak").title = !("speechSynthesis" in window) ? "Spoken answers aren't supported in this browser" : maxSpeakOn ? "Answers are read aloud (click to stop)" : "Read answers aloud";
+  $("maxSpeak").title = !("speechSynthesis" in window) ? "Speech isn't supported in this browser" : maxSpeakOn ? "Max speaks everything he says (click to mute)" : "Max is muted (click to let him speak)";
 }
 function maxOpen(open) {
   $("maxPanel").hidden = !open;
   $("maxBtn").hidden = open || !S.assistant?.allowed;
-  if (open) { maxRender(); $("maxIn").focus(); } else { window.speechSynthesis?.cancel(); rec?.stop(); }
+  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; window.speechSynthesis?.cancel(); rec?.stop(); }
   bot("dock");
 }
-$("maxBtn").onclick = () => maxOpen(true);
+$("maxBtn").onclick = () => { maxOpen(true); maxHello(); };
 $("maxMin").innerHTML = ico("minus");
 $("maxMin").onclick = () => maxOpen(false);
 $("maxMic").innerHTML = ico("mic");
 $("maxMic").onclick = maxListen;
 $("maxSend").innerHTML = ico("send");
 $("maxIn").addEventListener("input", () => { if ($("maxIn").value.length === 1) bot("listen"); });
-$("maxForm").onsubmit = e => { e.preventDefault(); const t = $("maxIn").value; $("maxIn").value = ""; maxAsk(t); };
+$("maxForm").onsubmit = e => { e.preventDefault(); talking = false; const t = $("maxIn").value; $("maxIn").value = ""; maxAsk(t); };
 $("maxClear").onclick = () => { maxChat = []; maxSave(); window.speechSynthesis?.cancel(); maxRender(); };
 $("maxStop").onclick = () => { speechSynthesis.cancel(); $("maxStop").hidden = true; };
 $("maxSpeak").onclick = () => {
@@ -2349,6 +2437,32 @@ scene.add(sun);
 
 const gltf = await new GLTFLoader().loadAsync("/max.glb");
 const model = gltf.scene, holder = new THREE.Group();
+// The logo on Max's body comes cyan in the model: recolour its two textures to the company orange once, at load.
+const ORANGE = [247, 147, 30];
+function orangeTex(tex) {
+  const c = document.createElement("canvas");
+  c.width = tex.image.width; c.height = tex.image.height;
+  const g = c.getContext("2d");
+  g.drawImage(tex.image, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const t = Math.max(0, Math.min(1, (p[i + 2] - p[i]) / 200)); // how cyan: blue well above red
+    if (!t) continue;
+    const v = Math.max(p[i + 1], p[i + 2]) / 255, r = p[i];
+    for (let k = 0; k < 3; k++) p[i + k] = r * (1 - t) + ORANGE[k] * v * t;
+  }
+  g.putImageData(d, 0, 0);
+  const n = new THREE.CanvasTexture(c);
+  Object.assign(n, { flipY: tex.flipY, colorSpace: tex.colorSpace, wrapS: tex.wrapS, wrapT: tex.wrapT, channel: tex.channel });
+  return n;
+}
+model.traverse(o => {
+  const m = o.material;
+  if (m?.name !== "Logo" || m.userData.orange) return;
+  if (m.map) m.map = orangeTex(m.map);
+  if (m.emissiveMap) m.emissiveMap = orangeTex(m.emissiveMap);
+  m.userData.orange = m.needsUpdate = true;
+});
 holder.add(model);
 scene.add(holder);
 const mixer = new THREE.AnimationMixer(model), clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
@@ -2406,6 +2520,8 @@ let bubbleTimer;
 function say(text, ms = 6000, tone = "") {
   clearTimeout(bubbleTimer);
   if (!text) { bubble.hidden = true; return; }
+  window.maxVoice?.(text);
+  ms = Math.max(ms, 1500 + text.length * 70); // stays up while it is being read out
   bubble.textContent = text;
   bubble.className = "max-bubble " + tone;
   bubble.hidden = false;
@@ -2488,7 +2604,9 @@ canvas.addEventListener("pointerup", () => {
   dragged = null;
   if (d?.moved) { homeOverride = { x: pos.x, y: pos.y }; return; } // stays where it was dropped
   const p = panel();
-  if (p.hidden) { maxOpen(true); greet(); setTimeout(() => goHome(), 50); } else p.querySelector("input")?.focus();
+  stopTour(); // stops a running tour
+  if (p.hidden) { maxOpen(true); setTimeout(() => goHome(), 50); }
+  maxHello();
 });
 canvas.addEventListener("dblclick", () => { homeOverride = null; goHome(); });
 
@@ -2541,23 +2659,89 @@ window.MaxBot = {
     else if (target && moves) setTimeout(() => pointAt(target, `${d.code} · ${label(d)}`), 1200);
   },
   alert(target, text) { if (moves) pointAt(target, text, { alert: true, tone: "bad", ms: 7000, stay: true }); else say(text, 7000, "bad"); },
-  tip(target, text) { if (moves && text) pointAt(target, text, { ms: 5500, stay: true }); },
-  pointAt, flyTo,
-  // guided tour of the menu
-  tour() {
-    const steps = [...document.querySelectorAll("#nav a")].map(a => [a, TOUR[a.getAttribute("href").slice(2)]]).filter(([, t]) => t);
-    const next = i => { if (i >= steps.length) return goHome(() => say("That's the tour! Ask me anything.", 4000)); pointAt(steps[i][0], steps[i][1], { ms: 3800, stay: true }); setTimeout(() => next(i + 1), 4600); };
-    next(0);
+  tip(target, text) { if (!tourOn && moves && text) pointAt(target, text, { ms: 5500, stay: true }); },
+  announce(text, { ms = 12000, tone = "", onClick } = {}) {
+    clearTimeout(pointTimer);
+    holderFace = 0;
+    flyTo((innerWidth - SIZE) / 2, (innerHeight - SIZE) / 2, () => {
+      say(text, ms, (tone + " announce").trim());
+      bubble.onclick = () => { bubble.hidden = true; onClick?.(); };
+      play("T_Fly_To_Alert", { once: true, then: () => loop("Alert_Critical_Wave") });
+      mode = "point";
+      pointTimer = setTimeout(() => { bubble.onclick = () => (bubble.hidden = true); goHome(); }, ms);
+    });
   },
+  pointAt, flyTo,
+  // Guided tour: Overview and every menu page (opened one by one), then the top bar last. The next step waits until he
+  // has finished speaking. Opening another page meanwhile: he explains that page, then resumes the tour. Clicking Max stops it.
+  tour() {
+    T = { i: 0, expect: "", steps: [
+      ...[...document.querySelectorAll("#nav a")].map(a => ({ href: a.getAttribute("href"), text: TOUR[a.getAttribute("href").slice(2)] })).filter(x => x.text),
+      ...TOUR_HEADER.filter(([sel]) => document.querySelector(sel)).map(([sel, text]) => ({ sel, text })),
+    ] };
+    tourOn = true;
+    tourStep();
+  },
+  stopTour,
   get moves() { return moves; },
   set moves(v) { moves = v; try { localStorage.setItem("maxMoves", v ? "on" : "off"); } catch {} if (!v) { homeOverride = null; goHome(); } },
 };
+let touring = 0, tourOn = false, T = null; // T: the running tour { steps, i, expect }; tourOn: page tips stay quiet
+function stopTour() { touring++; tourOn = false; T = null; }
+// Waits until he has spoken (and at least ms), unless something newer (token) took over.
+function tourWait(token, ms, then) {
+  const t0 = Date.now();
+  const tick = () => token !== touring ? null
+    : Date.now() - t0 < ms || window.speechSynthesis?.speaking || window.speechSynthesis?.pending ? setTimeout(tick, 300) : then();
+  setTimeout(tick, 800);
+}
+const tourMs = text => 1500 + text.length * 70;
+function tourStep(intro = "") {
+  if (!T) return;
+  const token = ++touring;
+  if (T.i >= T.steps.length) { stopTour(); location.hash = "#/overview"; T = null; return goHome(() => say("That's the tour! Click me any time and just ask.", 5000)); }
+  const st = T.steps[T.i], text = intro + st.text;
+  const show = el => { pointAt(el, text, { ms: tourMs(text) + 6000, stay: !st.href }); tourWait(token, tourMs(text), () => { if (T) { T.i++; tourStep(); } }); };
+  if (!st.href) { T.expect = location.hash; return show(document.querySelector(st.sel)); }
+  T.expect = st.href;
+  if (location.hash !== st.href) location.hash = st.href; // open the page
+  setTimeout(() => token === touring && show(document.querySelector("#view h2") || document.querySelector(`#nav a[href="${st.href}"]`)), 900);
+}
+// During the tour the user opened another page: explain that one, then go back to where the tour was.
+addEventListener("hashchange", () => {
+  if (!T || location.hash === T.expect) return;
+  const token = ++touring, page = location.hash.slice(2).split("/")[0];
+  window.speechSynthesis?.cancel();
+  T.expect = location.hash;
+  const text = TOUR[page] ? "You opened this one. " + TOUR[page] : "";
+  if (!text) return tourStep("Back to the tour. "); // a page without a tour text (a device, a ticket): carry on
+  setTimeout(() => {
+    if (token !== touring) return;
+    pointAt(document.querySelector("#view h2") || document.querySelector(`#nav a[href="#/${page}"]`), text, { ms: tourMs(text) + 6000 });
+    tourWait(token, tourMs(text), () => tourStep("Now, back to the tour. "));
+  }, 900);
+});
+// top bar, explained last, in this order
+const TOUR_HEADER = [
+  ["#themeBtn", "Up here in the top bar: this button switches the theme between light, dark and automatic."],
+  ["#soundBtn", "The speaker turns the alarm sound on or off. The alarm plays while an alert is open."],
+  ["#mapBtn", "The Map shows where every device is, with a filter for sites and a search for device names."],
+  ["a.bell", "The bell shows how many alerts are open. Click it to go straight to the alerts."],
+  ["#who", "And this is your profile, the signed-in account. Sign out is right next to it."],
+];
 const TOUR = {
-  overview: "Overview: the whole fleet at a glance.", devices: "Devices: every tablet and terminal, with remote commands.",
-  sites: "Sites: your buildings, with coordinates for finding technicians.", alerts: "Alerts: offline, low battery and crashes.",
-  team: "Technical Team: tickets, technicians and who is nearby.", tasks: "Scheduled tasks: commands at set times.",
-  apps: "Apps & files: install apps on many devices at once.", enroll: "Enroll: QR codes for new devices.",
-  activity: "Activity log: everything that happened.", users: "Users & access: who can see and do what.",
+  overview: "This is the Overview: total devices, how many are online and offline, devices per site and type, and the open alerts. You can also turn maintenance mode on or off for all devices here.",
+  devices: "This is Devices: every tablet and terminal. Search and filter them, tick several to send one command to all, or click a row to open the device page with its health, commands and logs.",
+  sites: "These are the Sites: your buildings. Each site card shows its devices and how many are offline. Give every site an address and coordinates so I can find technicians nearby.",
+  alerts: "This is Alerts: devices offline, low battery and app crashes. Acknowledge stops the alarm, and an alert clears itself when the device recovers.",
+  team: "This is the Technical Team: tickets, technicians, who is available, the workload, and the settings for automatic tickets and auto-assign.",
+  tasks: "Scheduled tasks run a command at a set time on chosen days, for example restarting a site every night.",
+  apps: "Apps and files: upload an app or a file once, then install or send it to many devices at the same time.",
+  enroll: "Enroll devices makes a QR code to set up new tablets after a factory reset.",
+  announcements: "Announcements show a full screen message on the tablets until someone taps Acknowledge.",
+  activity: "The Activity log lists everything that happened, who did it and when.",
+  features: "Features shows the status of every planned feature of this portal.",
+  users: "Users and access: create portal logins and choose what each person can see and do.",
 };
 window.dispatchEvent(new Event("maxbot-ready"));
 </script>

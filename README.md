@@ -19,11 +19,12 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 - Commit only the files you changed (`git add <file>`, not `git add -A`). Keys never go to GitHub (see **Security**).
 
 ## Portal pages
-- **Overview**: totals, devices per type and per site, open alerts, **🛠 Maintenance on all / off all**. **🗺 Map** (top bar) opens satellite view of all devices.
+- **Overview**: totals, devices per type and per site, open alerts, **🛠 Maintenance on all / off all**. **🗺 Map** (top bar) opens satellite view of all devices, with a **site** filter and a **device name / ID search**. A device without its own GPS shows at its site's coordinates (hollow marker); set them in Sites → Edit.
 - **Devices**: search/filter, tick devices for bulk commands (including **🛠 Maintenance on / off**), click a row for its page.
 - **Device page**: 24 h health chart, commands, activity, **Model…** (device model, onsite / technical team, technician), **Allowed apps** (the apps on the tablet's home screen), **Relay (door)** (see below), and **logs**: pulled from the tablet every hour, kept 30 days, download a From/To range.
 - **Sites**: **+ Add site**, **Edit name / location / coordinates** on each site card (**Find address** searches OneMap), add devices to a site, send a command to a whole site. Only admins can edit or delete sites.
-- **Alerts**: offline > 2 min, battery < 20 %, app crash (raised and cleared automatically). Open alerts sound a **fire-alarm siren** in the portal until someone clicks **Acknowledge** (the sound button mutes it; the browser only plays sound after the first click on the page).
+- **Alerts**: offline > 2 min, battery < 20 %, app crash (raised and cleared automatically). Open alerts sound a **battleship alarm** (`dashboard/alarm.wav`, mixkit) in the portal until someone clicks **Acknowledge** (the sound button mutes it; the browser only plays sound after the first click on the page).
+  **Max announces** every new alert in the middle of the screen and reads it aloud (muted with the speaker button in his chat): which device, which site, and when the automatic ticket will be opened. When the automatic ticket is created he comes back: assigned to whom and what happens next, or "no technician is assigned yet, please check and assign" (click the message to open the ticket).
   **💬 WhatsApp alerts** (admin): each number gets a WhatsApp message (CallMeBot, free) for every new alert, a reminder every hour while a device stays offline, and a message when it is back online. The dialog shows how to add a number. Check: `node functions/test-whatsapp.js`.
 - **Scheduled tasks**: a command at a set time on chosen days (e.g. restart a site every night).
 - **Apps & files**: upload an .apk (up to 2 GB) and install it silently on devices (OTA); send files to Download/Kiosk.
@@ -31,7 +32,7 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 - **Announcements** (admin): a message (text, optional image) shown full screen on the tablets until someone taps **Acknowledge**.
 - **Technical Team**: see [Technical team and tickets](#technical-team-and-tickets).
 - **Activity log**, **Features** (status of every planned feature), **Users & access** (portal logins, **Can close tickets**, and the **Max** settings).
-- **Max** (orange robot, bottom right): the AI assistant. See [Max](#max-the-ai-assistant).
+- **Max** (orange robot, bottom right): the AI assistant. **He speaks everything he shows** (answers, tips, pointing, alerts, tour; the speaker button in the chat mutes him). **"Show me around"** (chip, typed or spoken): he starts on Overview and opens every menu page one by one, then explains the top bar last (theme, speaker, Map, alerts, profile), moving on when he has finished speaking. Open another page meanwhile and he explains that one, then resumes the tour (click him to stop). **Click him to talk**: he says "Hi, I'm Max. How can I help you?" and listens; spoken questions get spoken answers and he keeps listening until you go quiet, type, or close the chat (Chrome / Edge, microphone allowed). See [Max](#max-the-ai-assistant).
 - **Maintenance mode** shows the System Maintenance screen on the tablets.
 - Light and dark "Apple glass" look: theme button in the top bar. Device and site links can be bookmarked or shared.
 - On a phone: open the portal and "Add to Home screen" to use it like an app.
@@ -85,17 +86,19 @@ The portal menu **Technical Team** has these tabs: Dashboard, Team members, Team
   - active / inactive
   - **live location**, only if they agreed. Otherwise the tablet's location is not stored.
 - **Team devices**: a tablet becomes a technical team device with **Usage: Tech team**. Set it on the setup screen, in the tablet's admin menu, or with Model… in the portal, then pick its technician here.
-  - The tablet keeps its normal home screen and apps, with a **My tickets (n)** tile first that opens the technician's tickets (**← Home** or Back returns).
+  - The tablet keeps its normal home screen and apps, with a **My tickets (n)** tile first (technician with a safety helmet, `tech_icon.xml`) that opens the technician's tickets (**← Home** or Back returns).
+  - Simple screen (app 10.15) with the technician icon in the header and a glass look (`glass_hi.xml`, orange/blue glow `bg_tech.xml`): count tiles (Assigned, New / accepted, In progress, On hold, **Overall open tickets** = not resolved / closed / cancelled) and **My Tasks**. A ticket shows its next-step button right under it, then Details, **Add Work Summary & Updates** (work summary / progress, work completed, pending items, issue encountered, next steps, parts), Photos, History.
   - There is no login on the tablet: anyone holding it acts as that technician.
 - **Automatic tickets**: an onsite device whose offline alert stays open past the set delay (default 10 min) gets one ticket.
   - It goes offline again while that ticket is open: a note on the same ticket, not a new ticket.
   - It comes back online: a note and a message to the technician. The ticket stays open until someone resolves and closes it.
 - **Technician suggestions**: the ticket page lists technicians within the radius (default 10 km from the site's coordinates), with distances and a map.
-  - Eligible: **Available** on their tablet, tablet online, and the right skill. Fewest active tickets first.
+  - Eligible: active technician with an **online** tablet (no Available / Busy / Off duty buttons since app 10.15), in range, and the right skill. Fewest active tickets first.
   - Nobody in range: a warning. Widen the radius or pick someone.
   - **Auto-assign** (Settings, off by default) only gives a ticket to an eligible technician.
 - **Workflow**: New → Assigned → Accepted → In progress ↔ On hold → Resolved (awaiting closure) → Closed, or Cancelled.
   - On the tablet: accept, start, hold (reason required), add notes and photos, and submit as resolved (summary required, plus a photo for the categories under Settings → Evidence).
+  - The portal ticket page shows the current status and its **remarks** on top (on hold reason, resolution, return reason).
   - **Only admins and accounts with "Can close tickets" can close a ticket.** The server refuses a close from a tablet.
   - Every change is in the ticket history.
 - **Manual tickets**: **+ New ticket** takes:
@@ -177,7 +180,7 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
 | `agents/` | Monitoring agents: `agent.ps1` (Windows), `agent.sh` (Linux), `esp32.ino` (IoT). |
 
-### Tablet app (`app/`, current version 10.14)
+### Tablet app (`app/`, current version 10.15)
 | Path | What |
 |---|---|
 | `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |
@@ -185,7 +188,7 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `KioskActivity.java` | Home screen: status pill (green online, yellow server offline, red offline / tap for Wi-Fi), clock, battery, Device ID, allowed apps, admin menu (6 taps top-right). |
 | `SetupActivity.java` | First-run setup: Production/Debug server, Device ID, device model, usage, allowed apps. |
 | `Relay.java` | Door relay per device model (file, ON/OFF values, root), or the portal's verified setup. |
-| `TechHomeActivity.java` | Technical team tablets: the technician's tickets, availability, notes, photos (camera / gallery), resolve. |
+| `TechHomeActivity.java` | Technical team tablets: the technician's tickets (My Tasks), work summary & updates, photos (camera / gallery), resolve. |
 | `DeviceService.java` | Checks in with the portal every 10 s and runs its commands (apps, relay, lock screen, reboot, ring, screenshot, install, file, logs, unlock/lock, single app). |
 | `AnnouncementActivity.java` | Full-screen announcements from the portal, with Acknowledge. |
 | `MaintenanceActivity.java` | Maintenance-mode screen. |

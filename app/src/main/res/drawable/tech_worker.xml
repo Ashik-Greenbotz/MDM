@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Technician with a safety helmet and hi-vis vest: the "My tickets" home screen icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+    <!-- shirt -->
+    <path android:fillColor="#FF2563EB" android:pathData="M7,46 C7,35 15,30.5 24,30.5 C33,30.5 41,35 41,46 Z" />
+    <!-- hi-vis vest -->
+    <path android:fillColor="#FFF7931E" android:pathData="M15.5,32.2 L20.5,31 L22,46 L14.5,46 Z M32.5,32.2 L27.5,31 L26,46 L33.5,46 Z" />
+    <path android:fillColor="#FFFFF3C4" android:pathData="M14.9,39.5 L21.2,39.5 L21.4,41.5 L14.8,41.5 Z M26.8,39.5 L33.1,39.5 L33.2,41.5 L26.6,41.5 Z" />
+    <!-- neck and head -->
+    <path android:fillColor="#FFE0A87E" android:pathData="M21.5,26 L26.5,26 L26.5,31 C25,32 23,32 21.5,31 Z" />
+    <path android:fillColor="#FFF2C094" android:pathData="M17.3,20.5 a6.7,6.7 0 1,0 13.4,0 a6.7,6.7 0 1,0 -13.4,0 Z" />
+    <!-- safety helmet -->
+    <path android:fillColor="#FFFFC107" android:pathData="M14.8,18.2 C14.8,12.5 18.9,8.6 24,8.6 C29.1,8.6 33.2,12.5 33.2,18.2 Z" />
+    <path android:fillColor="#FFFFA000" android:pathData="M22.6,8.8 C23.5,8.6 24.5,8.6 25.4,8.8 L25.4,17 L22.6,17 Z" />
+    <path android:fillColor="#FFFFB300" android:pathData="M12.2,17.6 L35.8,17.6 C36.6,17.6 36.9,18.4 36.4,19 C36,19.6 35.4,20 34.6,20 L13.4,20 C12.6,20 12,19.6 11.6,19 C11.1,18.4 11.4,17.6 12.2,17.6 Z" />
+</vector>
