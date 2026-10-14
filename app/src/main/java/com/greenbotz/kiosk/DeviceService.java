@@ -270,8 +270,14 @@ public class DeviceService extends Service {
             int battery = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
             if (battery >= 0) d.put("battery", battery); // mains-powered terminals report Integer.MIN_VALUE
             d.put("charging", bm.isCharging());
-            Boolean relay = relayState();
+            Relay rl = Relay.current(this);
+            Boolean relay = rl == null ? null : rl.state(this);
             if (relay != null) d.put("relay", relay);
+            if (rl != null) d.put("relayInfo", rl.info(this));
+            // Model / usage picked on this tablet: sent until the server has it, so a portal edit isn't overwritten later.
+            boolean configDirty = prefs.getBoolean(PREF_CONFIG_DIRTY, false);
+            String sentModel = prefs.getString(Relay.PREF_MODEL, ""), sentUsage = prefs.getString(Relay.PREF_USAGE, "onsite");
+            if (configDirty) d.put("config", new JSONObject().put("model", sentModel).put("usage", sentUsage));
             d.put("kioskLocked", !monitor && System.currentTimeMillis() >= unlockUntil);
             d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
@@ -290,6 +296,8 @@ public class DeviceService extends Service {
             if (d.has("allowedApps")) sentAllowed = allowed;
             String code = reply.optString("code");
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
+            applyConfig(prefs, reply, configDirty, sentModel, sentUsage);
+            flushTechOutbox();
             boolean maint = reply.optBoolean("maintenance");
             if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) {
                 prefs.edit().putBoolean(PREF_MAINTENANCE, maint).commit();
@@ -321,6 +329,145 @@ public class DeviceService extends Service {
         } catch (Exception e) {
             Log.w(TAG, "report failed: " + e);
             setServerOk(getSharedPreferences("kiosk", MODE_PRIVATE), false);
+        }
+    }
+
+    static final String PREF_CONFIG_DIRTY = "config_dirty", PREF_TECH_NAME = "tech_name";
+
+    // Model / usage set on the tablet (setup or admin menu): sent with the next check-ins until the server has them.
+    static void setConfig(Context ctx, String model, String usage) {
+        ctx.getSharedPreferences("kiosk", MODE_PRIVATE).edit().putString(Relay.PREF_MODEL, model).putString(Relay.PREF_USAGE, usage)
+                .putBoolean(PREF_CONFIG_DIRTY, true).commit();
+        event(ctx, "Model set on the device: " + model + ", " + ("tech".equals(usage) ? "technical team device" : "onsite device"));
+        reportNow();
+    }
+
+    // The server's copy of model / usage (a portal edit) and the relay setup to use. Old servers send neither.
+    private void applyConfig(SharedPreferences prefs, JSONObject reply, boolean sentDirty, String sentModel, String sentUsage) throws Exception {
+        SharedPreferences.Editor e = prefs.edit();
+        boolean stillDirty = sentDirty && !(sentModel.equals(prefs.getString(Relay.PREF_MODEL, "")) && sentUsage.equals(prefs.getString(Relay.PREF_USAGE, "onsite")));
+        if (sentDirty && !stillDirty) e.putBoolean(PREF_CONFIG_DIRTY, false);
+        JSONObject cfg = reply.optJSONObject("config");
+        String oldUsage = prefs.getString(Relay.PREF_USAGE, "onsite");
+        if (cfg != null && !stillDirty) {
+            e.putString(Relay.PREF_MODEL, cfg.optString("model")).putString(Relay.PREF_USAGE, cfg.optString("usage", "onsite"))
+                    .putString(PREF_TECH_NAME, cfg.isNull("tech") ? "" : cfg.optString("tech"));
+        }
+        if (reply.has("relayCfg")) {
+            JSONObject rc = reply.optJSONObject("relayCfg");
+            if (rc == null) e.remove(Relay.PREF_CFG); else e.putString(Relay.PREF_CFG, rc.toString());
+        }
+        e.commit();
+        // Usage changed in the portal: reopen the home screen, which shows the kiosk or the technician screen.
+        if (!oldUsage.equals(prefs.getString(Relay.PREF_USAGE, "onsite")) && !KioskActivity.monitorOnly(this)) {
+            handler.post(() -> startActivity(new Intent(this, KioskActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+        }
+    }
+
+    // ---- technical team tablet: ticket API (device key + this device's id; the server checks whose tablet it is) ----
+    // Updates that fail (no network) wait in PREF_TECH_OUTBOX and are retried with every check-in. Each carries an op id,
+    // so the server ignores one that already arrived.
+    static final String PREF_TECH_OUTBOX = "tech_outbox";
+
+    static JSONObject techCall(Context ctx, String method, String path, JSONObject body) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(ctx) + path).openConnection();
+        try {
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(15000);
+            c.setRequestMethod(method);
+            c.setRequestProperty("X-Device-Key", key(ctx));
+            c.setRequestProperty("X-Device-Id", ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_DEVICE_ID, ""));
+            if (body != null) {
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                try (OutputStream out = c.getOutputStream()) {
+                    out.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                }
+            }
+            return readReply(c);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    // Photo / PDF upload with progress (0-100). Throws with the server's message on failure.
+    static JSONObject techUpload(Context ctx, String path, byte[] data, java.util.function.IntConsumer progress) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(ctx) + path).openConnection();
+        try {
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(60000);
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setFixedLengthStreamingMode(data.length);
+            c.setRequestProperty("Content-Type", "application/octet-stream");
+            c.setRequestProperty("X-Device-Key", key(ctx));
+            c.setRequestProperty("X-Device-Id", ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_DEVICE_ID, ""));
+            try (OutputStream out = c.getOutputStream()) {
+                for (int i = 0; i < data.length; i += 16384) {
+                    out.write(data, i, Math.min(16384, data.length - i));
+                    progress.accept((int) (100L * Math.min(data.length, i + 16384) / data.length));
+                }
+            }
+            return readReply(c);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    // JSON reply; a 4xx/5xx becomes an exception with the server's error text (HttpError.status tells them apart).
+    static final class HttpError extends Exception {
+        final int status;
+        HttpError(int status, String msg) { super(msg); this.status = status; }
+    }
+    private static JSONObject readReply(HttpURLConnection c) throws Exception {
+        int status = c.getResponseCode();
+        InputStream in = status < 400 ? c.getInputStream() : c.getErrorStream();
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        if (in != null) try (InputStream i = in) {
+            byte[] chunk = new byte[4096];
+            for (int n; (n = i.read(chunk)) > 0; ) buf.write(chunk, 0, n);
+        }
+        JSONObject j;
+        try { j = new JSONObject(buf.toString("UTF-8")); } catch (Exception e) { j = new JSONObject(); }
+        if (status >= 400) throw new HttpError(status, j.optString("error", "HTTP " + status));
+        return j;
+    }
+
+    // Queues a ticket update to send later (no network now).
+    static synchronized void techQueue(Context ctx, String path, JSONObject body) {
+        SharedPreferences p = ctx.getSharedPreferences("kiosk", MODE_PRIVATE);
+        try {
+            JSONArray a = new JSONArray(p.getString(PREF_TECH_OUTBOX, "[]"));
+            if (a.length() < 100) a.put(new JSONObject().put("path", path).put("body", body));
+            p.edit().putString(PREF_TECH_OUTBOX, a.toString()).commit();
+        } catch (Exception ignored) {
+        }
+    }
+
+    // Sends queued updates in order. A refused one (4xx: e.g. the ticket was reassigned) is dropped and noted; a network
+    // failure stops here and the rest wait for the next check-in. Runs on the net thread.
+    private synchronized void flushTechOutbox() {
+        SharedPreferences p = getSharedPreferences("kiosk", MODE_PRIVATE);
+        try {
+            JSONArray a = new JSONArray(p.getString(PREF_TECH_OUTBOX, "[]"));
+            int done = 0;
+            for (; done < a.length(); done++) {
+                JSONObject x = a.getJSONObject(done);
+                try {
+                    techCall(this, "POST", x.getString("path"), x.getJSONObject("body"));
+                } catch (HttpError e) {
+                    if (e.status >= 500) break;
+                    event(this, "Ticket update not accepted: " + e.getMessage());
+                } catch (Exception e) {
+                    break; // network: try again on the next check-in
+                }
+            }
+            if (done == 0) return;
+            JSONArray rest = new JSONArray(p.getString(PREF_TECH_OUTBOX, "[]")), keep = new JSONArray();
+            for (int i = done; i < rest.length(); i++) keep.put(rest.get(i));
+            p.edit().putString(PREF_TECH_OUTBOX, keep.toString()).commit();
+        } catch (Exception e) {
+            Log.w(TAG, "tech outbox: " + e);
         }
     }
 
@@ -414,6 +561,18 @@ public class DeviceService extends Service {
             d.put("signal", wm.getConnectionInfo().getRssi());
             int ip = wm.getConnectionInfo().getIpAddress();
             d.put("localIp", (ip & 255) + "." + (ip >> 8 & 255) + "." + (ip >> 16 & 255) + "." + (ip >> 24 & 255));
+        }
+        // No Wi-Fi IP (e.g. Telpo F8 on Ethernet): first non-loopback IPv4 of any interface.
+        if (!d.has("localIp")) {
+            java.util.Enumeration<java.net.NetworkInterface> nis = java.net.NetworkInterface.getNetworkInterfaces();
+            while (nis != null && nis.hasMoreElements() && !d.has("localIp")) {
+                for (java.net.InetAddress a : java.util.Collections.list(nis.nextElement().getInetAddresses())) {
+                    if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress()) {
+                        d.put("localIp", a.getHostAddress());
+                        break;
+                    }
+                }
+            }
         }
         JSONObject info = new JSONObject();
         info.put("Memory", String.format(java.util.Locale.US, "%.1f of %.1f GB free", mi.availMem / 1e9, mi.totalMem / 1e9));
@@ -518,61 +677,34 @@ public class DeviceService extends Service {
         handler.postDelayed(() -> net.execute(this::report), 3000);
     }
 
-    // ---- door relay (Telpo F8, F10B, F10: sysfs file; other devices have none) ----
-    // F8/F10B: readable and writable by the app. F10 (msm8953): write-only, root only, so it goes through su
-    // and its state is the last value we wrote (PREF_RELAY).
-    private static final File RELAY_GPIO = new File("/sys/class/gpio-ctrl/relay1/enable");
-    private static final File RELAY_TELPOIO = new File("/sys/class/telpoio/relay_en");
-    private static final File RELAY = RELAY_GPIO.exists() ? RELAY_GPIO : RELAY_TELPOIO;
-    private static final String PREF_RELAY = "relay";
-    // All our terminals are wired the same way: "0" opens the door (relay ON), "1" locks it (relay OFF).
-    private static final String RELAY_ON = "0", RELAY_OFF = "1";
+    // ---- door relay: the file and values come from Relay (model profile, or the portal's verified setup) ----
     private final Runnable relayOff = () -> setRelay(false, 0);
 
     // null = this device has no relay.
     private Boolean relayState() {
-        if (!RELAY.exists()) return null;
-        if (!RELAY.canRead()) return getSharedPreferences("kiosk", MODE_PRIVATE).getBoolean(PREF_RELAY, false);
-        try (BufferedReader r = new BufferedReader(new java.io.FileReader(RELAY))) {
-            return RELAY_ON.equals(r.readLine().trim());
-        } catch (Exception e) {
-            return null;
-        }
+        Relay r = Relay.current(this);
+        return r == null ? null : r.state(this);
     }
 
     // seconds > 0: pulse (on now, off after N s). A new call cancels a pending pulse. Runs on the main thread.
     private void setRelay(boolean on, int seconds) {
         handler.removeCallbacks(relayOff);
-        if (!RELAY.exists()) {
-            event(this, "Relay: this device has no relay");
+        Relay r = Relay.current(this);
+        if (r == null || !r.file.exists()) {
+            event(this, r == null ? "Relay: this device model has no relay" : "Relay: " + r.file + " not found on this device");
             return;
         }
         boolean value = on || seconds > 0;
         try {
-            writeRelay(value ? RELAY_ON : RELAY_OFF);
+            r.set(this, value);
         } catch (Exception e) {
             Log.w(TAG, "relay write failed", e);
             event(this, "Relay failed: " + e.getMessage());
+            net.execute(this::report);
             return;
         }
-        getSharedPreferences("kiosk", MODE_PRIVATE).edit().putBoolean(PREF_RELAY, value).apply();
         if (seconds > 0) handler.postDelayed(relayOff, seconds * 1000L);
         net.execute(this::report);
-    }
-
-    private static void writeRelay(String v) throws Exception {
-        if (RELAY.canWrite()) {
-            try (java.io.FileWriter w = new java.io.FileWriter(RELAY)) {
-                w.write(v);
-            }
-            return;
-        }
-        Process p = new ProcessBuilder("su", "0", "sh", "-c", "echo " + v + " > " + RELAY.getPath()).redirectErrorStream(true).start();
-        if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-            p.destroy();
-            throw new Exception("su timed out");
-        }
-        if (p.exitValue() != 0) throw new Exception("su exit " + p.exitValue());
     }
 
     // Portal "Allowed apps": same effect as the admin menu's app picker. KioskActivity redraws its tiles via its pref listener.

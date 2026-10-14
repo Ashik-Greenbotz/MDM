@@ -21,15 +21,17 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 ## Portal pages
 - **Overview**: totals, devices per type and per site, open alerts, **🛠 Maintenance on all / off all**. **🗺 Map** (top bar) opens satellite view of all devices.
 - **Devices**: search/filter, tick devices for bulk commands (including **🛠 Maintenance on / off**), click a row for its page.
-- **Device page**: 24 h health chart, commands, activity, **Allowed apps** (the apps on the tablet's home screen), **Relay (door)** on the Telpo F8 (see below), and **logs**: pulled from the tablet every hour, kept 30 days, download a From/To range.
-- **Sites**: **+ Add site**, **Edit name / location** on each site card, add devices to a site, send a command to a whole site. Only admins can edit or delete sites.
+- **Device page**: 24 h health chart, commands, activity, **Model…** (device model, onsite / technical team, technician), **Allowed apps** (the apps on the tablet's home screen), **Relay (door)** (see below), and **logs**: pulled from the tablet every hour, kept 30 days, download a From/To range.
+- **Sites**: **+ Add site**, **Edit name / location / coordinates** on each site card (**Find address** searches OneMap), add devices to a site, send a command to a whole site. Only admins can edit or delete sites.
 - **Alerts**: offline > 2 min, battery < 20 %, app crash (raised and cleared automatically). Open alerts sound a **fire-alarm siren** in the portal until someone clicks **Acknowledge** (the sound button mutes it; the browser only plays sound after the first click on the page).
   **💬 WhatsApp alerts** (admin): each number gets a WhatsApp message (CallMeBot, free) for every new alert, a reminder every hour while a device stays offline, and a message when it is back online. The dialog shows how to add a number. Check: `node functions/test-whatsapp.js`.
 - **Scheduled tasks**: a command at a set time on chosen days (e.g. restart a site every night).
 - **Apps & files**: upload an .apk (up to 2 GB) and install it silently on devices (OTA); send files to Download/Kiosk.
 - **Enroll devices**: one form (site, mode, Wi-Fi) makes a token and a QR code for factory-reset Android devices.
 - **Announcements** (admin): a message (text, optional image) shown full screen on the tablets until someone taps **Acknowledge**.
-- **Activity log**, **Features** (status of every planned feature), **Users & access** (portal logins).
+- **Technical Team**: see [Technical team and tickets](#technical-team-and-tickets).
+- **Activity log**, **Features** (status of every planned feature), **Users & access** (portal logins, **Can close tickets**, and the **Max** settings).
+- **Max** (orange robot, bottom right): the AI assistant. See [Max](#max-the-ai-assistant).
 - **Maintenance mode** shows the System Maintenance screen on the tablets.
 - Light and dark "Apple glass" look: theme button in the top bar. Device and site links can be bookmarked or shared.
 - On a phone: open the portal and "Add to Home screen" to use it like an app.
@@ -43,19 +45,90 @@ other Android / Telpo (lock screen, ring, restart, screenshot, install app, send
 3. Double-click **`setup-tablet.bat`**. It installs `final apk\mdmkiosk app.apk` and makes it device owner (`setup-tablet.bat monitor` for monitor-only devices).
 4. The tablet shows **Set up this device**:
    - **Production** fills in https://mdm.gbotz.site. **Debug** asks for the office PC's IP (e.g. `192.168.68.50`) and uses `http://<IP>:8080`.
-   - Type the Device ID, tap **Connect**, pick the allowed apps, tap **Save and finish**.
+   - Type the Device ID, check the **Device model** (the detected one is marked; it picks the door relay profile) and the **Usage** (Onsite device or Tech team), tap **Connect**, pick the allowed apps, tap **Save and finish**.
    - Nothing is sent to any server before **Connect**.
 5. In the portal, rename the device and put it in its site.
 
-Tablet admin menu: 6 taps top-right → password. **Server address** changes the server; **Theme** is Auto (follows the system), Light or Dark.
+Tablet admin menu: 6 taps top-right → password. **Server address** changes the server; **Theme** is Auto (follows the system), Light or Dark; **Device model & usage** changes the model and onsite / technical team.
 
 ## Door relay (Telpo F8, F10B, F10)
 The Telpo F8, F10B and F10 intercoms have a relay for a door lock. On its device page, **Relay (door)**:
 - **Relay ON** / **Relay OFF**, or **⚡ Pulse** N seconds (on, then off by itself: opens the door).
 - **Maintenance mode switches the relay** (ticked by default): relay ON when maintenance starts, OFF when it ends.
 
+Since app 10.14 the relay comes from the **device model**: one profile per model, in `RELAY_PROFILES` (`functions/server.js`) and `Relay.java` (app).
+
+| Model | Relay | File | ON / OFF | Root | State |
+|---|---|---|---|---|---|
+| Telpo F8, Telpo F10B | yes (tested) | `/sys/class/gpio-ctrl/relay1/enable` | 0 / 1 | no | read back (confirmed) |
+| Telpo F10 | yes (tested) | `/sys/class/telpoio/relay_en` | 0 / 1 | yes (`su`) | last value written (inferred) |
+| Samsung Tablet | no | | | | relay commands refused |
+| Telpo VCP, Akuvox, Others, or no model set | unknown | a known relay file if the tablet has one (as before 10.14) | 0 / 1 | | |
+
+**Relay setup…** on the Relay card (admins) saves a tested mapping for one device. Only the two known relay files can be picked, and the app refuses any other path. The card shows:
+- support, file, ON/OFF values and root
+- whether the state is confirmed or inferred
+- the last result, and who verified the mapping
+
+ON / OFF / Pulse ask for confirmation, because they switch a real door. Detecting the model never writes to the relay.
+
 The card shows the state the tablet reports. Needs app 10.10 or newer. The app writes to `/sys/class/gpio-ctrl/relay1/enable` (F8, F10B): `0` for on (door open) and `1` for off (locked), the same on every device since app 10.13.
 The F10 (Android 9) has its relay at `/sys/class/telpoio/relay_en`, which only root can write and nobody can read: app 10.13 or newer writes it through `su` and reports the last value it wrote.
+
+## Technical team and tickets
+The portal menu **Technical Team** has these tabs: Dashboard, Team members, Team devices, Tickets, Assignment, Workload & availability, Ticket history, Settings.
+
+- **Team members**: each member has:
+  - name, region and skills (ticket categories; no skills = any job)
+  - WhatsApp number and CallMeBot key (optional, for their ticket messages)
+  - base location (**Find** searches OneMap)
+  - active / inactive
+  - **live location**, only if they agreed. Otherwise the tablet's location is not stored.
+- **Team devices**: a tablet becomes a technical team device with **Usage: Tech team**. Set it on the setup screen, in the tablet's admin menu, or with Model… in the portal, then pick its technician here.
+  - The tablet keeps its normal home screen and apps, with a **My tickets (n)** tile first that opens the technician's tickets (**← Home** or Back returns).
+  - There is no login on the tablet: anyone holding it acts as that technician.
+- **Automatic tickets**: an onsite device whose offline alert stays open past the set delay (default 10 min) gets one ticket.
+  - It goes offline again while that ticket is open: a note on the same ticket, not a new ticket.
+  - It comes back online: a note and a message to the technician. The ticket stays open until someone resolves and closes it.
+- **Technician suggestions**: the ticket page lists technicians within the radius (default 10 km from the site's coordinates), with distances and a map.
+  - Eligible: **Available** on their tablet, tablet online, and the right skill. Fewest active tickets first.
+  - Nobody in range: a warning. Widen the radius or pick someone.
+  - **Auto-assign** (Settings, off by default) only gives a ticket to an eligible technician.
+- **Workflow**: New → Assigned → Accepted → In progress ↔ On hold → Resolved (awaiting closure) → Closed, or Cancelled.
+  - On the tablet: accept, start, hold (reason required), add notes and photos, and submit as resolved (summary required, plus a photo for the categories under Settings → Evidence).
+  - **Only admins and accounts with "Can close tickets" can close a ticket.** The server refuses a close from a tablet.
+  - Every change is in the ticket history.
+- **Manual tickets**: **+ New ticket** takes:
+  - title, category, priority, due date
+  - site, device (or none) and technician
+  - description, internal notes (never sent to the tablet) and photos / PDFs
+- **Files**: JPEG, PNG, WebP or PDF, up to 10 MB each, checked by content. Stored under `uploads/tickets/`. Only signed-in portal users and the assigned tablet can open them.
+- **WhatsApp**: the alert numbers hear about new and resolved tickets. The technician hears about assignments, returns, notes and the device coming back. It uses the same outbox and retries as the device alerts.
+- **Offline tablet**: the last ticket list stays on screen. Updates made without network wait on the tablet and are sent once with the next check-in.
+- **Search**: by ticket number, title, site, device or technician, with status, site, technician and date filters, 25 per page.
+- **Check**: `node functions/test-tickets.js`. It covers the automatic ticket, no duplicates, suggestions, the tablet can't close, retries, file types, and the relay refused on a Samsung.
+
+## Max, the AI assistant
+Max is the 3D robot from `dashboard/max.glb` (`IPR_Mascot_v6`, 48 animations), drawn with three.js. He lives on the whole portal, not only in the chat:
+- He docks bottom right, hovers and fidgets, and gets bored after a few quiet minutes.
+- **Drag** him anywhere. **Click** him to open the chat. **Double-click** sends him home.
+- **Chat**: he listens while you type or speak, thinks while the server works, and talks with gestures while answering.
+- **Takes you to the answer**: every answer opens the matching page with its filters set, for example Devices with Offline, the Tickets tab with Awaiting closure, a device's or ticket's page, Sites, Alerts or Workload. He then flies to the exact card or list, outlines it, points at it and says the short answer there. The full answer stays in the chat. On a phone the chat closes so the page shows.
+- **Actions**: when an action needs confirming, he opens that device or ticket and points at the **Confirm** button.
+- **New alerts**: he flies to the red alarm bar, waves and says what happened.
+- **Page tips**: on the first visit to a page in a session, he flies to the heading with a one-line tip.
+- **Tour**: "Show me around" in the chat makes him fly down the menu, explaining each page.
+- **Staying put**: ✈ in the chat header keeps him in his corner. He also stays still when the system asks for reduced motion.
+- **Fallback**: without WebGL, or if the model can't load, the flat robot button is used.
+
+Ask in words (or tap the microphone: the browser's speech recognition, Chrome / Edge / Safari) and Max answers from live portal data: offline devices, sites, alerts, tickets, team workload, activity. The speaker button reads answers aloud.
+- It sees only what the signed-in account can see.
+- It never changes anything itself. For a restart, maintenance, the door relay, or assigning or closing a ticket, it shows a **Confirm** button. That calls the normal portal action, with the normal permission checks.
+- **Built-in (default, no key)**: Max runs on the portal server only and answers from our own data. No data leaves the server, and there's no cost. He recognises the usual questions: offline devices ("for more than 1 hour"), sites, open / overdue / unassigned / awaiting-closure tickets, a ticket number, a device ID or name, team availability and workload, alerts, today's work, recent activity, and actions such as "restart 5846" or "close T-00012". Anything else gets "I only answer questions about this portal's own data". The limit is 60 questions a minute per person.
+- **Optional Claude API**: with `ANTHROPIC_API_KEY` in `functions/.env` (office PC) or `.env` (Docker), Max understands free-form questions. The questions and the data he reads are then sent to Anthropic, and he still refuses topics outside the portal.
+  - The model is `ASSISTANT_MODEL` (default `claude-haiku-5-5`).
+- **Admin settings**: Users & access → **Max** card: on/off, model, and questions per person per day. There is also a limit of 10 questions per minute per person.
+- Accounts need the **Max** page ticked. Each question is written to the Activity log.
 
 ## Our devices (13 Oct 2026)
 | Device | Android | Connection | Production Device ID |
@@ -91,9 +164,10 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `functions/server.js` | Portal server, plain Node.js. Office PC: `node server.js`, data in `server/`. |
 | `functions/index.js` | Runs `server.js` as a Firebase Cloud Function (see `firebase.json`). |
 | `functions/test-whatsapp.js` | End-to-end check of the WhatsApp offline alerts: `node test-whatsapp.js`. |
+| `functions/test-tickets.js` | End-to-end check of device models, relay profiles and tickets: `node test-tickets.js`. |
 | `functions/.env.example` | Copy to `functions/.env` (not in git): admin login, `DEVICE_KEY`, time zone. |
 | `server/` | Office PC data (not in git): `devices.json`, `portal.json` (incl. WhatsApp numbers), `logs/`, `uploads/`. |
-| `dashboard/` | Portal pages: `index.html` (portal), `login.html`, `logo.png`, `manifest.json` (Add to Home screen). |
+| `dashboard/` | Portal pages: `index.html` (portal), `login.html`, `logo.png`, `max.glb` (3D Max) and `max.png` (flat fallback), `manifest.json` (Add to Home screen). |
 | `start-server.bat` / `start-server.sh` | Start the office PC server on port 8080. |
 | `Dockerfile`, `docker-compose.yml`, `Caddyfile` | Cloud server: portal in Docker behind Caddy (https for mdm.gbotz.site). |
 | `docker-compose.local.yml` | Same portal in Docker on the office PC, using `./server`. |
@@ -103,13 +177,15 @@ Both run app 10.12 on Production. Still to do in the production portal: delete t
 | `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
 | `agents/` | Monitoring agents: `agent.ps1` (Windows), `agent.sh` (Linux), `esp32.ino` (IoT). |
 
-### Tablet app (`app/`, current version 10.12)
+### Tablet app (`app/`, current version 10.14)
 | Path | What |
 |---|---|
 | `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |
 | `app/src/main/res/values/server.xml` | Built-in server address. Never commit a real key in it. |
 | `KioskActivity.java` | Home screen: status pill (green online, yellow server offline, red offline / tap for Wi-Fi), clock, battery, Device ID, allowed apps, admin menu (6 taps top-right). |
-| `SetupActivity.java` | First-run setup: Production/Debug server, Device ID, allowed apps. |
+| `SetupActivity.java` | First-run setup: Production/Debug server, Device ID, device model, usage, allowed apps. |
+| `Relay.java` | Door relay per device model (file, ON/OFF values, root), or the portal's verified setup. |
+| `TechHomeActivity.java` | Technical team tablets: the technician's tickets, availability, notes, photos (camera / gallery), resolve. |
 | `DeviceService.java` | Checks in with the portal every 10 s and runs its commands (apps, relay, lock screen, reboot, ring, screenshot, install, file, logs, unlock/lock, single app). |
 | `AnnouncementActivity.java` | Full-screen announcements from the portal, with Acknowledge. |
 | `MaintenanceActivity.java` | Maintenance-mode screen. |

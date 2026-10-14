@@ -75,7 +75,7 @@
     background: linear-gradient(var(--accent), var(--accent2)); box-shadow: 0 0 12px var(--accent); }
   nav a .c { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   nav a .c.bad { color: #fff; background: var(--bad); padding: 0 7px; border-radius: 10px; font-weight: 700; }
-  main { padding: 28px 32px; max-width: 1500px; width: 100%; min-width: 0; }
+  main { padding: 28px 32px 96px; max-width: 1500px; width: 100%; min-width: 0; } /* bottom room for the Max button */
   main h2 { margin: 0 0 4px; font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
   main .lead { color: var(--muted); margin: 0 0 22px; font-size: 15px; }
   @media (max-width: 800px) {
@@ -279,6 +279,60 @@
   .ugrid > label { color: var(--muted); }
   @media (max-width: 600px) { .ugrid { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 800px) { .who .t, #logout .t { display: none; } }
+  /* Technical Team */
+  .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 10px; }
+  .thumbs img { width: 104px; height: 104px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  .timeline { display: grid; gap: 12px; max-height: 520px; overflow: auto; }
+  .tl { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; overflow-wrap: anywhere; }
+  .tl-i { font-size: 16px; line-height: 1.4; }
+  .mini-map { height: 260px; border-top: 1px solid var(--line); }
+  /* Max, the assistant: floating robot button + chat panel */
+  #maxBtn { position: fixed; right: 20px; bottom: 20px; z-index: 1500; width: 64px; height: 64px; padding: 0; border-radius: 50%; border: 1px solid var(--edge);
+    background: radial-gradient(circle at 50% 40%, #fff, #ffe9cc); box-shadow: 0 10px 30px rgba(242,140,0,.35); animation: bob 3.5s ease-in-out infinite; }
+  #maxBtn img { width: 52px; height: 52px; object-fit: contain; display: block; margin: 0 auto; }
+  #maxBtn:hover { transform: scale(1.06); }
+  #maxBtn[hidden] { display: none; }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+  #maxPanel { position: fixed; right: 20px; bottom: 96px; z-index: 1600; width: min(400px, calc(100vw - 32px)); height: min(620px, calc(100vh - 130px));
+    display: flex; flex-direction: column; border-radius: 24px; overflow: hidden; border: 1px solid var(--edge); background: var(--dlg);
+    backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px); box-shadow: var(--shadow-hi); animation: zoom .25s var(--ease); transform-origin: bottom right; }
+  #maxPanel[hidden] { display: none; }
+  .max-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(135deg, rgba(242,140,0,.18), transparent 70%); }
+  .max-face { width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #fff, #ffe9cc); display: grid; place-items: center; flex: none; position: relative; }
+  .max-face img { width: 46px; height: 46px; object-fit: contain; }
+  .max-face::after { content: ""; position: absolute; top: 2px; left: 50%; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--accent2); opacity: 0; }
+  #maxPanel.thinking .max-face::after { opacity: 1; animation: glow 1s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 12px 4px var(--accent2); } }
+  .max-head b { display: block; font-size: 16px; } .max-head .grow { flex: 1; }
+  .max-head .btn { padding: 6px; border-radius: 50%; display: inline-flex; } .max-head .btn[hidden] { display: none; }
+  #maxLog { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .mx { max-width: 88%; padding: 9px 13px; border-radius: 16px; overflow-wrap: anywhere; line-height: 1.45; }
+  .mx.me { align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-bottom-right-radius: 5px; }
+  .mx.max { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .mx.err { border-color: var(--bad); color: var(--bad); }
+  .mx table { border-collapse: collapse; margin: 6px 0; font-size: 12px; } .mx th, .mx td { padding: 4px 6px; white-space: normal; position: static; }
+  .mx ul { margin: 4px 0; padding-left: 18px; } .mx p { margin: 0 0 6px; } .mx p:last-child { margin: 0; }
+  .mx .prop { margin-top: 8px; padding: 8px; border-radius: 12px; background: var(--accent-soft); display: grid; gap: 6px; }
+  .max-hints { display: flex; flex-wrap: wrap; gap: 6px; } .max-hints .chip { font-size: 12px; }
+  .max-input { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--line); align-items: center; }
+  .max-input input { flex: 1; min-width: 0; }
+  .max-input .btn { padding: 8px; border-radius: 50%; display: inline-flex; }
+  .max-input .btn.rec { background: var(--bad); color: #fff; animation: ping 1.2s infinite; }
+  @media (max-width: 600px) { #maxPanel { right: 8px; left: 8px; width: auto; bottom: 84px; height: calc(100vh - 110px); } #maxBtn { right: 12px; bottom: 12px; } }
+  #maxBtn.gone { display: none !important; }
+  #maxBot { position: fixed; left: 0; top: 0; z-index: 1700; pointer-events: none; will-change: transform; }
+  #maxBot[hidden] { display: none; }
+  #maxBot canvas { display: block; pointer-events: auto; cursor: grab; touch-action: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.25)); }
+  #maxBot canvas:active { cursor: grabbing; }
+  .max-bubble { position: absolute; bottom: 92%; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(280px, 70vw); padding: 9px 13px;
+    border-radius: 16px; background: var(--dlg); color: var(--text); border: 1px solid var(--edge); box-shadow: var(--shadow-hi); font-size: 13px; line-height: 1.4;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); pointer-events: auto; cursor: pointer; animation: zoom .25s var(--ease); }
+  .max-bubble.below { bottom: auto; top: 92%; }
+  .max-bubble.left { left: auto; right: 60%; transform: none; }
+  .max-bubble.bad { border-color: var(--bad); color: var(--bad); }
+  .max-spot { outline: 3px solid var(--accent) !important; outline-offset: 4px; box-shadow: 0 0 0 10px var(--accent-soft) !important; border-radius: 12px; transition: outline-color .3s; }
   .theming, .theming * { transition: background-color .45s var(--ease), color .45s var(--ease), border-color .45s var(--ease), box-shadow .45s var(--ease) !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
@@ -316,6 +370,15 @@
     <form method="dialog"><button class="btn">Close</button></form></div>
   <div id="map"></div>
 </dialog>
+<button id="maxBtn" hidden title="Ask Max, the portal assistant" aria-label="Open Max, the assistant"><img src="/max.png" alt=""></button>
+<section id="maxPanel" hidden aria-label="Max, the assistant">
+  <div class="max-head"><span class="max-face"><img src="/max.png" alt=""></span><div class="grow"><b>Max</b><span class="meta" id="maxSub">Your portal assistant</span></div>
+    <button class="btn ghost" id="maxStop" title="Stop speaking" hidden>■</button><button class="btn ghost" id="maxSpeak" title="Read answers aloud"></button>
+    <button class="btn ghost" id="maxMove" title="Max flies around the page" hidden>✈</button><button class="btn ghost" id="maxClear" title="New conversation">↺</button><button class="btn ghost" id="maxMin" title="Minimise"></button></div>
+  <div id="maxLog" aria-live="polite"></div>
+  <form class="max-input" id="maxForm"><button type="button" class="btn ghost" id="maxMic" title="Speak"></button>
+    <input id="maxIn" placeholder="Ask about devices, tickets, the team…" autocomplete="off" maxlength="1500"><button class="btn primary" id="maxSend" title="Send"></button></form>
+</section>
 <dialog id="dlg"></dialog>
 <dialog id="shotDlg"></dialog>
 
@@ -336,17 +399,20 @@ const CMD = {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Line icons from Lucide (lucide.dev, ISC licence), inlined so the portal works offline.
 const ICONS = {"activity":"<path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\"/>","bell":"<path d=\"M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9\"/><path d=\"M10.3 21a1.94 1.94 0 0 0 3.4 0\"/>","calendar-clock":"<path d=\"M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5\"/><path d=\"M16 2v4\"/><path d=\"M8 2v4\"/><path d=\"M3 10h5\"/><path d=\"M17.5 17.5 16 16.3V14\"/><circle cx=\"16\" cy=\"16\" r=\"6\"/>","layout-dashboard":"<rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/>","log-out":"<path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/><polyline points=\"16 17 21 12 16 7\"/><line x1=\"21\" x2=\"9\" y1=\"12\" y2=\"12\"/>","map-pin":"<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/>","map":"<path d=\"M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z\"/><path d=\"M15 5.764v15\"/><path d=\"M9 3.236v15\"/>","moon":"<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>","package":"<path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/><path d=\"M12 22V12\"/><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\"/><path d=\"m7.5 4.27 9 5.15\"/>","qr-code":"<rect width=\"5\" height=\"5\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"5\" height=\"5\" x=\"16\" y=\"3\" rx=\"1\"/><rect width=\"5\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/><path d=\"M21 16h-3a2 2 0 0 0-2 2v3\"/><path d=\"M21 21v.01\"/><path d=\"M12 7v3a2 2 0 0 1-2 2H7\"/><path d=\"M3 12h.01\"/><path d=\"M12 3h.01\"/><path d=\"M12 16v.01\"/><path d=\"M16 12h1\"/><path d=\"M21 12v.01\"/><path d=\"M12 21v-1\"/>","sparkles":"<path d=\"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z\"/><path d=\"M20 3v4\"/><path d=\"M22 5h-4\"/><path d=\"M4 17v2\"/><path d=\"M5 18H3\"/>","sun-moon":"<path d=\"M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.9 4.9 1.4 1.4\"/><path d=\"m17.7 17.7 1.4 1.4\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.3 17.7-1.4 1.4\"/><path d=\"m19.1 4.9-1.4 1.4\"/>","sun":"<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"m17.66 17.66 1.41 1.41\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.34 17.66-1.41 1.41\"/><path d=\"m19.07 4.93-1.41 1.41\"/>","tablet-smartphone":"<rect width=\"10\" height=\"14\" x=\"3\" y=\"8\" rx=\"2\"/><path d=\"M5 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-2.4\"/><path d=\"M8 18h.01\"/>","user-round":"<circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/>","users":"<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>","volume-2":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><path d=\"M16 9a5 5 0 0 1 0 6\"/><path d=\"M19.364 18.364a9 9 0 0 0 0-12.728\"/>","volume-x":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><line x1=\"22\" x2=\"16\" y1=\"9\" y2=\"15\"/><line x1=\"16\" x2=\"22\" y1=\"9\" y2=\"15\"/>"};
+Object.assign(ICONS, { wrench: "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
+  mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
+  send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
-  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"],
+  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
   ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["features", "sparkles", "Features"], ["users", "users", "Users & access"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" || page === "announcements" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team" }[page] || page);
 
-let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {} };
+let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {}, technicians: [], models: [], statuses: {}, flow: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
 const now = () => Date.now() + skew;  // server clock, so "last seen" is right even if this PC's clock is off
 const isOnline = d => d.lastSeen && now() - d.lastSeen < ONLINE_MS;
@@ -427,6 +493,8 @@ async function refresh() {
   renderNav();
   renderAlarm();
   renderMaint();
+  $("maxBtn").hidden = !S.assistant?.allowed || !$("maxPanel").hidden;
+  if ($("maxBot")) $("maxBot").hidden = !S.assistant?.allowed;
   route(true);
   if ($("mapDlg").open) drawMap();
 }
@@ -466,8 +534,12 @@ function startSiren(seconds) {
 function stopSiren() { if (siren) { siren.stop(); siren = null; } }
 document.addEventListener("click", () => { try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {} }, { once: true });
 const KIND_TEXT = { offline: "offline", battery: "low battery", crash: "app crash" };
+let seenAlerts = null;
 function renderAlarm() {
   const list = alarmAlerts();
+  const fresh = seenAlerts ? list.filter(a => !seenAlerts.has(a.id)) : [];
+  seenAlerts = new Set(list.map(a => a.id));
+  if (fresh.length) setTimeout(() => bot("alert", $("alarmBar").firstElementChild, `${fresh.length > 1 ? fresh.length + " new alerts" : "New alert"}: ${fresh[0].text}`), 300);
   $("soundBtn").innerHTML = ico(soundOn ? "volume-2" : "volume-x");
   $("soundBtn").title = soundOn ? "Alarm sound on (click to mute)" : "Alarm sound muted (click to turn on)";
   if (!list.length) { $("alarmBar").innerHTML = ""; stopSiren(); return; }
@@ -488,8 +560,9 @@ $("soundBtn").onclick = () => {
 
 function renderNav() {
   const cur = (location.hash.slice(2) || "overview").split("/")[0];
-  const counts = { devices: S.devices.length, sites: groups().filter(Boolean).length, alerts: openAlerts().length, tasks: S.tasks.length };
-  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") ? "on" : ""}">
+  const counts = { devices: S.devices.length, sites: groups().filter(Boolean).length, alerts: openAlerts().length, tasks: S.tasks.length,
+    team: S.ticketCounts ? S.ticketCounts.new + S.ticketCounts.resolved : 0 };
+  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") ? "on" : ""}">
     ${ico(icon)}<span class="t">${t}</span>${counts[k] ? `<span class="c ${k === "alerts" ? "bad" : ""}">${counts[k]}</span>` : ""}</a>`).join("");
 }
 
@@ -508,6 +581,15 @@ function route(live) {
   if (!live || fresh) { renderNav(); $("view").innerHTML = ""; }
   fn(arg ? decodeURIComponent(arg) : undefined, !live || fresh);
   if (!live || fresh) enter();
+  if (!live || fresh) {
+    let shown = [];
+    try { shown = JSON.parse(sessionStorage.getItem("maxTips") || "[]"); } catch {}
+    const tip = pageTip(page || "overview");
+    if (tip && !shown.includes(page || "overview") && $("maxPanel").hidden) {
+      try { sessionStorage.setItem("maxTips", JSON.stringify([...shown, page || "overview"])); } catch {}
+      setTimeout(() => bot("tip", $("view").querySelector("h2"), tip), 1400);
+    }
+  }
 }
 let enterTimer;
 function enter() {
@@ -650,7 +732,7 @@ VIEWS.devices = (arg, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>IP</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
       </div>`;
     $("q").oninput = e => { filters.q = e.target.value; VIEWS.devices(); };
@@ -667,7 +749,7 @@ VIEWS.devices = (arg, first) => {
     (filters.status || filters.type ? "" : S.pending.filter(x => !filters.group || (filters.group === "__none" ? !x.group : x.group === filters.group))
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
-      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
+      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="4"></td>
       <td><button class="btn ghost" data-unpend="${esc(x.code)}">Cancel</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
@@ -681,6 +763,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
       ${showSite ? `<td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>` : ""}
       <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
+      <td title="${d.ip ? "Seen from " + esc(d.ip) : ""}">${d.localIp ? esc(d.localIp) : `<span class="meta">–</span>`}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
@@ -723,6 +806,7 @@ function renderBulk() {
   $("bulk").innerHTML = `<div class="bulk"><b>${sel.length} selected</b>
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
+    ${S.sshReady ? `<button class="btn" data-bssh="1">SSH on</button><button class="btn" data-bssh="">SSH off</button>` : ""}
     <button class="btn danger" id="bDel">Remove</button>
     <button class="btn ghost" id="bClear">Clear selection</button></div>`;
   $("bCmd").onchange = e => { if (e.target.value) command(sel, e.target.value); e.target.value = ""; };
@@ -730,6 +814,8 @@ function renderBulk() {
   $("bDel").onclick = () => confirm(`Remove ${sel.length} devices from the portal? They come back if they check in again.`) &&
     act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "delete" }).then(() => picked.clear()), "Removed");
   $("bClear").onclick = () => { picked.clear(); route(true); };
+  for (const b of $("bulk").querySelectorAll("[data-bssh]")) b.onclick = () =>
+    act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "ssh", on: !!b.dataset.bssh }), `Remote SSH ${b.dataset.bssh ? "on" : "off"}`);
 }
 
 function deviceMenu(btn, d) {
@@ -767,9 +853,55 @@ function deviceAction(d, a) {
     if (name && name.trim()) act(() => api(`/api/devices/${d.id}/name`, { name }), "Renamed");
   }
   if (a === "group") askGroup(label(d), d.group || "", g => act(() => api(`/api/devices/${d.id}/group`, { group: g }), "Moved"));
+  if (a === "model") modelForm(d);
   if (a === "delete" && confirm(`Remove ${label(d)} from the portal? It comes back if it checks in again.`)) {
     act(() => api(`/api/devices/${d.id}/delete`, {}), "Removed").then(() => { if (location.hash.startsWith("#/device/")) location.hash = "#/devices"; });
   }
+}
+
+// Device model, usage (onsite kiosk / technical team tablet) and, for a team tablet, whose it is.
+// The tablet gets the change on its next check-in; its Device ID stays the same.
+function modelForm(d) {
+  const techOpts = [["", "Nobody yet"], ...S.technicians.filter(t => t.active || t.id === d.techId).map(t => [t.id, t.name])];
+  dialog(`<h2>Model and usage · ${esc(label(d))}</h2><div class="ugrid">
+      <label>Device model</label><select id="mModel" required>${d.deviceModel ? "" : `<option value="">Pick a model…</option>`}${options(S.models.map(m => [m, m]), d.deviceModel)}</select>
+      <label>Usage</label><div class="chips">
+        <label class="chip"><input type="radio" name="usage" value="onsite" ${d.usage !== "tech" ? "checked" : ""}>Onsite device (site kiosk)</label>
+        <label class="chip"><input type="radio" name="usage" value="tech" ${d.usage === "tech" ? "checked" : ""}>Technical team device</label></div>
+      <label>Technician</label><select id="mTech">${options(techOpts, d.techId || "")}</select></div>
+    <p class="meta">Reported by the tablet: ${esc([d.deviceName, d.model].filter(Boolean).join(" · ") || "nothing yet")}. The model picks the relay profile; models other than the Telpo F8, F10 and F10B have no verified relay.</p>`,
+    "Save", () => {
+      const usage = $("dlg").querySelector("input[name=usage]:checked").value, model = $("mModel").value;
+      if (!model) return toast("Pick a model", true);
+      act(() => api(`/api/devices/${d.id}/config`, { model, usage, ...(usage === "tech" ? { techId: $("mTech").value } : {}) }), "Saved; the tablet updates on its next check-in");
+    });
+  const sync = () => { $("mTech").disabled = $("dlg").querySelector("input[name=usage]:checked").value !== "tech"; };
+  $("dlg").querySelector(".ugrid").onchange = sync;
+  sync();
+}
+// Relay mapping for this device (admins). Saved on top of the model's profile and used for every relay command after.
+function relaySetup(d) {
+  const rp = d.relayProfile || {}, c = d.relayCfg || {};
+  dialog(`<h2>Relay setup · ${esc(label(d))}</h2>
+    <p class="meta" style="margin-top:0">Model profile: ${esc(d.deviceModel || "not set")} (${esc(rp.relay || "unknown")}). The tablet reports ${esc(d.relayInfo?.iface || "no relay file")}${d.relayInfo ? `, ${d.relayInfo.readable ? "readable" : "not readable"}` : ""}.
+      Test with Relay ON / OFF / Pulse first, with someone watching the door, then save what worked.</p>
+    <div class="ugrid">
+      <label>Relay file</label><select id="rIface">${options(S.relayIfaces.map(f => [f, f]), c.iface || rp.iface || d.relayInfo?.iface)}</select>
+      <label>ON (door open)</label><select id="rOn">${options([["0", "0"], ["1", "1"]], c.on ?? rp.on ?? "0")}</select>
+      <label>OFF (locked)</label><select id="rOff">${options([["1", "1"], ["0", "0"]], c.off ?? rp.off ?? "1")}</select>
+      <label>Pulse (s)</label><input id="rPulse" type="number" min="1" max="600" value="${esc(c.pulse || rp.pulse || 5)}">
+      <label>Options</label><div class="chips">
+        <label class="chip"><input type="checkbox" id="rRoot" ${(c.root ?? rp.root) ? "checked" : ""}>Needs root (su)</label>
+        <label class="chip"><input type="checkbox" id="rRead" ${(c.readable ?? rp.readable) ? "checked" : ""}>State can be read back</label>
+        <label class="chip"><input type="checkbox" id="rMaint" ${(c.maintLink ?? rp.maintLink ?? true) ? "checked" : ""}>Maintenance mode may switch it</label>
+        <label class="chip"><input type="checkbox" id="rVer">I tested ON, OFF and Pulse on the real door</label></div></div>`,
+    "Save setup", () => {
+      if ($("rOn").value === $("rOff").value) return toast("ON and OFF must be different", true);
+      act(() => api(`/api/devices/${d.id}/relaycfg`, { iface: $("rIface").value, on: $("rOn").value, off: $("rOff").value, pulse: $("rPulse").value,
+        root: $("rRoot").checked, readable: $("rRead").checked, maintLink: $("rMaint").checked, verified: $("rVer").checked }), "Relay setup saved");
+    }, d.relayCfg ? ["Reset to model profile", () => act(() => api(`/api/devices/${d.id}/relaycfg`, { reset: true }), "Relay setup reset")] : null);
+  $("dlg").classList.add("wide");
+  $("dlg").addEventListener("close", () => $("dlg").classList.remove("wide"), { once: true });
 }
 
 // Sends one command to a list of devices. install / file ask which app / file first.
@@ -909,6 +1041,8 @@ VIEWS.device = async (id, first) => {
   if (!d) { $("view").innerHTML = `<p class="empty">Device not found. <a href="#/devices">Back to devices</a></p>`; return; }
   const rows = {
     "Device ID": d.code, Type: TYPES[d.type] || d.type, Site: d.group || "–",
+    "Device model": d.type === "android-kiosk" && (d.deviceModel || "Not set (Model… to choose)"),
+    Usage: d.type === "android-kiosk" && (d.usage === "tech" ? "Technical team device" + (d.techName ? " · " + d.techName : " · no technician yet") : "Onsite device"),
     "App pinning": d.type === "android-kiosk" && (d.singleApp ? "📌 " + appName(d, d.singleApp) : "Not pinned"), Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
     Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP": d.localIp, "Seen from IP": d.ip,
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
@@ -921,7 +1055,7 @@ VIEWS.device = async (id, first) => {
     $("view").innerHTML = `
       <p><a href="#/devices">← All devices</a></p>
       <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
-        <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button>
+        <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
         <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="cols">
@@ -934,10 +1068,19 @@ VIEWS.device = async (id, first) => {
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
         </div>
       </div>
-      <div class="card" id="dRelayCard" hidden><h3>Relay (door)<span class="grow"></span><span id="dRelayState"></span></h3>
-        <div class="pad row"><button class="btn primary" data-relay="on">Relay ON</button><button class="btn" data-relay="off">Relay OFF</button>
+      <div class="card" id="dRelayCard" hidden><h3>Relay (door)<span class="grow"></span><span id="dRelayState"></span><button class="btn" id="dRelaySetup" hidden>Relay setup…</button></h3>
+        <div class="pad"><dl class="kv" id="dRelayKv" style="margin-bottom:14px"></dl>
+          <div class="row" id="dRelayBtns"><button class="btn primary" data-relay="on">Relay ON</button><button class="btn" data-relay="off">Relay OFF</button>
           <span class="meta">Pulse</span><input type="number" id="dPulse" min="1" max="600" value="5" style="width:70px"><span class="meta">s</span><button class="btn" data-relay="pulse">⚡ Pulse (open door)</button>
-          <label class="chip"><input type="checkbox" id="dRelayLink"> Maintenance mode switches the relay (ON when it starts, OFF when it ends)</label></div></div>
+          <label class="chip"><input type="checkbox" id="dRelayLink"> Maintenance mode switches the relay (ON when it starts, OFF when it ends)</label></div>
+          <p class="meta" id="dRelayNote" style="margin-bottom:0"></p></div></div>
+      <div class="card" id="dSshCard" hidden><h3>Remote SSH<span class="grow"></span><span id="dSshState"></span></h3>
+        <div class="pad"><div class="row"><button class="btn primary" data-ssh="1">SSH ON</button><button class="btn" data-ssh="">SSH OFF</button>
+          <span class="meta">The tablet opens a tunnel to the portal while SSH is ON. Turn it off when you are done.</span></div>
+          <div id="dSshInfo" hidden><p class="meta">Command (password 1 is the tunnel password, password 2 is this tablet's login):</p>
+            <div class="row"><code id="dSshCmd" style="user-select:all"></code><button class="btn ghost" data-copy="dSshCmd">Copy</button></div>
+            <div class="row" style="margin-top:6px"><span class="meta">1. Tunnel password:</span><code id="dSshTun" style="user-select:all"></code><button class="btn ghost" data-copy="dSshTun">Copy</button></div>
+            <div class="row" style="margin-top:6px"><span class="meta">2. Tablet login password:</span><code id="dSshPass" style="user-select:all"></code><button class="btn ghost" data-copy="dSshPass">Copy</button></div></div></div></div>
       <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
         <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
@@ -946,9 +1089,15 @@ VIEWS.device = async (id, first) => {
         <pre class="log" id="dLogs">Loading…</pre></div>`;
     $("view").onclick = e => {
       if (e.target.id === "dShot") return screenshot(dev(id), false);
+      if (e.target.id === "dRelaySetup") return relaySetup(dev(id));
       const r = e.target.closest("[data-relay]")?.dataset.relay;
+      if (r && !confirm(`${r === "off" ? "Relay OFF (lock the door)" : r === "on" ? "Relay ON (door stays open until Relay OFF)" : `Pulse ${$("dPulse").value} s (opens the door)`} on ${label(dev(id))}?\n\nThis switches the real door relay.`)) return;
       if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
         { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
+      const sb = e.target.closest("[data-ssh]");
+      if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
+      const cp = e.target.closest("[data-copy]");
+      if (cp) return navigator.clipboard.writeText($(cp.dataset.copy).textContent).then(() => toast("Copied"));
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
@@ -973,11 +1122,38 @@ VIEWS.device = async (id, first) => {
   }
   const apps = d.type === "android-kiosk" ? d.launcherApps || [] : [];
   $("dAppsCard").hidden = !apps.length;
-  $("dRelayCard").hidden = !(S.commands[d.type] || []).includes("relay");
+  const rp = d.relayProfile || { relay: "unknown" }, ri = d.relayInfo || {};
+  $("dModelBtn").hidden = d.type !== "android-kiosk";
+  $("dRelayCard").hidden = !(S.commands[d.type] || []).includes("relay") || (rp.relay === "no" && d.relay == null);
+  // confirmed = the tablet read the relay file back; otherwise it is the last value written (F10 can't be read)
+  const confirmed = ri.readable ?? rp.readable;
   $("dRelayState").innerHTML = d.pending === "relay" ? `<span class="meta">Sending to device…</span>`
-    : d.relay == null ? `<span class="meta">Update the tablet app to see the relay state</span>`
-    : `<span class="pill ${d.relay ? "ok" : ""}">${d.relay ? "ON" : "OFF"}</span>`;
+    : d.relay == null ? `<span class="meta">${rp.relay === "no" ? "No relay on this model" : "Update the tablet app to see the relay state"}</span>`
+    : `<span class="pill ${d.relay ? "ok" : ""}">${d.relay ? "ON" : "OFF"}</span> <span class="meta">${confirmed ? "read from the device" : "last command sent (can't be read back)"}</span>`;
+  $("dRelaySetup").hidden = !me().admin;
+  $("dRelayBtns").hidden = rp.relay === "no";
+  if (!$("dPulse").dataset.set && rp.pulse) { $("dPulse").value = rp.pulse; $("dPulse").dataset.set = "1"; }
+  const kv = {
+    "Relay support": { yes: "Yes", no: "No", unknown: "Unknown (not verified for this model)" }[rp.relay],
+    Profile: (d.deviceModel || "Model not set") + (d.relayCfg ? " + this device's own setup" : ""),
+    "Relay file": ri.iface || rp.iface || (rp.relay === "yes" ? "" : "found by the tablet"),
+    "ON / OFF values": rp.on != null ? `ON = ${rp.on} (door open), OFF = ${rp.off} (locked)` : "",
+    "Needs root": rp.root != null ? (rp.root ? "Yes (written with su)" : "No") : "",
+    "State": d.relay == null ? "" : confirmed ? "Confirmed (read back from the relay file)" : "Inferred (last value written)",
+    "Last result": ri.lastResult ? `${ri.lastResult}${ri.lastAt ? " · " + ago(ri.lastAt) : ""}` : "",
+    "Verified": d.relayCfg?.verified ? `Yes, by ${d.relayCfg.verifiedBy} ${ago(d.relayCfg.verifiedAt)}` : "No",
+    "Last setup change": d.relayCfg?.updatedAt ? `${ago(d.relayCfg.updatedAt)} by ${d.relayCfg.updatedBy}` : d.configAt ? `Model set ${ago(d.configAt)}` : "",
+  };
+  $("dRelayKv").innerHTML = Object.entries(kv).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  $("dRelayNote").textContent = rp.relay === "unknown" ? "This model's relay hasn't been verified. Test it with someone at the door, then use Relay setup… to save the mapping that worked." : "";
   $("dRelayLink").checked = d.relayLink !== false;
+  $("dSshCard").hidden = !S.sshReady || d.type !== "android-kiosk";
+  $("dSshState").innerHTML = !d.ssh ? `<span class="pill">OFF</span>` : d.sshUp ? `<span class="pill ok">Connected</span>`
+    : `<span class="meta">${d.sshUp == null ? "Update the tablet app to 10.13" : "Connecting…"}</span>`;
+  $("dSshInfo").hidden = !d.ssh;
+  $("dSshCmd").textContent = d.sshCmd || "";
+  $("dSshPass").textContent = d.sshPass || "";
+  $("dSshTun").textContent = S.sshTunnelPass || "";
   $("dAppsNote").textContent = d.pending === "apps" ? "Sending to device…" : d.allowedApps ? "" : "Update the tablet app to see its current list";
   if (!$("dApps").dataset.edited) {
     const on = new Set(d.allowedApps || []);
@@ -1079,7 +1255,7 @@ VIEWS.site = async (name, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>IP</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden>No devices in this site yet. Click <b>Add devices</b>.</div></div></div>
       <div class="cols">
         <div class="card"><h3>Open alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3><table><tbody id="sAlerts"></tbody></table></div>
@@ -1128,12 +1304,28 @@ function siteForm(site) {
   dialog(`<h2>${site ? "Edit site" : "Add site"}</h2><div class="grid" style="display:grid;grid-template-columns:max-content 1fr;gap:10px 14px;align-items:center">
     <label class="meta">Site name</label><input id="sName" value="${esc(site?.name || "")}" placeholder="e.g. Tampines Hub" required autofocus>
     <label class="meta">Location</label><input id="sAddr" value="${esc(site?.address || "")}" placeholder="optional">
-    <label class="meta">Contact</label><input id="sContact" value="${esc(site?.contact || "")}" placeholder="optional: person / phone"></div>`,
+    <label class="meta">Contact</label><input id="sContact" value="${esc(site?.contact || "")}" placeholder="optional: person / phone">
+    <label class="meta">Coordinates</label><div class="row"><input id="sLat" style="width:110px" placeholder="latitude" value="${esc(site?.lat ?? "")}">
+      <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div></div>
+    <div id="sFound" class="chips" style="margin-top:8px"></div>
+    <p class="meta">Coordinates are used to find technicians near the site. Find address searches OneMap (Singapore) for the Location; you can also type them.</p>`,
     site ? "Save" : "Add site", () => {
       const name = $("sName").value.trim();
       if (!name) return toast("Site name is required", true);
-      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, oldName: site?.name }), site ? "Site saved" : `Site "${name}" added`);
+      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name }),
+        site ? "Site saved" : `Site "${name}" added`);
     });
+  $("sFind").onclick = () => geoSearch($("sAddr").value, $("sFound"), r => { $("sLat").value = r.lat; $("sLng").value = r.lng; if (!$("sAddr").value.trim()) $("sAddr").value = r.address; });
+}
+// OneMap address search through the server; shows the matches as chips and calls pick(result).
+async function geoSearch(q, box, pick) {
+  if ((q || "").trim().length < 3) return toast("Type the address or postal code first", true);
+  box.innerHTML = `<span class="meta">Searching…</span>`;
+  try {
+    const { results } = await api("/api/geocode?q=" + encodeURIComponent(q.trim()));
+    box.innerHTML = results.length ? results.map((r, i) => `<button type="button" class="chip" data-i="${i}">${esc(r.address)}</button>`).join("") : `<span class="meta">No match on OneMap; type the coordinates.</span>`;
+    box.onclick = e => { const b = e.target.closest("[data-i]"); if (b) { pick(results[b.dataset.i]); box.innerHTML = `<span class="meta">✓ ${esc(results[b.dataset.i].address)}</span>`; } };
+  } catch (e) { box.innerHTML = `<span class="meta">${esc(e.message)}</span>`; }
 }
 
 function addDevicesToSite(name) {
@@ -1408,7 +1600,7 @@ VIEWS.enroll = (arg, first) => {
       <td><button class="btn ghost" data-del="${esc(t.token)}">Delete</button></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No tokens yet</td></tr>`;
 };
 
-const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸", announcement: "📢" };
+const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸", announcement: "📢", config: "⚙️", relay: "⚡", ticket: "🛠", team: "👷", assistant: "🤖", whatsapp: "💬", maintenance: "🛠", user: "👤", ssh: "🔐" };
 const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc(e.text)}${e.deviceId && dev(e.deviceId) && !location.hash.startsWith("#/device/")
   ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
 VIEWS.activity = async (arg, first) => {
@@ -1437,7 +1629,7 @@ const FEATURES = [
   ["Remote logs & debug", "done", "Get logs pulls the app log and last crash from a device"],
   ["Alerts (battery, offline, crash)", "done", "Raised and cleared automatically; alarm sound in the portal when a device goes offline"],
   ["4-digit Device IDs", "done", "Create in the portal, type on the device to link; shown on the device's home screen"],
-  ["Offline alerts", "partial", "Red banner + alarm sound in the portal; email / WhatsApp notifications not yet"],
+  ["Offline alerts", "done", "Red banner + alarm sound in the portal; WhatsApp alert, hourly reminder and back-online message"],
   ["Device grouping (sites)", "done", "Add sites, put devices in them, control a whole site"],
   ["Bulk control", "done", "Tick devices or pick a site, send any command"],
   ["Scheduled tasks", "done", "Command at a time on chosen days"],
@@ -1452,12 +1644,16 @@ const FEATURES = [
   ["Screen recording", "next", "Comes with remote control"],
   ["Remote ADB", "next", "Needs the secure tunnel"],
   ["Secure tunnel access", "next", "Needed for cloud / remote sites"],
+  ["Device model & relay profiles", "done", "Model picked on the tablet or in the portal; F8, F10B and F10 relay profiles verified, others need testing (Relay setup…)"],
+  ["Technical team & maintenance tickets", "done", "Automatic tickets for offline devices, technicians near the site, team tablets, portal-only closing"],
+  ["Max, AI assistant", "done", "Text and voice; answers from live data, proposes actions you confirm. Needs a Claude API key on the server"],
   ["AI monitoring", "later", "After enough health history is collected"],
 ];
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", features: "Features" };
-VIEWS.users = () => {
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", features: "Features", team: "Technical Team & tickets", assistant: "Max (AI assistant)" };
+VIEWS.users = (arg, first) => {
+  if (!first && document.activeElement?.closest("#view input")) return; // don't redraw under someone typing in the Max settings
   const users = S.users || [];
   const siteText = x => x.admin || (x.sites || []).includes("*") ? "All sites" : (x.sites || []).join(", ") || "No sites";
   const modText = x => x.admin ? "Everything" : (x.modules || []).map(m => MODULE_NAMES[m] || m).join(", ") || "Nothing";
@@ -1468,13 +1664,21 @@ VIEWS.users = () => {
       <thead><tr><th>User</th><th>Role</th><th>Sites</th><th>Pages</th><th>Last sign-in</th><th></th></tr></thead>
       <tbody><tr><td><div class="name">Administrator</div><div class="meta">main login (start-server.bat)</div></td><td><span class="pill ok">Administrator</span></td>
         <td>All sites</td><td class="meta">Everything</td><td class="meta">–</td><td class="meta">Change in start-server.bat</td></tr>
-      ${users.map(x => `<tr><td><div class="name">${esc(x.name || x.username)}</div><div class="meta">${esc(x.username)}</div></td>
+      ${users.map(x => `<tr><td><div class="name">${esc(x.name || x.username)}${x.closeTickets && !x.admin ? ` <span class="pill neutral">closes tickets</span>` : ""}</div><div class="meta">${esc(x.username)}</div></td>
         <td>${x.disabled ? `<span class="pill bad">Disabled</span>` : x.admin ? `<span class="pill ok">Administrator</span>` : x.readOnly ? `<span class="pill neutral">View only</span>` : `<span class="pill warn">Operator</span>`}</td>
         <td class="wrap" style="max-width:220px">${esc(siteText(x))}</td><td class="wrap meta" style="max-width:320px">${esc(modText(x))}</td>
         <td class="meta">${x.lastLogin ? ago(x.lastLogin) : "never"}</td>
         <td><div class="row"><button class="btn" data-u="edit" data-name="${esc(x.username)}">Edit</button>
           <button class="btn ghost danger" data-u="del" data-name="${esc(x.username)}">Delete</button></div></td></tr>`).join("")}
-      </tbody></table></div></div>`;
+      </tbody></table></div></div>
+    <div class="card"><h3>Max, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
+      <div class="pad"><p class="meta" style="margin-top:0">Max answers from live portal data with each person's own access, and only proposes actions for them to confirm.
+        Accounts need the "Max" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Max reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Max runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
+        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Max is on</label>
+          <span class="meta">Model</span><input id="maxModel" value="${esc(S.assistant?.model || "")}" style="width:190px">
+          <span class="meta">Questions per person per day</span><input id="maxDaily" type="number" min="1" max="5000" value="${esc(S.assistant?.dailyLimit || 200)}" style="width:90px">
+          <button class="btn primary" id="maxSave">Save</button></div></div></div>`;
+  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
   $("view").onclick = e => {
     const b = e.target.closest("[data-u]");
     if (!b) return;
@@ -1501,12 +1705,13 @@ function userForm(x) {
       <label>Sites</label><div class="chips" id="uSites">${chip("site", "*", all, "All sites")}
         ${S.sites.map(s => chip("site", s.name, !all && (x?.sites || []).includes(s.name), s.name)).join("")}</div>
       <label>Pages</label><div class="chips" id="uMods">${(S.modules || Object.keys(MODULE_NAMES)).map(m => chip("mod", m, mods.includes(m), MODULE_NAMES[m] || m)).join("")}</div>
+      <label>Tickets</label><label class="chip" style="justify-self:start"><input type="checkbox" id="uClose" ${x?.closeTickets ? "checked" : ""}>Can close tickets (after the technician resolves them)</label>
       <label>Status</label><label class="chip" style="justify-self:start"><input type="checkbox" id="uOff" ${x?.disabled ? "checked" : ""}>Disabled (can't sign in)</label>
     </div>`, x ? "Save" : "Create user", () => {
     const val = sel => [...$("dlg").querySelectorAll(sel)].filter(i => i.checked).map(i => i.value);
     const role = val("input[name=role]")[0];
     act(() => api("/api/users", { isNew: !x, username: x ? x.username : $("uName").value.trim(), name: $("uFull").value, password: $("uPw").value,
-      admin: role === "admin", readOnly: role === "ro", disabled: $("uOff").checked, sites: val("input[name=site]"), modules: val("input[name=mod]") }),
+      admin: role === "admin", readOnly: role === "ro", disabled: $("uOff").checked, closeTickets: $("uClose").checked, sites: val("input[name=site]"), modules: val("input[name=mod]") }),
       x ? "Saved" : "User created");
   });
   $("dlg").classList.add("wide");
@@ -1530,17 +1735,359 @@ VIEWS.features = () => {
       <td><span class="pill ${P[s][0]}">${P[s][1]}</span></td></tr>`).join("")}</tbody></table></div>`;
 };
 
+// ---------------- Technical Team: members, their tablets and maintenance tickets ----------------
+const TEAM_TABS = [["dashboard", "Dashboard"], ["members", "Team members"], ["devices", "Team devices"], ["tickets", "Tickets"], ["assign", "Assignment"],
+  ["workload", "Workload & availability"], ["history", "Ticket history"], ["settings", "Settings"]];
+const ST_CLASS = { new: "warn", assigned: "neutral", accepted: "neutral", in_progress: "ok", on_hold: "warn", resolved: "ok", closed: "neutral", cancelled: "neutral" };
+const PRI_CLASS = { urgent: "bad", high: "warn", normal: "neutral", low: "neutral" };
+const CONN = { online: ["ok", "Online"], offline: ["bad", "Offline"], unknown: ["neutral", "Unknown"] };
+const AVAIL = { available: ["ok", "Available"], busy: ["warn", "Busy"], off: ["neutral", "Off duty"], unknown: ["neutral", "Unknown"], inactive: ["neutral", "Inactive"] };
+const pillOf = (m, k) => `<span class="pill ${(m[k] || [])[0] || "neutral"}"><i></i>${esc((m[k] || [])[1] || k)}</span>`;
+const tPill = t => `<span class="pill ${ST_CLASS[t.status]}">${esc(S.statuses[t.status] || t.status)}</span>${t.overdue ? ` <span class="pill bad">Overdue</span>` : ""}`;
+const pPill = p => `<span class="pill ${PRI_CLASS[p]}">${esc(p)}</span>`;
+const when = t => t ? new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "–";
+const localInput = t => t ? new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+const tf = { q: "", status: "open", site: "", tech: "", from: "", to: "", page: 1 }; // Tickets tab filters (History uses its own)
+const hf = { q: "", status: "", site: "", tech: "", from: "", to: "", page: 1 };
+
+VIEWS.team = async (tab = "dashboard", first) => {
+  if (!TEAM_TABS.some(([k]) => k === tab)) tab = "dashboard";
+  if (first) {
+    $("view").innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Technical Team</h2>
+        <button class="btn primary" id="tNew">+ New ticket</button></div>
+      <p class="lead">Field technicians, their tablets and the maintenance tickets: automatic for offline onsite devices, or created here.</p>
+      <div class="tabs">${TEAM_TABS.map(([k, t]) => `<a class="btn ${k === tab ? "primary" : ""}" href="#/team/${k}">${t}</a>`).join("")}</div>
+      <div id="teamBody"></div>`;
+    $("tNew").onclick = () => ticketForm();
+  }
+  // live refresh: leave the page alone while someone is using a field on it (the ticket lists keep their filters anyway)
+  if (!first && !["tickets", "history"].includes(tab) && document.activeElement?.closest("#teamBody select, #teamBody input, #teamBody textarea")) return;
+  if (TEAM_VIEWS[tab]) await TEAM_VIEWS[tab](first);
+};
+const TEAM_VIEWS = {};
+TEAM_VIEWS.dashboard = () => {
+  const c = S.ticketCounts || {}, T = S.technicians, n = k => T.filter(t => t.active && t.connectivity === k).length;
+  const stat = (v, l, cls = "", status) => `<a class="stat ${cls}" href="#/team/tickets" ${status ? `data-status="${status}"` : ""}><div class="n">${v ?? 0}</div><div class="l">${l}</div></a>`;
+  $("teamBody").innerHTML = `<div class="stats">
+      ${stat(T.filter(t => t.active).length, "Team members")}${stat(n("online"), "Online", "ok")}${stat(n("offline"), "Offline", "bad")}${stat(n("unknown"), "Unknown")}</div>
+    <div class="stats">${stat(c.open, "Open tickets", "", "open")}${stat(c.new, "Unassigned", c.new ? "warn" : "", "new")}${stat(c.assigned, "New for technician", "", "assigned")}
+      ${stat(c.in_progress, "In progress", "ok", "in_progress")}${stat(c.on_hold, "On hold", c.on_hold ? "warn" : "", "on_hold")}
+      ${stat(c.resolved, "Awaiting closure", c.resolved ? "warn" : "", "resolved")}${stat(c.overdue, "Overdue", c.overdue ? "bad" : "", "overdue")}</div>
+    <div class="card"><h3>Team members<span class="grow"></span><a class="meta" href="#/team/members">Manage →</a></h3>${memberTable(T.filter(t => t.active))}</div>`;
+  $("teamBody").onclick = e => { const s = e.target.closest("[data-status]"); if (s) Object.assign(tf, { status: s.dataset.status, page: 1 }); };
+};
+function memberTable(list, manage) {
+  if (!list.length) return `<p class="empty">No team members yet.${manage ? "" : ` <a href="#/team/members">Add them on Team members.</a>`}</p>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Tablet</th><th>Connectivity</th><th>Availability</th><th>Active tickets</th><th>Current job</th>
+      <th>Last activity</th><th>Done</th>${manage ? "<th></th>" : ""}</tr></thead><tbody>${list.map(t => `<tr>
+    <td><div class="name">${esc(t.name)}</div><div class="meta">${esc([t.region, t.phone].filter(Boolean).join(" · "))}</div></td>
+    <td>${t.devices.map(d => `<a href="#/device/${encodeURIComponent(d.id)}"><span class="code">${esc(d.code)}</span></a>`).join(" ") || `<span class="meta">none</span>`}</td>
+    <td>${pillOf(CONN, t.connectivity)}</td><td>${pillOf(AVAIL, t.availability)}</td><td class="num">${t.active}</td>
+    <td>${t.current ? esc(t.current) : `<span class="meta">–</span>`}</td><td class="meta">${ago(t.lastActivity)}</td>
+    <td class="meta">${t.resolved} awaiting closure · ${t.closed} closed</td>
+    ${manage ? `<td><div class="row"><button class="btn" data-m="edit" data-id="${t.id}">Edit</button><button class="btn ghost danger" data-m="del" data-id="${t.id}">Remove</button></div></td>` : ""}</tr>`).join("")}
+  </tbody></table></div>`;
+}
+TEAM_VIEWS.members = () => {
+  $("teamBody").innerHTML = `<div class="card"><h3>Team members<span class="grow"></span><button class="btn primary" data-m="add">+ Add member</button></h3>
+    ${memberTable(S.technicians, true)}</div>
+    <p class="meta">Connectivity comes from the member's tablet check-ins. Availability is what they set on the tablet (Available / Busy / Off duty), and counts only while the tablet is online.</p>`;
+  $("teamBody").onclick = e => {
+    const b = e.target.closest("[data-m]");
+    if (!b) return;
+    const t = S.technicians.find(x => x.id === b.dataset.id);
+    if (b.dataset.m === "add") techForm();
+    if (b.dataset.m === "edit") techForm(t);
+    if (b.dataset.m === "del" && confirm(`Remove ${t.name} from the team? Their tablet stays in the portal without a technician.`))
+      act(() => api("/api/technicians/delete", { id: t.id }), "Removed");
+  };
+};
+function techForm(t) {
+  const chip = (v, on) => `<label class="chip"><input type="checkbox" name="skill" value="${esc(v)}" ${on ? "checked" : ""}>${esc(v)}</label>`;
+  dialog(`<h2>${t ? "Edit " + esc(t.name) : "Add team member"}</h2><div class="ugrid">
+      <label>Name</label><input id="tName" value="${esc(t?.name || "")}" placeholder="e.g. Ahmad Rahman">
+      <label>WhatsApp</label><input id="tPhone" value="${esc(t?.phone || "")}" placeholder="+6591234567 (optional)">
+      <label>CallMeBot key</label><input id="tKey" placeholder="${t?.hasKey ? "saved (leave empty to keep)" : "optional: for ticket messages to this person"}">
+      <label>Region</label><input id="tRegion" value="${esc(t?.region || "")}" placeholder="e.g. East">
+      <label>Base location</label><div><div class="row"><input id="tBase" value="${esc(t?.base?.label || "")}" placeholder="address or postal code" style="flex:1">
+        <button class="btn" type="button" id="tFind">Find</button></div>
+        <div class="row" style="margin-top:6px"><input id="tLat" placeholder="latitude" style="width:110px" value="${esc(t?.base?.lat ?? "")}"><input id="tLng" placeholder="longitude" style="width:110px" value="${esc(t?.base?.lng ?? "")}"></div>
+        <div id="tFound" class="chips" style="margin-top:6px"></div></div>
+      <label>Skills</label><div class="chips">${S.categories.map(c => chip(c, t?.skills?.includes(c))).join("")}</div>
+      <label>Options</label><div class="chips">
+        <label class="chip"><input type="checkbox" id="tActive" ${t?.active === false ? "" : "checked"}>Active</label>
+        <label class="chip"><input type="checkbox" id="tShare" ${t?.shareLocation ? "checked" : ""}>Use their tablet's live location (they agreed)</label></div></div>
+    <p class="meta">No skills ticked = can take any job. Without live location sharing only the base location is used, and the tablet's location isn't stored.</p>`,
+    t ? "Save" : "Add member", () => {
+      act(() => api("/api/technicians", { id: t?.id, name: $("tName").value, phone: $("tPhone").value, ...($("tKey").value ? { apikey: $("tKey").value } : {}),
+        region: $("tRegion").value, active: $("tActive").checked, shareLocation: $("tShare").checked,
+        skills: [...$("dlg").querySelectorAll("input[name=skill]:checked")].map(i => i.value),
+        base: { label: $("tBase").value, lat: $("tLat").value, lng: $("tLng").value } }), t ? "Saved" : "Team member added");
+    });
+  $("dlg").classList.add("wide");
+  $("dlg").addEventListener("close", () => $("dlg").classList.remove("wide"), { once: true });
+  $("tFind").onclick = () => geoSearch($("tBase").value, $("tFound"), r => { $("tLat").value = r.lat; $("tLng").value = r.lng; $("tBase").value = r.address; });
+}
+TEAM_VIEWS.devices = () => {
+  const list = S.devices.filter(d => d.usage === "tech"), opts = [["", "Nobody yet"], ...S.technicians.filter(t => t.active).map(t => [t.id, t.name])];
+  $("teamBody").innerHTML = `<div class="card"><h3>Technical team devices</h3>${list.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>Device</th><th>Model</th><th>Status</th><th>Last seen</th><th>Technician</th></tr></thead><tbody>${list.map(d => `<tr>
+      <td><a href="#/device/${encodeURIComponent(d.id)}"><span class="code">${esc(d.code)}</span> ${esc(label(d))}</a></td><td>${esc(d.deviceModel || d.model || "–")}</td>
+      <td>${statusPill(d)}</td><td class="meta">${ago(d.lastSeen)}</td>
+      <td><select data-dev="${esc(d.id)}">${options(opts, d.techId || "")}</select></td></tr>`).join("")}</tbody></table></div>`
+    : `<p class="empty">No technical team devices yet. Choose "Technical team device" on the tablet's setup screen, or on a device page with Model….</p>`}</div>`;
+  $("teamBody").onchange = e => {
+    const s = e.target.closest("[data-dev]");
+    if (s) act(() => api(`/api/devices/${encodeURIComponent(s.dataset.dev)}/config`, { techId: s.value }), "Saved");
+  };
+};
+// Tickets list with filters; History is the same list over every status.
+async function ticketList(f, first, title) {
+  if (first) {
+    $("teamBody").innerHTML = `<div class="card"><div class="toolbar">
+        <input type="search" id="fQ" placeholder="Search ticket number, title, site, device, technician" value="${esc(f.q)}">
+        <select id="fStatus">${options([["", "All statuses"], ["open", "Open"], ["awaiting", "Awaiting closure"], ["unassigned", "Unassigned"], ["overdue", "Overdue"],
+          ...Object.entries(S.statuses)], f.status)}</select>
+        <select id="fSite">${options([["", "All sites"], ...groups().filter(Boolean).map(g => [g, g])], f.site)}</select>
+        <select id="fTech">${options([["", "Any technician"], ["none", "Unassigned"], ...S.technicians.map(t => [t.id, t.name])], f.tech)}</select>
+        <span class="meta">Created</span><input type="date" id="fFrom" value="${f.from}"><input type="date" id="fTo" value="${f.to}"></div>
+      <div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Site</th><th>Device</th><th>Technician</th><th>Priority</th><th>Status</th><th>Updated</th><th>Due</th></tr></thead>
+        <tbody id="fRows"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table></div>
+      <div class="toolbar" style="border:0;justify-content:space-between"><span class="meta" id="fCount"></span>
+        <span class="row"><button class="btn" id="fPrev">← Newer</button><button class="btn" id="fNext">Older →</button></span></div></div>`;
+    const set = () => { Object.assign(f, { q: $("fQ").value, status: $("fStatus").value, site: $("fSite").value, tech: $("fTech").value, from: $("fFrom").value, to: $("fTo").value, page: 1 }); ticketList(f, false); };
+    $("fQ").oninput = set;
+    for (const id of ["fStatus", "fSite", "fTech", "fFrom", "fTo"]) $(id).onchange = set;
+    $("fPrev").onclick = () => { f.page = Math.max(1, f.page - 1); ticketList(f, false); };
+    $("fNext").onclick = () => { f.page++; ticketList(f, false); };
+    $("fRows").onclick = e => { const r = e.target.closest("[data-t]"); if (r && !e.target.closest("a")) location.hash = "#/ticket/" + r.dataset.t; };
+  }
+  const q = new URLSearchParams({ q: f.q, status: f.status, site: f.site, tech: f.tech, from: f.from, to: f.to, page: f.page, size: 25 });
+  const r = await api("/api/tickets?" + q).catch(e => ({ error: e.message, items: [], total: 0 }));
+  if (!$("fRows")) return;
+  $("fRows").innerHTML = r.items.map(t => `<tr class="click" data-t="${t.id}"><td><div class="name"><span class="code">${esc(t.no)}</span> ${esc(t.title)}</div>
+      <div class="meta">${esc(t.category)}${t.source === "auto" ? " · automatic" : ""}</div></td>
+    <td>${esc(t.site || "–")}</td><td>${t.device ? `<a href="#/device/${encodeURIComponent(t.device.id || "")}">${esc(t.device.code || "")}</a>` : `<span class="meta">–</span>`}</td>
+    <td>${esc(t.techName || "–")}</td><td>${pPill(t.priority)}</td><td>${tPill(t)}</td><td class="meta">${ago(t.updatedAt)}</td><td class="meta">${when(t.due)}</td></tr>`).join("")
+    || `<tr><td colspan="8" class="empty">${esc(r.error || "No tickets match.")}</td></tr>`;
+  const pages = Math.max(1, Math.ceil(r.total / 25));
+  $("fCount").textContent = `${r.total} ticket${r.total === 1 ? "" : "s"} · page ${Math.min(f.page, pages)} of ${pages}`;
+  $("fPrev").disabled = f.page <= 1;
+  $("fNext").disabled = f.page >= pages;
+}
+TEAM_VIEWS.tickets = first => ticketList(tf, first);
+TEAM_VIEWS.history = first => ticketList(hf, first);
+// Unassigned tickets with the best technician for each.
+TEAM_VIEWS.assign = async first => {
+  if (first) $("teamBody").innerHTML = `<div class="card"><h3>Waiting for a technician</h3><div id="aRows"><p class="empty">Loading…</p></div></div>`;
+  const r = await api("/api/tickets?status=new&size=20").catch(() => ({ items: [] }));
+  const tops = await Promise.all(r.items.map(t => api(`/api/tickets/${t.id}/candidates`).catch(() => ({ candidates: [] }))));
+  if (!$("aRows")) return;
+  $("aRows").innerHTML = r.items.length ? `<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Site</th><th>Priority</th><th>Suggested technician</th><th></th></tr></thead><tbody>
+    ${r.items.map((t, i) => { const c = tops[i].candidates.find(x => x.eligible); return `<tr><td><a href="#/ticket/${t.id}"><span class="code">${esc(t.no)}</span> ${esc(t.title)}</a>
+      <div class="meta">${ago(t.createdAt)}</div></td><td>${esc(t.site || "–")}${t.place ? "" : ` <span class="meta">(no location)</span>`}</td><td>${pPill(t.priority)}</td>
+      <td>${c ? `${esc(c.name)} <span class="meta">${c.distanceKm} km · ${c.active} active</span>` : `<span class="pill warn">No one within ${tops[i].radiusKm || S.ticketSettings?.radiusKm} km</span>`}</td>
+      <td><div class="row">${c ? `<button class="btn primary" data-assign="${t.id}" data-tech="${c.id}">Assign ${esc(c.name.split(" ")[0])}</button>` : ""}<a class="btn" href="#/ticket/${t.id}">Choose…</a></div></td></tr>`; }).join("")}
+    </tbody></table></div>` : `<p class="empty">Every ticket has a technician. 🎉</p>`;
+  $("aRows").onclick = e => { const b = e.target.closest("[data-assign]"); if (b) act(() => api(`/api/tickets/${b.dataset.assign}/assign`, { techId: b.dataset.tech }), "Assigned"); };
+};
+TEAM_VIEWS.workload = () => {
+  const T = S.technicians.filter(t => t.active), max = Math.max(1, ...T.map(t => t.active));
+  $("teamBody").innerHTML = `<div class="card"><h3>Workload and availability</h3>${T.length ? `<div class="pad health-list">${T.sort((a, b) => a.active - b.active).map(t => `
+    <div><div class="row" style="justify-content:space-between"><span><b>${esc(t.name)}</b> ${pillOf(AVAIL, t.availability)} ${pillOf(CONN, t.connectivity)}</span>
+      <span class="meta">${t.active} active · ${t.resolved} awaiting closure · ${t.closed} closed · last activity ${ago(t.lastActivity)}
+        · <a href="#/team/history" data-tech="${t.id}">History →</a></span></div>
+      <div class="hbar"><b style="width:${100 * t.active / max}%"></b></div></div>`).join("")}</div>` : `<p class="empty">No active team members.</p>`}</div>`;
+  $("teamBody").onclick = e => { const a = e.target.closest("[data-tech]"); if (a) Object.assign(hf, { tech: a.dataset.tech, page: 1 }); };
+};
+TEAM_VIEWS.settings = first => {
+  if (!first) return;
+  const s = S.ticketSettings || {}, ro = !me().admin ? "disabled" : "";
+  $("teamBody").innerHTML = `<div class="card"><h3>Ticket settings${ro ? `<span class="grow"></span><span class="meta">Only admins can change these</span>` : ""}</h3><div class="pad ugrid">
+      <label>Automatic tickets</label><label class="chip" style="justify-self:start"><input type="checkbox" id="sAuto" ${s.autoTickets ? "checked" : ""} ${ro}>Create a ticket when an onsite device stays offline</label>
+      <label>After offline for</label><div class="row"><input type="number" id="sAfter" min="0" max="1440" value="${s.ticketAfterMin}" style="width:90px" ${ro}><span class="meta">minutes (after the offline alert)</span></div>
+      <label>Priority</label><select id="sPri" style="justify-self:start" ${ro}>${options(S.priorities.map(p => [p, p]), s.autoPriority)}</select>
+      <label>Search radius</label><div class="row"><input type="number" id="sRadius" min="1" max="200" value="${s.radiusKm}" style="width:90px" ${ro}><span class="meta">km around the site</span></div>
+      <label>Auto-assign</label><label class="chip" style="justify-self:start"><input type="checkbox" id="sAssign" ${s.autoAssign ? "checked" : ""} ${ro}>Give automatic tickets to the best available technician in range</label>
+      <label>Response targets</label><div class="row">${S.priorities.map(p => `<span class="meta">${p}</span><input type="number" min="1" max="720" data-h="${p}" value="${s.responseHours?.[p]}" style="width:70px" ${ro}>`).join("")}<span class="meta">hours</span></div>
+      <label>Evidence needed</label><div class="chips">${S.categories.map(c => `<label class="chip"><input type="checkbox" name="ev" value="${esc(c)}" ${s.evidence?.includes(c) ? "checked" : ""} ${ro}>${esc(c)}</label>`).join("")}</div>
+      <label>WhatsApp</label><div class="chips"><label class="chip"><input type="checkbox" id="sWaA" ${s.waAdmins ? "checked" : ""} ${ro}>Alert numbers: new and resolved tickets</label>
+        <label class="chip"><input type="checkbox" id="sWaT" ${s.waTech ? "checked" : ""} ${ro}>Technicians: their assignments, returns, notes</label></div>
+    </div>${ro ? "" : `<div class="pad" style="padding-top:0"><button class="btn primary" id="sSave">Save settings</button></div>`}</div>`;
+  if (ro) return;
+  $("sSave").onclick = () => act(() => api("/api/team-settings", { autoTickets: $("sAuto").checked, ticketAfterMin: $("sAfter").value, autoPriority: $("sPri").value,
+    radiusKm: $("sRadius").value, autoAssign: $("sAssign").checked, waAdmins: $("sWaA").checked, waTech: $("sWaT").checked,
+    responseHours: Object.fromEntries([...$("teamBody").querySelectorAll("[data-h]")].map(i => [i.dataset.h, i.value])),
+    evidence: [...$("teamBody").querySelectorAll("input[name=ev]:checked")].map(i => i.value) }), "Settings saved");
+};
+
+// New ticket (or edit one). Reference photos / PDFs upload after the ticket is made.
+function ticketForm(t, preset = {}) {
+  const sites = [["", "No site"], ...groups().filter(Boolean).map(g => [g, g])];
+  const devOpts = site => [["", "No device"], ...S.devices.filter(d => !site || d.group === site).map(d => [d.id, `${d.code} · ${label(d)}`])];
+  const v = { ...preset, ...(t || {}) };
+  dialog(`<h2>${t ? "Edit " + esc(t.no) : "New ticket"}</h2><div class="ugrid">
+      <label>Title</label><input id="kTitle" value="${esc(v.title || "")}" placeholder="e.g. Intercom at lobby not ringing" required>
+      <label>Category</label><select id="kCat">${options(S.categories.map(c => [c, c]), v.category || "Other")}</select>
+      <label>Priority</label><select id="kPri">${options(S.priorities.map(p => [p, p]), v.priority || "normal")}</select>
+      <label>Site</label><select id="kSite">${options(sites, v.site || "")}</select>
+      ${t ? "" : `<label>Device</label><select id="kDev">${options(devOpts(v.site), v.deviceId || "")}</select>
+      <label>Technician</label><select id="kTech">${options([["", "Assign later"], ...S.technicians.filter(x => x.active).map(x => [x.id, x.name])], "")}</select>`}
+      <label>Due</label><input type="datetime-local" id="kDue" value="${localInput(v.due)}"><span></span><span class="meta" style="margin-top:-6px">Empty = from the priority's response target</span>
+      <label>Description</label><textarea id="kDesc" rows="4">${esc(v.desc || "")}</textarea>
+      <label>Internal notes</label><textarea id="kInt" rows="2" placeholder="portal only, not shown on the technician's tablet">${esc(v.internal || "")}</textarea>
+      ${t ? "" : `<label>Attachments</label><input type="file" id="kFiles" multiple accept="image/jpeg,image/png,image/webp,application/pdf">`}</div>`,
+    t ? "Save" : "Create ticket", async () => {
+      const body = { title: $("kTitle").value, category: $("kCat").value, priority: $("kPri").value, site: $("kSite").value, due: $("kDue").value || null,
+        desc: $("kDesc").value, internal: $("kInt").value };
+      if (!body.title.trim()) return toast("Write a title", true);
+      if (t) return act(() => api(`/api/tickets/${t.id}/edit`, body), "Ticket saved");
+      const files = [...$("kFiles").files];
+      await act(async () => {
+        const r = await api("/api/tickets", { ...body, deviceId: $("kDev").value || null, techId: $("kTech").value || null });
+        for (const [i, f] of files.entries()) { toast(`Uploading ${i + 1} of ${files.length}: ${f.name}`); await uploadTicketFile(r.id, f); }
+        location.hash = "#/ticket/" + r.id;
+        return r;
+      }, r => `Ticket ${r.no} created`);
+    });
+  $("dlg").classList.add("wide");
+  $("dlg").addEventListener("close", () => $("dlg").classList.remove("wide"), { once: true });
+  if (!t) $("kSite").onchange = () => { $("kDev").innerHTML = options(devOpts($("kSite").value), ""); };
+}
+async function uploadTicketFile(id, f) {
+  if (f.size > 10 * 1024 * 1024) throw new Error(`${f.name} is over 10 MB`);
+  const r = await fetch(`/api/tickets/${id}/files?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+  if (!r.ok) throw new Error(`${f.name}: ${(await r.json().catch(() => ({}))).error || "HTTP " + r.status}`);
+}
+
+// One ticket: details, timeline, files, notes, status buttons and technician suggestions with a map.
+const MOVE_TEXT = { accepted: "Mark accepted", in_progress: "Start work", on_hold: "Put on hold", resolved: "Mark resolved", closed: "Close ticket", cancelled: "Cancel ticket" };
+const RANK = { tech: 0, portal: 1, close: 2 };
+let tMap, tLayer, tMapFit = "";
+VIEWS.ticket = async (id, first) => {
+  if (first) {
+    $("view").innerHTML = `<p><a href="#/team/tickets">← Tickets</a></p>
+      <div class="row" style="margin-bottom:12px"><h2 id="kTitle2" style="margin:0"></h2><span id="kPills"></span><span class="grow" style="flex:1"></span><span class="row" id="kBtns"></span></div>
+      <div class="cols">
+        <div><div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="kKv"></dl></div></div>
+          <div class="card"><h3>Description</h3><div class="pad" id="kDescBox"></div></div>
+          <div class="card"><h3>Photos and files<span class="grow"></span><label class="btn">Upload…<input type="file" id="kUp" multiple accept="image/jpeg,image/png,image/webp,application/pdf" hidden></label></h3>
+            <div class="pad"><div class="thumbs" id="kFilesBox"></div><p class="meta" id="kUpMsg" style="margin-bottom:0"></p></div></div></div>
+        <div><div class="card"><h3>Technician<span class="grow"></span><span class="meta">within</span><input type="number" id="kRadius" min="1" max="200" style="width:70px"><span class="meta">km</span></h3>
+            <div id="kCand"><p class="empty">Loading…</p></div><div id="kMap" class="mini-map"></div></div>
+          <div class="card"><h3>History</h3><div class="pad">
+            <div class="row" style="align-items:flex-start;margin-bottom:12px"><textarea id="kNote" rows="2" style="flex:1" placeholder="Add a note for the technician"></textarea>
+              <div style="display:grid;gap:6px"><button class="btn primary" id="kNoteBtn">Add note</button><label class="chip"><input type="checkbox" id="kNoteInt">Internal</label></div></div>
+            <div class="timeline" id="kTimeline"></div></div></div></div>
+      </div>`;
+    $("kRadius").value = S.ticketSettings?.radiusKm || 10;
+    $("kRadius").onchange = () => VIEWS.ticket(id, false);
+    $("kNoteBtn").onclick = () => {
+      const text = $("kNote").value.trim();
+      if (!text) return toast("Write the note first", true);
+      act(() => api(`/api/tickets/${id}/note`, { text, internal: $("kNoteInt").checked }), "Note added").then(() => { $("kNote").value = ""; VIEWS.ticket(id, false); });
+    };
+    $("kUp").onchange = async e => {
+      const files = [...e.target.files];
+      for (const [i, f] of files.entries()) {
+        $("kUpMsg").textContent = `Uploading ${i + 1} of ${files.length}: ${f.name}…`;
+        try { await uploadTicketFile(id, f); } catch (err) { toast(err.message, true); }
+      }
+      $("kUpMsg").textContent = "";
+      e.target.value = "";
+      VIEWS.ticket(id, false);
+    };
+    $("view").onclick = e => {
+      const mv = e.target.closest("[data-move]")?.dataset.move, as = e.target.closest("[data-assign]");
+      if (as) return act(() => api(`/api/tickets/${id}/assign`, { techId: as.dataset.assign || null }), as.dataset.assign ? "Assigned" : "Unassigned").then(() => VIEWS.ticket(id, false));
+      if (e.target.id === "kEdit") return api(`/api/tickets/${id}`).then(t => ticketForm(t));
+      if (mv) moveDialog(id, mv);
+    };
+  }
+  const [t, cand] = await Promise.all([api(`/api/tickets/${id}`).catch(() => null), api(`/api/tickets/${id}/candidates?radius=${$("kRadius")?.value || 10}`).catch(() => null)]);
+  if (!$("kKv") || !location.hash.startsWith("#/ticket/" + id)) return;
+  if (!t) { $("view").innerHTML = `<p class="empty">Ticket not found. <a href="#/team/tickets">Back to tickets</a></p>`; return; }
+  $("kTitle2").innerHTML = `<span class="code" style="font-size:16px">${esc(t.no)}</span> ${esc(t.title)}`;
+  $("kPills").innerHTML = `${tPill(t)} ${pPill(t.priority)}`;
+  const role = S.canClose ? "close" : "portal", moves = Object.entries(S.flow[t.status] || {}).filter(([, need]) => RANK[role] >= RANK[need]);
+  $("kBtns").innerHTML = (["closed", "cancelled"].includes(t.status) ? "" : `<button class="btn" id="kEdit">Edit</button>`) + moves.map(([to]) =>
+    `<button class="btn ${to === "closed" ? "primary" : to === "cancelled" ? "danger" : ""}" data-move="${to}">${t.status === "resolved" && to === "in_progress" ? "Return for more work" : MOVE_TEXT[to]}</button>`).join("")
+    + (t.status === "resolved" && !S.canClose ? `<span class="meta">Waiting for someone allowed to close tickets</span>` : "");
+  const kv = { Category: t.category, Site: [t.site, t.address].filter(Boolean).join(" · ") || "–", Device: t.device ? `${t.device.code || ""} · ${t.device.name}${t.device.removed ? " (removed)" : t.device.online ? " · online" : " · offline"}` : "–",
+    Technician: t.techName || "Not assigned", Created: `${when(t.createdAt)}${t.source === "auto" ? " · automatic" : ""}`, Due: when(t.due) + (t.overdue ? " · overdue" : ""),
+    "Last online": t.snapshot?.lastSeen ? when(t.snapshot.lastSeen) : null, Model: t.snapshot?.model || t.device?.model || null, Resolution: t.resolution || null };
+  $("kKv").innerHTML = Object.entries(kv).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Device" && t.device?.id ? `<a href="#/device/${encodeURIComponent(t.device.id)}">${esc(v)}</a>` : esc(v)}</dd>`).join("");
+  $("kDescBox").innerHTML = `<p style="margin-top:0;white-space:pre-wrap">${esc(t.desc || "No description.")}</p>${t.internal ? `<p class="meta" style="white-space:pre-wrap;margin-bottom:0"><b>Internal:</b> ${esc(t.internal)}</p>` : ""}`;
+  $("kFilesBox").innerHTML = t.files.map(f => { const src = `/api/tickets/${t.id}/files/${f.id}`; return f.type.startsWith("image/")
+    ? `<a href="${src}" target="_blank" title="${esc(f.name)} · ${esc(f.by)}"><img src="${src}" alt="${esc(f.name)}" loading="lazy"></a>`
+    : `<a class="btn" href="${src}" target="_blank">📄 ${esc(f.name)}</a>`; }).join("") || `<span class="meta">No files yet.</span>`;
+  const KIND = { created: "📝", status: "🔁", assign: "👷", note: "💬", finding: "🔎", work: "🛠", parts: "📦", admin: "💬", internal: "🔒", file: "📎", offline: "🔴", online: "🟢", edit: "✏️" };
+  $("kTimeline").innerHTML = t.timeline.slice().reverse().map(e => `<div class="tl"><span class="tl-i">${KIND[e.kind] || "•"}</span><div>
+    <div><b>${esc(e.by)}</b> ${e.to && e.kind === "status" ? `· ${esc(S.statuses[e.from])} → <b>${esc(S.statuses[e.to])}</b>` : e.kind === "internal" ? `· <span class="meta">internal note</span>` : e.kind !== "note" && e.kind !== "admin" ? `· <span class="meta">${esc(e.kind)}</span>` : ""}
+      <span class="meta">· ${when(e.at)}</span></div>${e.text ? `<div style="white-space:pre-wrap">${esc(e.text)}</div>` : ""}</div></div>`).join("");
+  // technician suggestions
+  const done = ["resolved", "closed", "cancelled"].includes(t.status), c = cand?.candidates || [];
+  $("kCand").innerHTML = (cand && !cand.place ? `<p class="pad meta" style="margin:0">This ticket's site has no coordinates, so distances can't be worked out. Add them on the site (Sites → Edit).</p>` : "")
+    + (c.length && !c.some(x => x.eligible) ? `<p class="pad" style="margin:0"><span class="pill warn">No available technician within ${cand.radiusKm} km</span> <span class="meta">Widen the radius above or assign someone manually.</span></p>` : "")
+    + (c.length ? `<div class="table-wrap"><table><tbody>${c.map(x => `<tr><td><b>${esc(x.name)}</b>${x.id === t.techId ? ` <span class="pill ok">assigned</span>` : ""}
+      <div class="meta">${x.distanceKm != null ? `${x.distanceKm} km (${x.locationSource === "live" ? "live location" : "base"})` : "distance unknown"} · ${x.active} active</div></td>
+      <td>${pillOf(AVAIL, x.availability)}</td><td class="wrap meta">${x.eligible ? "✓ eligible" : esc(x.why.join(", "))}</td>
+      <td>${done || x.id === t.techId ? "" : `<button class="btn ${x.eligible ? "primary" : ""}" data-assign="${x.id}" ${x.eligible ? "" : `title="Not eligible: ${esc(x.why.join(", "))}"`}>${t.techId ? "Reassign" : "Assign"}</button>`}</td></tr>`).join("")}</tbody></table></div>`
+    : `<p class="empty">No active team members. <a href="#/team/members">Add one</a>.</p>`)
+    + (t.techId && !done ? `<div class="pad" style="padding-top:8px"><button class="btn ghost" data-assign="">Unassign</button></div>` : "");
+  drawTicketMap(cand?.place, c);
+};
+function moveDialog(id, to) {
+  const need = { on_hold: "Why is it on hold?", resolved: "Completion summary (what was wrong, what was done)", in_progress: "", closed: "Closing note (optional)", cancelled: "Why cancel? (optional)" }[to];
+  const returning = to === "in_progress" && document.querySelector('[data-move="in_progress"]')?.textContent.startsWith("Return");
+  dialog(`<h2>${returning ? "Return for more work" : MOVE_TEXT[to]}</h2>${need || returning ? `<textarea id="mvText" rows="4" style="width:100%" placeholder="${esc(returning ? "What still needs doing?" : need)}"></textarea>` : "<p>Change the status?</p>"}`,
+    returning ? "Return to technician" : MOVE_TEXT[to], () => act(() => api(`/api/tickets/${id}/status`, { to, text: $("mvText")?.value || "" }), "Status changed").then(() => VIEWS.ticket(id, false)));
+}
+// Site + technicians on a small Leaflet map (same tiles as the device map).
+function drawTicketMap(place, cands) {
+  const box = $("kMap"), pts = cands.filter(x => x.location);
+  box.hidden = !place && !pts.length;
+  if (box.hidden || typeof L === "undefined") return;
+  if (!tMap || tMap.getContainer() !== box) {
+    tMap = L.map(box, { scrollWheelZoom: false }).setView([1.3521, 103.8198], 11);
+    const b = baseLayers();
+    b.default.addTo(tMap);
+    L.control.layers(b.all).addTo(tMap);
+    tLayer = L.layerGroup().addTo(tMap);
+  }
+  tLayer.clearLayers();
+  const ll = [];
+  if (place) {
+    L.circle([place.lat, place.lng], { radius: (Number($("kRadius").value) || 10) * 1000, color: "#f28c00", weight: 1, fillOpacity: .06 }).addTo(tLayer);
+    L.circleMarker([place.lat, place.lng], { radius: 10, color: "#fff", weight: 3, fillColor: "#f28c00", fillOpacity: 1 }).bindPopup("<b>Site</b>").addTo(tLayer);
+    ll.push([place.lat, place.lng]);
+  }
+  for (const x of pts) {
+    L.circleMarker([x.location.lat, x.location.lng], { radius: 8, color: "#fff", weight: 2, fillColor: x.eligible ? "#22c55e" : "#94a3b8", fillOpacity: 1 })
+      .bindPopup(`<b>${esc(x.name)}</b><br>${x.distanceKm ?? "?"} km · ${esc(AVAIL[x.availability]?.[1] || x.availability)}`).addTo(tLayer);
+    ll.push([x.location.lat, x.location.lng]);
+  }
+  const key = location.hash + ":" + ll.length + ":" + $("kRadius").value; // fit once per ticket / radius, not on every 5 s refresh
+  if (key !== tMapFit) { tMapFit = key; setTimeout(() => { tMap.invalidateSize(); if (ll.length) tMap.fitBounds(L.latLngBounds(ll).pad(0.25), { maxZoom: 15 }); }, 50); }
+}
+
 // ---------------- map (opens from the header) ----------------
+// Map tiles: Esri satellite, OpenStreetMap streets and OneMap (Singapore's official map, free, no key).
+function baseLayers() {
+  const sat = L.layerGroup([L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "Imagery &copy; Esri" }),
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 })]);
+  const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" });
+  const onemap = L.tileLayer("https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png", { minZoom: 11, maxZoom: 19,
+    attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:14px;width:14px"> OneMap &copy; Singapore Land Authority' });
+  return { default: sat, all: { Satellite: sat, Street: street, "OneMap (SG)": onemap } };
+}
 let map, markers = {}, fitted = false;
 function drawMap() {
   if (!map) {
     map = L.map("map").setView([1.3521, 103.8198], 11);
-    const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      { maxZoom: 19, attribution: "Imagery &copy; Esri" });
-    const labels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 });
-    const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" });
-    L.layerGroup([sat, labels]).addTo(map);
-    L.control.layers({ "Satellite": L.layerGroup([sat, labels]), "Street": street }).addTo(map);
+    const b = baseLayers();
+    b.default.addTo(map);
+    L.control.layers(b.all).addTo(map);
   }
   const seen = new Set();
   for (const d of S.devices) {
@@ -1593,8 +2140,426 @@ document.querySelector(".bellico").outerHTML = ico("bell");
 $("logout").querySelector(".outico").outerHTML = ico("log-out"); // donut/chart colours are read from CSS at draw time
 $("logout").onclick = async () => { await fetch("/api/logout", { method: "POST" }); location.href = "/login"; };
 
+// ---------------- Max, the assistant ----------------
+// The conversation stays in this tab (sessionStorage) when the panel is minimised or the page reloads.
+// Max's answers come from the server, which reads live data with this account's access. Actions arrive as proposals:
+// nothing happens until the user presses Confirm, which calls the normal endpoint (same permission checks as the buttons).
+const MAX_HINTS = ["Show me around", "Which devices are offline?", "Devices offline for more than 1 hour", "Which sites have the most offline devices?", "Show the open tickets",
+  "Who is available in the technical team?", "Tickets awaiting closure", "Summarise today's technical work"];
+let maxChat = [], maxBusy = false, maxSpeakOn = false;
+try { maxChat = JSON.parse(sessionStorage.getItem("maxChat") || "[]"); maxSpeakOn = localStorage.getItem("maxSpeak") === "on"; } catch {}
+const maxSave = () => { try { sessionStorage.setItem("maxChat", JSON.stringify(maxChat.slice(-40))); } catch {} };
+// Small Markdown subset: **bold**, lists, | tables |, and [[device:1234]] / [[ticket:T-00001]] links.
+function maxMd(text) {
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/\[\[device:(\d{4})\]\]/g, (m, c) => { const d = S.devices.find(x => x.code === c); return d ? `<a href="#/device/${encodeURIComponent(d.id)}">${c} ${esc(label(d))}</a>` : c; })
+    .replace(/\[\[ticket:(T-\d+)\]\]/g, (m, n) => `<a href="#/team/tickets" data-tq="${n}">${n}</a>`);
+  const out = [];
+  let list = null, table = null;
+  const flush = () => { if (list) out.push(`<ul>${list.join("")}</ul>`); if (table) out.push(`<table>${table.join("")}</table>`); list = table = null; };
+  for (const line of String(text).split("\n")) {
+    const l = line.trim();
+    if (/^\|.*\|$/.test(l)) {
+      if (/^\|[\s:|-]+\|$/.test(l)) continue; // header separator
+      if (list) flush();
+      (table ||= []).push(`<tr>${l.slice(1, -1).split("|").map(c => `<td>${inline(c.trim())}</td>`).join("")}</tr>`);
+    } else if (/^[-*•] /.test(l)) { if (table) flush(); (list ||= []).push(`<li>${inline(l.slice(2))}</li>`); }
+    else { flush(); if (l) out.push(`<p>${inline(l.replace(/^#+\s*/, ""))}</p>`); }
+  }
+  flush();
+  return out.join("");
+}
+function maxRender() {
+  const log = $("maxLog");
+  log.innerHTML = (maxChat.length ? "" : `<div class="mx max"><p>Hi, I'm <b>Max</b> 👋 Ask me about devices, sites, alerts, tickets or the technical team.</p>
+      <div class="max-hints">${MAX_HINTS.map(h => `<button type="button" class="chip" data-hint="${esc(h)}">${esc(h)}</button>`).join("")}</div></div>`)
+    + maxChat.map((m, i) => `<div class="mx ${m.role === "user" ? "me" : "max"} ${m.err ? "err" : ""}">${m.role === "user" ? esc(m.text) : maxMd(m.text)}
+      ${(m.proposals || []).map((p, j) => `<div class="prop"><span>${esc(p.label)}</span>${p.done ? `<span class="meta">${esc(p.done)}</span>`
+        : `<span class="row"><button type="button" class="btn primary" data-go="${i}:${j}">Confirm</button><button type="button" class="btn" data-no="${i}:${j}">Dismiss</button></span>`}</div>`).join("")}</div>`).join("")
+    + (maxBusy ? `<div class="mx max"><span class="meta">Max is looking…</span></div>` : "");
+  log.scrollTop = log.scrollHeight;
+  $("maxPanel").classList.toggle("thinking", maxBusy);
+  $("maxSend").disabled = maxBusy;
+}
+// Max takes the user to the answer: opens the page, sets its filters, waits for it to draw, then flies to the element
+// and points at it while saying the short version. The full answer stays in the chat.
+async function maxGo(nav, text, proposals) {
+  if (nav.devices) filters = { q: "", type: "", group: "", status: "", ...nav.devices };
+  if (nav.tickets) Object.assign(tf, { q: "", status: "", site: "", tech: "", from: "", to: "", page: 1 }, nav.tickets);
+  lastPage = ""; // redraw with the new filters even if this page is already open
+  if (location.hash !== nav.hash) location.hash = nav.hash; else route(false);
+  if (innerWidth < 900) maxOpen(false); // small screens: get the chat out of the way so the page shows
+  if (nav.confirm) return bot("answered", text, proposals); // an action: Max points at Confirm in the chat
+  const find = () => typeof nav.target === "object" && nav.target
+    ? [...document.querySelectorAll("#view .site-card")].find(c => c.querySelector("[data-open]")?.dataset.open === nav.target.site)
+    : nav.target && document.querySelector(nav.target);
+  let el = null;
+  for (const end = Date.now() + 4000; !(el = find()) && Date.now() < end; ) await new Promise(r => setTimeout(r, 150)); // lists load after the page
+  bot("talk", nav.say || text);
+  bot("pointAt", el || document.querySelector("#view h2"), nav.say || "Here it is.", { ms: 8000 });
+}
+
+async function maxAsk(text) {
+  text = text.trim();
+  if (!text || maxBusy) return;
+  maxChat.push({ role: "user", text });
+  maxBusy = true;
+  maxRender();
+  try {
+    bot("think");
+    const r = await api("/api/assistant", { messages: maxChat.filter(m => !m.err).map(m => ({ role: m.role, text: m.text })) });
+    maxChat.push({ role: "assistant", text: r.text, proposals: r.proposals });
+    maxSay(r.text);
+    if (r.nav?.hash) maxGo(r.nav, r.text, r.proposals); else bot("answered", r.text, r.proposals);
+  } catch (e) { maxChat.push({ role: "assistant", text: e.message, err: true }); bot("talk", e.message); }
+  maxBusy = false;
+  maxSave();
+  maxRender();
+}
+// Voice: the browser's own speech recognition and speech synthesis, where it has them (Chrome, Edge, Safari).
+const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function maxListen() {
+  if (!Rec) return toast("Voice input isn't supported in this browser; type instead (Chrome or Edge support it)", true);
+  if (rec) return rec.stop();
+  rec = new Rec();
+  rec.lang = navigator.language || "en-SG";
+  rec.interimResults = true;
+  let final = "";
+  bot("listen");
+  rec.onresult = e => {
+    let interim = "";
+    for (const r of e.results) (r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript));
+    $("maxIn").value = final || interim; // shows what was heard while speaking
+  };
+  rec.onerror = e => toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
+    : e.error === "no-speech" ? "Didn't hear anything" : "Voice input stopped: " + e.error, e.error !== "no-speech");
+  rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); if (final.trim()) { $("maxIn").value = ""; maxAsk(final); } };
+  $("maxMic").classList.add("rec");
+  try { rec.start(); } catch (e) { rec = null; $("maxMic").classList.remove("rec"); toast("Couldn't start the microphone: " + e.message, true); }
+}
+function maxSay(text) {
+  if (!maxSpeakOn || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text.replace(/\[\[(?:device|ticket):([^\]]+)\]\]/g, "$1").replace(/[*|#•]/g, " ").replace(/\s+/g, " ").slice(0, 1200));
+  u.onstart = () => { $("maxStop").hidden = false; };
+  u.onend = u.onerror = () => { $("maxStop").hidden = true; };
+  speechSynthesis.speak(u);
+}
+function maxSpeakBtn() {
+  $("maxSpeak").innerHTML = ico(maxSpeakOn ? "volume-2" : "volume-x");
+  $("maxSpeak").title = !("speechSynthesis" in window) ? "Spoken answers aren't supported in this browser" : maxSpeakOn ? "Answers are read aloud (click to stop)" : "Read answers aloud";
+}
+function maxOpen(open) {
+  $("maxPanel").hidden = !open;
+  $("maxBtn").hidden = open || !S.assistant?.allowed;
+  if (open) { maxRender(); $("maxIn").focus(); } else { window.speechSynthesis?.cancel(); rec?.stop(); }
+  bot("dock");
+}
+$("maxBtn").onclick = () => maxOpen(true);
+$("maxMin").innerHTML = ico("minus");
+$("maxMin").onclick = () => maxOpen(false);
+$("maxMic").innerHTML = ico("mic");
+$("maxMic").onclick = maxListen;
+$("maxSend").innerHTML = ico("send");
+$("maxIn").addEventListener("input", () => { if ($("maxIn").value.length === 1) bot("listen"); });
+$("maxForm").onsubmit = e => { e.preventDefault(); const t = $("maxIn").value; $("maxIn").value = ""; maxAsk(t); };
+$("maxClear").onclick = () => { maxChat = []; maxSave(); window.speechSynthesis?.cancel(); maxRender(); };
+$("maxStop").onclick = () => { speechSynthesis.cancel(); $("maxStop").hidden = true; };
+$("maxSpeak").onclick = () => {
+  if (!("speechSynthesis" in window)) return toast("Spoken answers aren't supported in this browser", true);
+  maxSpeakOn = !maxSpeakOn;
+  try { localStorage.setItem("maxSpeak", maxSpeakOn ? "on" : "off"); } catch {}
+  if (!maxSpeakOn) speechSynthesis.cancel();
+  maxSpeakBtn();
+};
+maxSpeakBtn();
+// "Max moves around": off = he stays in his corner (still talks and points from there)
+const moveBtn = () => { $("maxMove").style.opacity = window.MaxBot?.moves ? 1 : 0.4; $("maxMove").title = window.MaxBot?.moves ? "Max flies around the page (click to keep him in the corner)" : "Max stays in the corner (click to let him fly around)"; };
+addEventListener("maxbot-ready", () => { $("maxMove").hidden = false; moveBtn(); });
+$("maxMove").onclick = () => { window.MaxBot.moves = !window.MaxBot.moves; moveBtn(); };
+$("maxLog").onclick = async e => {
+  const h = e.target.closest("[data-hint]");
+  if (h?.dataset.hint === "Show me around" && window.MaxBot) { maxOpen(false); return bot("tour"); }
+  if (h) return maxAsk(h.dataset.hint);
+  const tq = e.target.closest("[data-tq]");
+  if (tq) { Object.assign(tf, { q: tq.dataset.tq, status: "", page: 1 }); lastPage = ""; return; }
+  const b = e.target.closest("[data-go],[data-no]");
+  if (!b) return;
+  const [i, j] = (b.dataset.go || b.dataset.no).split(":").map(Number), p = maxChat[i]?.proposals?.[j];
+  if (!p) return;
+  if (b.dataset.no) p.done = "Dismissed";
+  else if (confirm(`${p.label}?`)) {
+    try { await api(p.path, p.body); p.done = "✓ Done"; toast("Done: " + p.label); refresh(); }
+    catch (err) { p.done = "Failed: " + err.message; toast("Failed: " + err.message, true); }
+  } else return;
+  maxSave();
+  maxRender();
+};
+
+// ---- hooks for the 3D Max (module script below); all calls are safe before it has loaded ----
+const bot = (fn, ...a) => { try { window.MaxBot?.[fn]?.(...a); } catch (e) { console.warn("Max:", e); } };
+// Short tip per page, the first time it opens this session (Max flies to the heading and says it).
+function pageTip(page) {
+  const off = S.devices.filter(d => !isOnline(d)).length, c = S.ticketCounts;
+  return {
+    overview: off ? `${off} device${off > 1 ? "s are" : " is"} offline right now. Ask me which ones.` : "All devices are online. Nice and quiet.",
+    devices: "Tick devices to send one command to many, or click a row for its page.",
+    team: c ? `${c.new} ticket${c.new === 1 ? "" : "s"} waiting for a technician, ${c.resolved} waiting to be closed.` : "",
+    alerts: openAlerts().length ? "Acknowledge stops the siren; the alert clears itself when the device recovers." : "",
+    sites: "Give each site coordinates so I can find technicians nearby.",
+  }[page] || "";
+}
+
 refresh(); // draws the first page once the data is in (a device or site link opened before that showed "not found")
 setInterval(refresh, 5000);
+</script>
+<!-- Max in 3D (dashboard/max.glb, rigged, 48 animations). He lives on the whole page: docks bottom right, flies to what he
+     talks about, points at it, reacts to alerts, listens / thinks / talks with the chat. If WebGL or the model can't load,
+     the flat robot button stays. -->
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const small = () => innerWidth < 600;
+const SIZE = small() ? 120 : 168;            // canvas size in CSS px
+const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let moves = true;                           // "Max moves around" (panel toggle), per browser
+try { moves = localStorage.getItem("maxMoves") !== "off"; } catch {}
+
+// ---- stage: a small transparent canvas that travels over the page (cheaper than a full-screen one) ----
+const el = document.createElement("div");
+el.id = "maxBot";
+el.innerHTML = `<div class="max-bubble" hidden></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Max, the assistant: click to talk, drag to move"></canvas>`;
+const canvas = el.querySelector("canvas"), bubble = el.querySelector(".max-bubble");
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); } catch { throw new Error("no WebGL, keeping the flat Max"); }
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(SIZE, SIZE);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(30, 1, 0.05, 20);
+camera.position.set(0, 0.43, 1.8);
+camera.lookAt(0, 0.42, 0);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 2.2));
+const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+sun.position.set(1.2, 2, 2.5);
+scene.add(sun);
+
+const gltf = await new GLTFLoader().loadAsync("/max.glb");
+const model = gltf.scene, holder = new THREE.Group();
+holder.add(model);
+scene.add(holder);
+const mixer = new THREE.AnimationMixer(model), clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
+document.body.append(el);
+document.getElementById("maxBtn").classList.add("gone"); // the 3D Max replaces the flat button
+// Panel header avatar: a still of the 3D model.
+renderer.render(scene, camera);
+for (const img of document.querySelectorAll(".max-face img")) img.src = canvas.toDataURL();
+
+// ---- animation: one looping base clip, one-shots fade back into it ----
+let base = null, current = null;
+function play(name, { once = false, fade = 0.35, then } = {}) {
+  const clip = clips[name];
+  if (!clip) return;
+  const a = mixer.clipAction(clip);
+  a.reset();
+  a.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+  a.clampWhenFinished = once;
+  if (current && current !== a) current.crossFadeTo(a, fade, false);
+  a.play();
+  current = a;
+  if (once) {
+    const done = e => { if (e.action !== a) return; mixer.removeEventListener("finished", done); if (current === a) (then ? then() : loop(base)); };
+    mixer.addEventListener("finished", done);
+  } else base = name;
+}
+const loop = name => play(name);
+const pick = list => list[Math.floor(Math.random() * list.length)];
+
+// ---- where Max is: CSS position of the canvas (top-left), moved with a transform ----
+const pos = { x: 0, y: 0 };
+let flight = null, mode = "idle", dragged = null, homeOverride = null;
+const place = () => { el.style.transform = `translate3d(${Math.round(pos.x)}px, ${Math.round(pos.y)}px, 0)`; };
+const panel = () => document.getElementById("maxPanel");
+function home() {
+  if (homeOverride) return homeOverride;
+  const p = panel();
+  if (p && !p.hidden) { const r = p.getBoundingClientRect(); return { x: Math.max(4, r.left - SIZE * 0.72), y: Math.max(4, r.top - SIZE * 0.25) }; }
+  return { x: innerWidth - SIZE - (small() ? 4 : 14), y: innerHeight - SIZE - (small() ? 4 : 10) };
+}
+// Fly to a point (top-left of the canvas). Take off, cruise leaning into the turn, brake on arrival.
+function flyTo(x, y, after) {
+  x = Math.min(Math.max(0, x), innerWidth - SIZE);
+  y = Math.min(Math.max(0, y), innerHeight - SIZE);
+  const dist = Math.hypot(x - pos.x, y - pos.y);
+  if (calm || !moves || dist < 30) { pos.x = x; pos.y = y; place(); return after?.(); }
+  flight = { from: { ...pos }, to: { x, y }, t0: performance.now(), ms: Math.min(2200, Math.max(700, dist * 1.3)), after };
+  if (mode === "fly") loop("Fly_Cruise"); else play("TakeOff", { once: true, fade: 0.2, then: () => loop("Fly_Cruise") });
+  mode = "fly";
+}
+const goHome = after => { const h = home(); flyTo(h.x, h.y, () => { play("Return_Land", { once: true }); after?.(); }); };
+
+// ---- speech bubble ----
+let bubbleTimer;
+function say(text, ms = 6000, tone = "") {
+  clearTimeout(bubbleTimer);
+  if (!text) { bubble.hidden = true; return; }
+  bubble.textContent = text;
+  bubble.className = "max-bubble " + tone;
+  bubble.hidden = false;
+  // above Max, or below him near the top of the screen; flipped to his left near the right edge
+  bubble.classList.toggle("below", pos.y < 110);
+  bubble.classList.toggle("left", pos.x > innerWidth - 300);
+  bubbleTimer = setTimeout(() => (bubble.hidden = true), ms);
+}
+bubble.onclick = () => (bubble.hidden = true);
+
+// ---- pointing at things on the page ----
+let spot = null;
+function highlight(target, ms) {
+  spot?.classList.remove("max-spot");
+  spot = target;
+  target.classList.add("max-spot");
+  setTimeout(() => { target.classList.remove("max-spot"); if (spot === target) spot = null; }, ms);
+}
+// Flies next to an element (left of it if there is room, else right / below), points, says text, then goes home.
+function pointAt(target, text, { ms = 6500, tone = "", alert = false, stay = false } = {}) {
+  if (!target?.isConnected) return say(text, ms, tone);
+  if (!stay) target.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+  setTimeout(() => {
+    const r = target.getBoundingClientRect();
+    const left = r.left - SIZE * 0.9 > 0, x = left ? r.left - SIZE * 0.9 : Math.min(r.right - SIZE * 0.1, innerWidth - SIZE);
+    const y = r.top + r.height / 2 - SIZE * 0.55;
+    holderFace = left ? 1 : -1; // turn towards the element
+    flyTo(x, y, () => {
+      highlight(target, ms);
+      say(text, ms, tone);
+      if (alert) play("T_Fly_To_Alert", { once: true, then: () => loop("Alert_Critical_Wave") });
+      else play("T_Fly_To_Point", { once: true, then: () => { play("Point_In", { once: true, then: () => loop("Point_Hold") }); } });
+      mode = "point";
+      clearTimeout(pointTimer);
+      pointTimer = setTimeout(() => { holderFace = 0; play("Point_Out", { once: true }); setTimeout(() => goHome(), 700); }, ms);
+    });
+  }, stay ? 0 : 350);
+}
+let pointTimer, holderFace = 0;
+
+// ---- chat moods ----
+function listen() { if (flight) return; mode = "listen"; play("T_Idle_To_Listen", { once: true, then: () => loop(pick(["Listen", "Listen_B", "Listen_C"])) }); }
+function think() { if (flight) return; mode = "think"; play("T_Listen_To_Think", { once: true, then: () => loop("Think") }); }
+function talk(text) {
+  mode = "talk";
+  // gestures for about as long as the answer takes to read / speak
+  const ms = Math.min(14000, 1800 + text.length * 45);
+  play("T_Think_To_Talk", { once: true, then: () => loop(pick(["Talk_Gesture_A", "Talk_Gesture_B", "Talk_Gesture_C", "Talk_Gesture_D", "Talk_Gesture_E", "Talk_Gesture_F", "Talk_Gesture_G"])) });
+  clearTimeout(talkTimer);
+  talkTimer = setTimeout(() => { if (mode === "talk") { mode = "idle"; play("T_Talk_To_Idle", { once: true, then: () => loop("Idle_Hover") }); } }, ms);
+}
+let talkTimer;
+function greet() { play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") }); }
+
+// ---- idle life: small one-shot fidgets; bored after a few quiet minutes ----
+let lastUser = Date.now();
+for (const ev of ["pointerdown", "keydown", "wheel"]) addEventListener(ev, () => (lastUser = Date.now()), { passive: true });
+setInterval(() => {
+  if (mode !== "idle" || document.hidden) return;
+  if (Date.now() - lastUser > 3 * 60000) return play("Bored", { once: true });
+  if (Math.random() < 0.45) play(pick(["Idle_Adjust_Cap", "Idle_Check_Watch", "Look_Around", "Idle_Stretch", "Idle_Scan_Patrol", "Idle_Boot_Check", "Idle_Hover_B"]), { once: true });
+}, 9000);
+
+// ---- drag to move, click to open the chat, double-click to send him home ----
+canvas.addEventListener("pointerdown", e => {
+  dragged = { sx: e.clientX, sy: e.clientY, x: pos.x, y: pos.y, moved: false };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (!dragged) return;
+  const dx = e.clientX - dragged.sx, dy = e.clientY - dragged.sy;
+  if (!dragged.moved && Math.hypot(dx, dy) < 6) return;
+  if (!dragged.moved) { dragged.moved = true; flight = null; play("Notice_User", { once: true, then: () => loop("Idle_Hover") }); }
+  pos.x = Math.min(Math.max(0, dragged.x + dx), innerWidth - SIZE);
+  pos.y = Math.min(Math.max(0, dragged.y + dy), innerHeight - SIZE);
+  place();
+});
+canvas.addEventListener("pointerup", () => {
+  const d = dragged;
+  dragged = null;
+  if (d?.moved) { homeOverride = { x: pos.x, y: pos.y }; return; } // stays where it was dropped
+  const p = panel();
+  if (p.hidden) { maxOpen(true); greet(); setTimeout(() => goHome(), 50); } else p.querySelector("input")?.focus();
+});
+canvas.addEventListener("dblclick", () => { homeOverride = null; goHome(); });
+
+// ---- frame loop ----
+const clock = new THREE.Clock();
+let turn = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (flight) {
+    const k = Math.min(1, (now - flight.t0) / flight.ms), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    const dx = flight.to.x - flight.from.x;
+    pos.x = flight.from.x + dx * e;
+    pos.y = flight.from.y + (flight.to.y - flight.from.y) * e - Math.sin(k * Math.PI) * Math.min(80, Math.abs(dx) * 0.15); // a little arc
+    place();
+    turn += ((Math.sign(dx) * 0.9) - turn) * 0.12;  // face the way he flies, bank into it
+    holder.rotation.z = -turn * 0.25;
+    if (k >= 1) {
+      const f = flight;
+      flight = null;
+      holder.rotation.z = 0;
+      mode = "idle";
+      play("Arrive_Brake", { once: true, fade: 0.2 });
+      f.after?.(); // may start pointing / landing right away
+    }
+  } else turn += (holderFace * 0.7 - turn) * 0.08;
+  holder.rotation.y = turn;
+  mixer.update(dt);
+  renderer.render(scene, camera);
+}
+const h0 = home();
+pos.x = h0.x; pos.y = h0.y; place();
+loop("Idle_Hover");
+requestAnimationFrame(frame);
+addEventListener("resize", () => { if (!flight && mode === "idle" && !homeOverride) { const h = home(); pos.x = h.x; pos.y = h.y; place(); } });
+
+// ---- the portal talks to Max through this ----
+window.MaxBot = {
+  listen, think, greet, say, goHome,
+  talk(text) { talk(text); },
+  // the panel opened / closed: dock next to it or back to the corner
+  dock() { if (!homeOverride) goHome(); },
+  // after an answer: point at the first device / ticket it mentions if it is on the page
+  answered(text, proposals) {
+    talk(text);
+    const code = /\[\[device:(\d{4})\]\]/.exec(text)?.[1], d = code && S.devices.find(x => x.code === code);
+    const target = d && document.querySelector(`#view a[href="#/device/${CSS.escape(encodeURIComponent(d.id))}"], #view [data-id="${CSS.escape(d.id)}"]`);
+    if (proposals?.length) setTimeout(() => pointAt(document.querySelector("#maxLog [data-go]"), "Press Confirm if that's right.", { stay: true, ms: 5000 }), 900);
+    else if (target && moves) setTimeout(() => pointAt(target, `${d.code} · ${label(d)}`), 1200);
+  },
+  alert(target, text) { if (moves) pointAt(target, text, { alert: true, tone: "bad", ms: 7000, stay: true }); else say(text, 7000, "bad"); },
+  tip(target, text) { if (moves && text) pointAt(target, text, { ms: 5500, stay: true }); },
+  pointAt, flyTo,
+  // guided tour of the menu
+  tour() {
+    const steps = [...document.querySelectorAll("#nav a")].map(a => [a, TOUR[a.getAttribute("href").slice(2)]]).filter(([, t]) => t);
+    const next = i => { if (i >= steps.length) return goHome(() => say("That's the tour! Ask me anything.", 4000)); pointAt(steps[i][0], steps[i][1], { ms: 3800, stay: true }); setTimeout(() => next(i + 1), 4600); };
+    next(0);
+  },
+  get moves() { return moves; },
+  set moves(v) { moves = v; try { localStorage.setItem("maxMoves", v ? "on" : "off"); } catch {} if (!v) { homeOverride = null; goHome(); } },
+};
+const TOUR = {
+  overview: "Overview: the whole fleet at a glance.", devices: "Devices: every tablet and terminal, with remote commands.",
+  sites: "Sites: your buildings, with coordinates for finding technicians.", alerts: "Alerts: offline, low battery and crashes.",
+  team: "Technical Team: tickets, technicians and who is nearby.", tasks: "Scheduled tasks: commands at set times.",
+  apps: "Apps & files: install apps on many devices at once.", enroll: "Enroll: QR codes for new devices.",
+  activity: "Activity log: everything that happened.", users: "Users & access: who can see and do what.",
+};
+window.dispatchEvent(new Event("maxbot-ready"));
 </script>
 </body>
 </html>

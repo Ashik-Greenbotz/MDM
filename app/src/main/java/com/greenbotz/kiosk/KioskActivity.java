@@ -81,6 +81,9 @@ public class KioskActivity extends Activity {
     private static final String OVERRIDE_PIN = "9499";
     static final String EXTRA_OVERRIDE = "override";
     private boolean overridePending;
+    // Technician screen: 6 taps there open the admin password here instead of going straight back to it.
+    static final String EXTRA_ADMIN = "admin";
+    private boolean adminPending;
 
     static boolean isPinned(Context ctx) {
         SharedPreferences p = ctx.getSharedPreferences("kiosk", MODE_PRIVATE);
@@ -94,7 +97,7 @@ public class KioskActivity extends Activity {
     private final SharedPreferences.OnSharedPreferenceChangeListener codeListener = (p, key) -> {
         if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
         if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showStatus);
-        if (PREF_APPS.equals(key)) runOnUiThread(this::renderApps);
+        if (PREF_APPS.equals(key) || "tech_cache".equals(key) || Relay.PREF_USAGE.equals(key)) runOnUiThread(this::renderApps);
     };
 
     // Battery % above the Device ID; ACTION_BATTERY_CHANGED is sticky, so registering also delivers the current level.
@@ -144,6 +147,7 @@ public class KioskActivity extends Activity {
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
         overridePending = getIntent().getBooleanExtra(EXTRA_OVERRIDE, false);
+        adminPending = getIntent().getBooleanExtra(EXTRA_ADMIN, false);
         // Mode is picked once, on the first launch by setup-tablet.bat; after that only the admin menu changes it.
         if (!prefs().contains(PREF_MODE)) {
             prefs().edit().putString(PREF_MODE, "monitor".equals(getIntent().getStringExtra("mode")) ? "monitor" : "kiosk")
@@ -182,6 +186,11 @@ public class KioskActivity extends Activity {
         }
         if (SetupActivity.needed(this)) {
             startActivity(new Intent(this, SetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
+        if (adminPending) {
+            adminPending = false;
+            askPassword();
             return;
         }
         if (overridePending) {
@@ -467,6 +476,29 @@ public class KioskActivity extends Activity {
         grid.removeAllViews();
         PackageManager pm = getPackageManager();
         float dp = getResources().getDisplayMetrics().density;
+        // Technical team tablets: the normal home screen plus a "My tickets" tile first
+        if (TechHomeActivity.wanted(this)) {
+            int open = TechHomeActivity.openCount(this);
+            Drawable icon = getDrawable(android.R.drawable.ic_menu_agenda).mutate();
+            icon.setTint(getColor(R.color.accent));
+            icon.setBounds(0, 0, (int) (64 * dp), (int) (64 * dp));
+            TextView tile = new TextView(this);
+            tile.setText(open > 0 ? "My tickets (" + open + ")" : "My tickets");
+            tile.setCompoundDrawables(null, icon, null, null);
+            tile.setCompoundDrawablePadding((int) (10 * dp));
+            tile.setGravity(Gravity.CENTER);
+            tile.setTextColor(getColor(open > 0 ? R.color.accent : R.color.text_primary));
+            tile.setTextSize(14);
+            tile.setTypeface(null, android.graphics.Typeface.BOLD);
+            tile.setPadding((int) (8 * dp), (int) (18 * dp), (int) (8 * dp), (int) (14 * dp));
+            tile.setBackground(getDrawable(R.drawable.glass_tile));
+            tile.setOnClickListener(v -> startActivity(new Intent(this, TechHomeActivity.class)));
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, 1f));
+            lp.width = 0;
+            int m = (int) (6 * dp);
+            lp.setMargins(m, m, m, m);
+            grid.addView(tile, lp);
+        }
         for (String pkg : allowedApps()) {
             Intent launch = pm.getLaunchIntentForPackage(pkg);
             if (launch == null) continue; // uninstalled since it was picked
@@ -538,6 +570,7 @@ public class KioskActivity extends Activity {
         if (isOwner()) {
             Set<String> pkgs = allowedApps();
             pkgs.add(getPackageName());
+            if (TechHomeActivity.wanted(this)) pkgs.addAll(TechHomeActivity.helperApps(this)); // camera, photo picker, maps
             dpm.setLockTaskPackages(admin, pkgs.toArray(new String[0]));
             // Home button returns to this screen; recents and notifications stay blocked.
             // App pinned: no Home button at all (way out is the top-right override or Unpin from the portal).
@@ -630,7 +663,8 @@ public class KioskActivity extends Activity {
                 monitorOnly(this) ? "Switch to kiosk mode" : "Switch to monitor-only (no lock)",
                 prefs().getString(PREF_SINGLE_APP, "").isEmpty() ? "App pinning…"
                         : "App pinning… (" + appLabel(prefs().getString(PREF_SINGLE_APP, "")) + ")",
-                "Link device ID", "Theme: " + prefs().getString(PREF_THEME, "auto")};
+                "Link device ID", "Theme: " + prefs().getString(PREF_THEME, "auto"),
+                "Device model & usage (" + prefs().getString(Relay.PREF_MODEL, "not set") + ")"};
         new AlertDialog.Builder(this)
                 .setTitle("Admin")
                 .setItems(items, (d, which) -> {
@@ -654,6 +688,10 @@ public class KioskActivity extends Activity {
                         chooseTheme();
                         return;
                     }
+                    if (which == 9) {
+                        chooseModel();
+                        return;
+                    }
                     if (which == 6) {
                         chooseSingleApp();
                         return;
@@ -672,6 +710,31 @@ public class KioskActivity extends Activity {
                         return;
                     }
                     exitKiosk();
+                })
+                .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
+                .show();
+    }
+
+    // Same choice as the setup screen; the portal gets it on the next check-in.
+    private void chooseModel() {
+        int[] model = {0};
+        android.widget.Button modelBtn = SetupActivity.modelPicker(this, prefs().getString(Relay.PREF_MODEL, Relay.suggestModel(this)), Relay.suggestModel(this), model);
+        android.widget.CheckBox tech = new android.widget.CheckBox(this);
+        tech.setText("Technical team device (shows the technician's tickets)");
+        tech.setChecked("tech".equals(prefs().getString(Relay.PREF_USAGE, "onsite")));
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(20 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(modelBtn);
+        box.addView(tech);
+        new AlertDialog.Builder(this)
+                .setTitle("Device model & usage")
+                .setView(box)
+                .setPositiveButton("Save", (d, w) -> {
+                    DeviceService.setConfig(this, Relay.MODELS[model[0]], tech.isChecked() ? "tech" : "onsite");
+                    lock();
+                    recreate(); // reopens as the technician screen or the kiosk
                 })
                 .setNegativeButton("Cancel", (d, w) -> scheduleSingleApp())
                 .show();
@@ -786,6 +849,7 @@ public class KioskActivity extends Activity {
             remoteUnlockPending = true;
         }
         if (intent.getBooleanExtra(EXTRA_OVERRIDE, false)) overridePending = true;
+        if (intent.getBooleanExtra(EXTRA_ADMIN, false)) adminPending = true;
     }
 
     private void changeServer() {
