@@ -100,6 +100,15 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/KioskTheme" />
 
+        <!-- Technical team tablets: the technician's tickets instead of the app grid -->
+        <activity
+            android:name=".TechHomeActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:lockTaskMode="if_whitelisted"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/KioskTheme" />
+
         <activity
             android:name=".AnnouncementActivity"
             android:exported="false"

@@ -97,6 +97,25 @@ public class SetupActivity extends Activity {
         col.addView(ip);
         col.addView(label("Device ID"));
         col.addView(code);
+        // Device model (picks the door relay profile) and usage. The guess comes from the hardware; the installer confirms it.
+        String saved = prefs().getString(Relay.PREF_MODEL, ""), guess = Relay.suggestModel(this);
+        int[] model = {0};
+        Button modelBtn = modelPicker(this, saved.isEmpty() ? guess : saved, guess, model);
+        col.addView(label("Device model"));
+        col.addView(modelBtn, new LinearLayout.LayoutParams(-1, px(56)));
+        boolean[] tech = {"tech".equals(prefs().getString(Relay.PREF_USAGE, "onsite"))};
+        LinearLayout usage = new LinearLayout(this);
+        Button onsiteBtn = button("Onsite device"), techBtn = button("Tech team");
+        LinearLayout.LayoutParams half2 = new LinearLayout.LayoutParams(0, px(56), 1);
+        half2.setMarginEnd(px(8));
+        usage.addView(onsiteBtn, half2);
+        usage.addView(techBtn, new LinearLayout.LayoutParams(0, px(56), 1));
+        Runnable pickUsage = () -> { pill(onsiteBtn, !tech[0]); pill(techBtn, tech[0]); };
+        onsiteBtn.setOnClickListener(v -> { tech[0] = false; pickUsage.run(); });
+        techBtn.setOnClickListener(v -> { tech[0] = true; pickUsage.run(); });
+        pickUsage.run();
+        col.addView(label("Usage"));
+        col.addView(usage);
         TextView msg = new TextView(this);
         msg.setTextSize(16);
         msg.setPadding(0, px(12), 0, 0);
@@ -115,6 +134,7 @@ public class SetupActivity extends Activity {
                 return;
             }
             prefs().edit().putString(DeviceService.PREF_SERVER, u).commit();
+            DeviceService.setConfig(this, Relay.MODELS[model[0]], tech[0] ? "tech" : "onsite");
             connect.setEnabled(false);
             msg.setTextColor(getColor(R.color.text_secondary));
             msg.setText("Connecting…");
@@ -193,6 +213,39 @@ public class SetupActivity extends Activity {
         });
         col.addView(save, buttonParams());
         setContentView(scroll(col));
+    }
+
+    // Model list (Relay.MODELS order) with the hardware guess marked; also used by the admin menu. sel[0] = chosen index.
+    static Button modelPicker(Context ctx, String selected, String guess, int[] sel) {
+        String[] names = new String[Relay.MODELS.length];
+        sel[0] = Relay.MODELS.length - 1;
+        for (int i = 0; i < names.length; i++) {
+            names[i] = Relay.MODELS[i] + (Relay.MODELS[i].equals(guess) ? "  (detected)" : "");
+            if (Relay.MODELS[i].equals(selected)) sel[0] = i;
+        }
+        return picker(ctx, "Device model", names, sel);
+    }
+
+    // A button showing the current choice that opens a pick list. (Not a Spinner: on One UI it drew no selected text.)
+    static Button picker(Context ctx, String title, String[] names, int[] sel) {
+        Button b = new Button(ctx);
+        b.setAllCaps(false);
+        b.setTextSize(18);
+        b.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+        b.setTextColor(ctx.getColor(R.color.text_primary));
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        float dp = ctx.getResources().getDisplayMetrics().density;
+        g.setCornerRadius(14 * dp);
+        g.setColor(ctx.getColor(R.color.glass_fill));
+        g.setStroke(Math.round(dp), ctx.getColor(R.color.glass_edge));
+        b.setBackground(g);
+        b.setPadding(Math.round(16 * dp), 0, Math.round(16 * dp), 0);
+        Runnable show = () -> b.setText(names[sel[0]] + "   ▾");
+        show.run();
+        b.setOnClickListener(v -> new android.app.AlertDialog.Builder(ctx).setTitle(title)
+                .setSingleChoiceItems(names, sel[0], (d, which) -> { sel[0] = which; show.run(); d.dismiss(); })
+                .setNegativeButton("Cancel", null).show());
+        return b;
     }
 
     private LinearLayout column(String title, String sub) {

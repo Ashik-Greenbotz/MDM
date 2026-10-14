@@ -10,3 +10,17 @@ services:
     env_file: functions/.env
     volumes:
       - ./server:/app/server
+
+  # Remote SSH: tablets open reverse tunnels here (ports 21000-29999 inside this container only);
+  # people jump through it: ssh -J tunnel@<host>:2222 -p 2<Device ID> kiosk@localhost
+  # ponytail: one shared tunnel password; per-user keys if more people get access.
+  tunnel:
+    image: lscr.io/linuxserver/openssh-server:latest
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+    environment:
+      USER_NAME: tunnel
+      PASSWORD_ACCESS: "true"
+      USER_PASSWORD: ${TUNNEL_PASSWORD:-local-test-tunnel}
+      DOCKER_MODS: linuxserver/mods:openssh-server-ssh-tunnel

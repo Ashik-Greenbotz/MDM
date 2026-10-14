@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/bg_gradient" />
+    <item android:gravity="top|left" android:width="520dp" android:height="520dp" android:left="-180dp" android:top="-160dp">
+        <shape>
+            <gradient android:type="radial" android:gradientRadius="50%" android:startColor="@color/glow_brand" android:endColor="#00FFFFFF" />
+        </shape>
+    </item>
+    <item android:gravity="bottom|right" android:width="560dp" android:height="560dp" android:right="-200dp" android:bottom="-160dp">
+        <shape>
+            <gradient android:type="radial" android:gradientRadius="50%" android:startColor="@color/glow_blue" android:endColor="#00FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

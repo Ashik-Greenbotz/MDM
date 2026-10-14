@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "My tickets" home screen icon: technician on a glass tile. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/glass_hi" />
+    <item android:drawable="@drawable/tech_worker" android:left="6dp" android:top="6dp" android:right="6dp" android:bottom="4dp" />
+</layer-list>
