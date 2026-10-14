@@ -153,6 +153,14 @@
   .stat .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .num { font-variant-numeric: tabular-nums; }
   .health-list { display: grid; gap: 14px; } .health-list .hbar { margin: 6px 0 4px; }
+  .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 14px 18px 18px; }
+  .gauge { text-align: center; } .gauge svg { width: 100%; max-width: 170px; display: block; margin: 0 auto 4px; color: var(--text); }
+  .gauge .l { font-weight: 600; font-size: 13px; } .gauge .meta { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+  .cd-grid { display: grid; grid-template-columns: minmax(170px, 1fr) 1.6fr; gap: 12px; width: min(680px, 82vw); margin: 10px 0 4px; }
+  @media (max-width: 600px) { .cd-grid { grid-template-columns: 1fr; width: auto; } }
+  .cd-list { border: 1px solid var(--line); border-radius: 12px; padding: 5px; max-height: 48vh; overflow: auto; }
+  .cd-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 9px; cursor: pointer; }
+  .cd-row:hover { background: var(--hover); } .cd-row.on { background: var(--accent-soft); } .cd-row .grow { flex: 1; min-width: 0; }
   .meter { display: inline-flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; font-size: 13px; }
   .meter .bar { width: 38px; height: 6px; border-radius: 4px; background: var(--line); overflow: hidden; }
   .meter .bar b { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--ok), #6ee7b7); }
@@ -332,6 +340,11 @@
   #maxBot[hidden] { display: none; }
   #maxBot canvas { display: block; pointer-events: auto; cursor: grab; touch-action: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.25)); }
   #maxBot canvas:active { cursor: grabbing; }
+  /* asleep: dimmed in his corner with a floating 💤 */
+  #maxBot.asleep canvas { filter: grayscale(.5) brightness(.85) drop-shadow(0 10px 18px rgba(0,0,0,.25)); opacity: .75; }
+  #maxBot.asleep::after { content: "💤"; position: absolute; right: 16%; top: 2%; font-size: 26px; pointer-events: none; animation: zzz 2.4s ease-in-out infinite; }
+  @keyframes zzz { 0%, 100% { transform: translateY(0); opacity: .6; } 50% { transform: translateY(-8px); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { #maxBot.asleep::after { animation: none; } }
   .max-bubble { position: absolute; bottom: 92%; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(280px, 70vw); padding: 9px 13px;
     border-radius: 16px; background: var(--dlg); color: var(--text); border: 1px solid var(--edge); box-shadow: var(--shadow-hi); font-size: 13px; line-height: 1.4;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); pointer-events: auto; cursor: pointer; animation: zoom .25s var(--ease); }
@@ -384,7 +397,7 @@
 <section id="maxPanel" hidden aria-label="Max, the assistant">
   <div class="max-head"><span class="max-face"><img src="/max.png" alt=""></span><div class="grow"><b>Max</b><span class="meta" id="maxSub">Your portal assistant</span></div>
     <button class="btn ghost" id="maxStop" title="Stop speaking" hidden>■</button><button class="btn ghost" id="maxSpeak" title="Read answers aloud"></button>
-    <button class="btn ghost" id="maxMove" title="Max flies around the page" hidden>✈</button><button class="btn ghost" id="maxClear" title="New conversation">↺</button><button class="btn ghost" id="maxMin" title="Minimise"></button></div>
+    <button class="btn ghost" id="maxSleep" title="Put Max to sleep: he wakes up only for alerts, or when you click him" hidden>🌙</button><button class="btn ghost" id="maxMove" title="Max flies around the page" hidden>✈</button><button class="btn ghost" id="maxClear" title="New conversation">↺</button><button class="btn ghost" id="maxMin" title="Minimise"></button></div>
   <div id="maxLog" aria-live="polite"></div>
   <form class="max-input" id="maxForm"><button type="button" class="btn ghost" id="maxMic" title="Speak"></button>
     <input id="maxIn" placeholder="Ask about devices, tickets, the team…" autocomplete="off" maxlength="1500"><button class="btn primary" id="maxSend" title="Send"></button></form>
@@ -404,7 +417,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  remote: "🖥 Set up remote desktop", sshon: "SSH on", sshoff: "SSH off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Line icons from Lucide (lucide.dev, ISC licence), inlined so the portal works offline.
@@ -668,7 +682,7 @@ VIEWS.overview = () => {
       <a class="stat" href="#/sites"><div class="n">${sites.length}</div><div class="l">Total sites</div></a>
       <a class="stat" href="#/devices"><div class="n">${ds.length}</div><div class="l">Total devices</div></a>
       <a class="stat ok" href="#/devices" data-status="online"><div class="n">${on.length}</div><div class="l">Online</div><div class="s">${pct(on.length, ds.length)}% of fleet</div></a>
-      <a class="stat warn" href="#/devices" data-status="low"><div class="n">${n.warning}</div><div class="l">Warning</div><div class="s">Low battery or unlocked kiosk</div></a>
+      <a class="stat warn" href="#/devices" data-status="warning"><div class="n">${n.warning}</div><div class="l">Warning</div><div class="s">Low battery or unlocked kiosk</div></a>
       <a class="stat bad" href="#/devices" data-status="offline"><div class="n">${ds.length - on.length}</div><div class="l">Offline</div><div class="s">No check-in for over a minute</div></a>
       <a class="stat bad" href="#/alerts"><div class="n">${openAlerts().length}</div><div class="l">Open alerts</div></a>
       <a class="stat warn" href="#/devices" data-status="maintenance"><div class="n">${n.maintenance}</div><div class="l">In maintenance</div></a>
@@ -734,13 +748,14 @@ function donut(n, total) {
 
 const STATUS = {
   "": ["All statuses", () => true], online: ["Online", isOnline], offline: ["Offline", d => !isOnline(d)],
+  warning: ["Warning (low battery or unlocked)", d => fleetState(d) === "warning"],
   unlocked: ["Unlocked kiosks", d => d.type === "android-kiosk" && d.kioskLocked === false],
   low: ["Low battery", d => d.battery != null && d.battery < LOW_BATTERY],
   maintenance: ["In maintenance", d => d.maintenance],
 };
 function shownDevices() {
   const q = filters.q.toLowerCase();
-  return S.devices.filter(STATUS[filters.status][1])
+  return S.devices.filter((STATUS[filters.status] || STATUS[""])[1])
     .filter(d => !filters.type || d.type === filters.type)
     .filter(d => !filters.group || (filters.group === "__none" ? !d.group : d.group === filters.group))
     .filter(d => !q || [d.code, label(d), d.model, d.serial, d.deviceName, d.localIp, d.ip, d.group].some(v => String(v ?? "").toLowerCase().includes(q)));
@@ -751,6 +766,7 @@ VIEWS.devices = (arg, first) => {
     $("view").innerHTML = `
       <div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Devices</h2><button class="btn primary" id="addDev">+ Add device</button></div>
       <p class="lead">Each device has a 4-digit Device ID, shown on its screen. Tick devices to control many at once. Click a row for details, health and logs.</p>
+      <div class="stats" id="devStats"></div>
       <div class="card">
         <div class="toolbar">
           <input type="search" id="q" placeholder="Search Device ID, name, model, serial, IP, site…" value="${esc(filters.q)}">
@@ -759,7 +775,7 @@ VIEWS.devices = (arg, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>IP</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
       </div>`;
     $("q").oninput = e => { filters.q = e.target.value; VIEWS.devices(); };
@@ -767,16 +783,24 @@ VIEWS.devices = (arg, first) => {
     $("all").onchange = e => { for (const d of shownDevices()) e.target.checked ? picked.add(d.id) : picked.delete(d.id); VIEWS.devices(); };
     $("rows").onclick = rowClick;
     $("addDev").onclick = addDevice;
+    // overall counts: click one to filter the list by it
+    $("devStats").onclick = e => { const t = e.target.closest("[data-st]"); if (t) { filters.status = t.dataset.st; VIEWS.devices(); } };
   }
-  $("fType").innerHTML = options([["", "All types"], ...Object.entries(TYPES)], filters.type);
-  $("fGroup").innerHTML = options([["", "All sites"], ...groups().filter(Boolean).map(g => [g, g]), ["__none", "No site"]], filters.group);
-  $("fStatus").innerHTML = options(Object.entries(STATUS).map(([k, v]) => [k, v[0]]), filters.status);
+  const onl = S.devices.filter(isOnline).length;
+  $("devStats").innerHTML = `<a class="stat" data-st=""><div class="n">${S.devices.length}</div><div class="l">Total devices</div></a>
+    <a class="stat ok" data-st="online"><div class="n">${onl}</div><div class="l">Online</div></a>
+    <a class="stat bad" data-st="offline"><div class="n">${S.devices.length - onl}</div><div class="l">Offline</div></a>`;
+  // the live refresh (every 5 s) leaves a dropdown alone while it is open
+  const fill = (id, html) => { if (document.activeElement !== $(id)) $(id).innerHTML = html; };
+  fill("fType", options([["", "All types"], ...Object.entries(TYPES)], filters.type));
+  fill("fGroup", options([["", "All sites"], ...groups().filter(Boolean).map(g => [g, g]), ["__none", "No site"]], filters.group));
+  fill("fStatus", options(Object.entries(STATUS).map(([k, v]) => [k, v[0]]), filters.status));
   const list = shownDevices();
   $("rows").innerHTML = list.map(d => devRow(d, true)).join("") +
     (filters.status || filters.type ? "" : S.pending.filter(x => !filters.group || (filters.group === "__none" ? !x.group : x.group === filters.group))
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
-      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="4"></td>
+      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
       <td><button class="btn ghost" data-unpend="${esc(x.code)}">Cancel</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
@@ -787,22 +811,83 @@ VIEWS.devices = (arg, first) => {
 const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : ""}" data-id="${esc(d.id)}">
       <td><input type="checkbox" data-pick ${picked.has(d.id) ? "checked" : ""} aria-label="Select"></td>
       <td><span class="code">${esc(d.code || "")}</span></td>
-      <td><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div></td>
+      <td title="${esc(Object.entries(d.info || {}).map(([k, v]) => k + ": " + v).join("\n"))}"><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div>
+        ${d.os || d.uptime != null ? `<div class="meta">${esc([d.os, d.uptime != null && "up " + fmtUptime(d.uptime)].filter(Boolean).join(" · "))}</div>` : ""}</td>
       ${showSite ? `<td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>` : ""}
       <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
-      <td title="${d.ip ? "Seen from " + esc(d.ip) : ""}">${d.localIp ? esc(d.localIp) : `<span class="meta">–</span>`}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
         <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`;
+// Public (internet) address the portal saw the device's check-in from; null on the same LAN as the portal.
+const pubIp = d => { const ip = String(d.ip || "").replace(/^::ffff:/, ""); return !ip || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|fe80:|f[cd])/i.test(ip) ? null : ip; };
 const q2 = () => filters.q.toLowerCase();
+// The address a device on the LAN uses for this portal (not "localhost" when the admin is on the server PC itself).
+const portalUrl = () => /^(localhost|127\.)/.test(location.hostname) && S.lan ? `http://${S.lan}${location.port ? ":" + location.port : ""}` : location.origin;
+// Install steps per device type. Tablets get a Device ID; PCs and IoT register themselves on their first check-in.
+function addDeviceSteps(type) {
+  const url = portalUrl(), key = S.agentKey, pre = (id, text) => `<div class="row" style="align-items:flex-start;gap:6px"><pre class="log" id="${id}" style="flex:1;white-space:pre-wrap;word-break:break-all;max-height:none;margin:0">${esc(text)}</pre>
+    <button type="button" class="btn" data-copy="#${id}">Copy</button></div>`;
+  const noKey = `<p class="meta" style="color:var(--bad)">No PC key on this server yet: add <b>AGENT_KEY=</b>(any long random text) to the server's settings (functions/.env, or the Docker environment) and restart it.</p>`;
+  if (type === "tablet") {
+    const app = S.kioskApp && S.apps.find(x => x.id === S.kioskApp), apk = app ? app.label + ".apk" : "mdmkiosk app.apk";
+    const step = (n, title, body) => `<h4 style="margin:16px 0 6px">${n}. ${title}</h4>${body}`;
+    return step(1, "Get the latest app", `<p class="meta">${app
+        ? `<a class="btn primary" href="/download/app/${esc(app.id)}.apk" download="${esc(apk)}">⬇ Download ${esc(app.label)}</a> uploaded ${ago(app.at)}.`
+        : "No kiosk app uploaded yet."}
+        Newer build? Upload it on <b>Apps &amp; files</b> and click <b>Use for QR</b> on it, so this link always gives the latest app.</p>`)
+    + step(2, "Prepare the tablet", `<ol class="meta" style="padding-left:18px;line-height:1.6;margin:0">
+        <li>Settings → Accounts → remove <b>all</b> Google / Samsung accounts (device owner fails while any account is on it).</li>
+        <li>Settings → About → tap <b>Build number</b> 7 times → Developer options → turn on <b>USB debugging</b>.</li>
+        <li>Plug it into the PC by USB and tap <b>Allow</b> (Wi-Fi instead: <code>adb connect &lt;tablet IP&gt;:5555</code>). <code>adb devices</code> must list it as <b>device</b>.</li></ol>`)
+    + step(3, "Install the app and make it device owner", `<p class="meta" style="margin-top:0">Open a command window in the folder with the downloaded APK and run these (or double-click <b>setup-tablet.bat</b>, it does the same):</p>
+      ${pre("adCmd", [
+        "adb devices",
+        `adb install -r "${apk}"`,
+        "adb shell dpm set-device-owner com.greenbotz.kiosk/.AdminReceiver",
+        "adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow",
+        "adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService",
+        "adb shell settings put secure accessibility_enabled 1",
+        "adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow",
+        "adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode kiosk",
+      ].join("\n"))}
+      <p class="meta">The device owner line must say <b>Success: Device owner set</b>. "already several accounts" = an account is still on the tablet; "already provisioned" = factory reset it first.
+        For a monitor-only device use <code>--es mode monitor</code> on the last line.</p>`)
+    + step(4, "Configure it", `<ol class="meta" style="padding-left:18px;line-height:1.6;margin:0">
+        <li>Fill in <b>Name</b> and <b>Site</b> above and click <b>Create Device ID</b>.</li>
+        <li>On the tablet's <b>Set up this device</b> screen choose <b>Production</b> (or <b>Debug</b> + this PC's IP) and type the Device ID.</li>
+        <li>Check the <b>model</b> and <b>usage</b> (onsite / technical team), tap <b>Connect</b>.</li>
+        <li>Pick the <b>allowed apps</b>, then <b>Save and finish</b>. The tablet appears in Devices within a minute.</li>
+        <li>Already set up? Tap the top-right corner 6 times → admin password → <b>Link device ID</b> → type the ID.</li></ol>`);
+  }
+  if (!S.me?.admin) return `<p class="meta">Ask an administrator: installing the agent on a PC needs the PC key, which only admins can see.</p>`;
+  if (!key) return noKey;
+  if (type === "windows") return `<ol class="meta" style="padding-left:18px;line-height:1.6">
+      <li>On the Windows PC: <b>Start</b> → type <b>powershell</b> → right-click <b>Windows PowerShell</b> → <b>Run as administrator</b> → <b>Yes</b>.</li>
+      <li>Click <b>Copy</b>, right-click inside the blue window to paste, press <b>Enter</b>, wait for <b>Installed</b>.</li></ol>
+    ${pre("adCmd", `New-Item C:\\mdm -ItemType Directory -Force | Out-Null; Invoke-WebRequest -UseBasicParsing -Headers @{ "X-Device-Key" = "${key}" } -Uri "${url}/download/agent.ps1" -OutFile C:\\mdm\\agent.ps1; $a = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\\mdm\\agent.ps1 -Server ${url} -Key ${key}'; $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew; Register-ScheduledTask -TaskName "MDM agent" -Action $a -Trigger (New-ScheduledTaskTrigger -AtStartup) -Settings $s -User SYSTEM -RunLevel Highest -Force | Out-Null; Start-ScheduledTask "MDM agent"; "Installed"`)}
+    <p class="meta">The PC appears in Devices within a minute with its own Device ID; then rename it and move it to its site. It starts with Windows (also on battery) and updates itself.</p>`;
+  if (type === "linux") return `<ol class="meta" style="padding-left:18px;line-height:1.6">
+      <li>On the Linux / Ubuntu machine open a terminal (needs <b>curl</b>: <code>sudo apt install curl</code>).</li>
+      <li>Click <b>Copy</b>, paste it in the terminal, press <b>Enter</b> and type the sudo password.</li></ol>
+    ${pre("adCmd", `sudo sh -c 'mkdir -p /opt/mdm && curl -fsS -H "X-Device-Key: ${key}" ${url}/download/agent.sh -o /opt/mdm/agent.sh && printf "[Unit]\\nDescription=MDM agent\\nAfter=network-online.target\\n[Service]\\nEnvironment=SERVER=${url}\\nEnvironment=KEY=${key}\\nExecStart=/bin/sh /opt/mdm/agent.sh\\nRestart=always\\n[Install]\\nWantedBy=multi-user.target\\n" > /etc/systemd/system/mdm-agent.service && systemctl daemon-reload && systemctl enable --now mdm-agent && echo Installed'`)}
+    <p class="meta">It appears in Devices within a minute; then rename it and move it to its site. It starts at boot. The portal can restart it.</p>`;
+  return `<ol class="meta" style="padding-left:18px;line-height:1.6">
+      <li>Open <b>agents/esp32.ino</b> in the Arduino IDE.</li>
+      <li>Set WIFI_SSID / WIFI_PASS to your Wi-Fi, and replace these two lines:</li></ol>
+    ${pre("adCmd", `const char* SERVER = "${url}";\nconst char* DEVICE_KEY = "${key}";`)}
+    <ol class="meta" start="3" style="padding-left:18px;line-height:1.6"><li>Upload it to the board. It appears in Devices on its first check-in.</li></ol>`;
+}
 function addDevice() {
+  const types = [["tablet", "Kiosk tablet / Android / Telpo"], ["windows", "Windows PC"], ["linux", "Linux / Ubuntu"], ["iot", "IoT (ESP32)"]];
   dialog(`<h2>Add device</h2>
     <div style="display:grid;grid-template-columns:max-content 1fr;gap:10px 14px;align-items:center">
-      <label class="meta">Name</label><input id="adName" placeholder="e.g. Lobby intercom" autofocus>
-      <label class="meta">Site</label><select id="adSite">${options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], filters.group && filters.group !== "__none" ? filters.group : "")}</select></div>
-    <p class="meta">You get a 4-digit Device ID. On the device: tap the top-right corner 6 times → admin password → <b>Link device ID</b> → type the ID.</p>`,
+      <label class="meta">Device type</label><select id="adType">${options(types, "tablet")}</select>
+      <label class="meta" data-tab>Name</label><input id="adName" data-tab placeholder="e.g. Lobby intercom" autofocus>
+      <label class="meta" data-tab>Site</label><select id="adSite" data-tab>${options([["", "No site"], ...groups().filter(Boolean).map(g => [g, g])], filters.group && filters.group !== "__none" ? filters.group : "")}</select></div>
+    <div id="adSteps" style="margin-top:12px"></div>`,
     "Create Device ID", async () => {
+      if ($("adType").value !== "tablet") return; // PCs and IoT add themselves
       try {
         const r = await api("/api/devices/new", { name: $("adName").value, group: $("adSite").value });
         await refresh();
@@ -811,6 +896,16 @@ function addDevice() {
           <p class="meta">It appears here as soon as it links.</p>`);
       } catch (e) { toast("Failed: " + e.message, true); }
     });
+  const dlg = $("dlg"), okBtn = dlg.querySelector('button[value="ok"]');
+  const show = () => {
+    const t = $("adType").value;
+    $("adSteps").innerHTML = addDeviceSteps(t);
+    dlg.querySelectorAll("[data-tab]").forEach(el => (el.hidden = t !== "tablet"));
+    okBtn.textContent = t === "tablet" ? "Create Device ID" : "Done";
+  };
+  $("adType").onchange = show;
+  $("adSteps").onclick = e => { const b = e.target.closest("[data-copy]"); if (b) navigator.clipboard.writeText($(b.dataset.copy.slice(1)).textContent).then(() => toast("Copied")); };
+  show();
 }
 
 function rowClick(e) {
@@ -827,6 +922,7 @@ function rowClick(e) {
 }
 
 function renderBulk() {
+  if (document.activeElement?.closest("#bulk")) return; // the user is choosing a command: don't rebuild it under them
   const sel = [...picked].map(dev).filter(Boolean);
   if (!sel.length) { $("bulk").innerHTML = ""; return; }
   const cmds = [...new Set(sel.flatMap(d => withUnpin(S.commands[d.type] || [])))];
@@ -1009,9 +1105,19 @@ async function command(list, type, extra = {}) {
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
   if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
   if (type === "unpin") return command(list, "singleapp", { package: "", appName: "unpin" });
+  if (type === "message" && extra.text === undefined) return dialog(`<h2>Show message</h2>
+    <p class="meta">Pops up on the screen of ${list.length === 1 ? esc(label(list[0])) : list.length + " devices"} for the signed-in user.</p>
+    <textarea id="msgText" rows="4" maxlength="500" style="width:100%" required placeholder="e.g. Please save your work, this PC restarts in 10 minutes."></textarea>`,
+    "Show", () => command(list, "message", { text: $("msgText").value }));
+  if (type === "run" && extra.script === undefined) return dialog(`<h2>Run command</h2>
+    <p class="meta">PowerShell, run as administrator (SYSTEM) on ${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}. The output shows on the device page. Admins only.</p>
+    <textarea id="runText" rows="6" maxlength="8000" style="width:100%;font-family:ui-monospace,Consolas,monospace" required placeholder="e.g. Get-Service | Where-Object Status -eq Running | Select-Object -First 20"></textarea>`,
+    "Run", () => command(list, "run", { script: $("runText").value }));
   const names = list.length === 1 ? label(list[0]) : list.length + " devices";
   const what = type === "singleapp" && extra.package === "" ? "Unpin app" : CMD[type].replace("…", "");
   if (type === "reboot" && !confirm(`Restart ${names}?`)) return;
+  if (type === "shutdown" && !confirm(`Shut down ${names}? Someone has to switch ${list.length === 1 ? "it" : "them"} on again.`)) return;
+  if (type === "logoff" && !confirm(`Log off the user on ${names}? Unsaved work is lost.`)) return;
   if (list.length === 1 && !isOnline(list[0]) && !confirm(`${names} is offline. Send anyway? It runs when the device reconnects.`)) return;
   if (list.length > 1 && !confirm(`Send "${what}" to ${names}?`)) return;
   await act(() => list.length === 1
@@ -1025,8 +1131,12 @@ function pickUpload(kind, list, type) {
   if (!items.length) { toast(`Upload ${kind === "apps" ? "an app" : "a file"} first on the Apps & files page`, true); location.hash = "#/apps"; return; }
   dialog(`<h2>${kind === "apps" ? "Install / update app" : "Send file"}</h2>
     <p class="meta">${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}. ${kind === "apps" ? "Installs silently on device-owner devices." : "Saved in the device's Download/Kiosk folder."}</p>
-    <select id="upPick" style="width:100%">${options(items.map(x => [x.id, (x.label || x.name) + " · " + fmtSize(x.size)]))}</select>`,
-    "Send", () => command(list, type, kind === "apps" ? { appId: $("upPick").value } : { fileId: $("upPick").value }));
+    <select id="upPick" style="width:100%">${options(items.map(x => [x.id, (x.label || x.name) + " · " + fmtSize(x.size)]))}</select>
+    ${kind === "files" && list.every(d => d.type === "windows") ? `<p class="meta">Windows PCs save it in C:\\mdm\\downloads.</p>
+      <label class="chip"><input type="checkbox" id="upRun"> Run it after download (installer: .msi installs silently)</label>
+      <input id="upArgs" placeholder="Arguments for an .exe installer, e.g. /S or /quiet" style="width:100%;margin-top:8px">` : ""}`,
+    "Send", () => command(list, type, kind === "apps" ? { appId: $("upPick").value }
+      : { fileId: $("upPick").value, ...($("upRun")?.checked ? { run: true, args: $("upArgs").value } : {}) }));
 }
 
 // Apps installed on all the chosen devices (each device reports its own list).
@@ -1066,12 +1176,13 @@ function askGroup(what, cur, done) {
 VIEWS.device = async (id, first) => {
   const d = dev(id);
   if (!d) { $("view").innerHTML = `<p class="empty">Device not found. <a href="#/devices">Back to devices</a></p>`; return; }
+  if (!$("dKv")) first = true; // it checked in again after "not found": build the page
   const rows = {
     "Device ID": d.code, Type: TYPES[d.type] || d.type, Site: d.group || "–",
     "Device model": d.type === "android-kiosk" && (d.deviceModel || "Not set (Model… to choose)"),
     Usage: d.type === "android-kiosk" && (d.usage === "tech" ? "Technical team device" + (d.techName ? " · " + d.techName : " · no technician yet") : "Onsite device"),
     "App pinning": d.type === "android-kiosk" && (d.singleApp ? "📌 " + appName(d, d.singleApp) : "Not pinned"), Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
-    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP": d.localIp, "Seen from IP": d.ip,
+    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP (LAN)": d.localIp, "Public IP": pubIp(d) || (d.ip && "Same network as the portal"),
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
     Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
     Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
@@ -1085,9 +1196,12 @@ VIEWS.device = async (id, first) => {
         <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
         <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
+      <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
       <div class="cols">
         <div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="dKv"></dl></div></div>
         <div>
+          <div class="card" id="dResCard" hidden><h3>Last command result<span class="grow"></span><span class="meta" id="dResAt"></span></h3>
+            <pre class="log" id="dRes" style="max-height:260px"></pre></div>
           <div class="card" id="dShotCard" hidden><h3>Last screenshot<span class="grow"></span><span class="meta" id="dShotAt"></span></h3>
             <div class="pad"><img class="shot" id="dShot" alt="Last screenshot" style="max-height:320px;cursor:zoom-in"></div></div>
           <div class="card"><h3>Health · last 24 hours</h3><div id="dChart"></div></div>
@@ -1108,6 +1222,7 @@ VIEWS.device = async (id, first) => {
             <div class="row"><code id="dSshCmd" style="user-select:all"></code><button class="btn ghost" data-copy="dSshCmd">Copy</button></div>
             <div class="row" style="margin-top:6px"><span class="meta">1. Tunnel password:</span><code id="dSshTun" style="user-select:all"></code><button class="btn ghost" data-copy="dSshTun">Copy</button></div>
             <div class="row" style="margin-top:6px"><span class="meta">2. Tablet login password:</span><code id="dSshPass" style="user-select:all"></code><button class="btn ghost" data-copy="dSshPass">Copy</button></div></div></div></div>
+      <div class="card" id="dRemoteCard" hidden><h3>Remote access</h3><div class="pad" id="dRemote"></div></div>
       <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
         <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
@@ -1189,13 +1304,44 @@ VIEWS.device = async (id, first) => {
   $("dDays").textContent = d.logDays?.length ? `Saved days: ${d.logDays[0]} → ${d.logDays[d.logDays.length - 1]}` : "No saved days yet (logs are saved every hour)";
   $("dTitle").innerHTML = `<span class="code" style="font-size:16px">${esc(d.code || "")}</span> ${esc(label(d))}`;
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
-  $("dCmds").innerHTML = withUnpin(cmds).map(c => `<button class="btn ${c === "unlock" || c === "screenshot" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  const rm = d.remote || {}, copyBox = (cid, text) => `<div class="row" style="margin-top:6px"><code id="${cid}" style="user-select:all">${esc(text)}</code><button class="btn ghost" data-copy="${cid}">Copy</button></div>`;
+  $("dRemoteCard").hidden = d.type !== "windows";
+  if (d.type === "windows") $("dRemote").innerHTML = `
+    <h4 style="margin:0 0 6px">Remote desktop (RustDesk)${rm.rustdeskId ? ` <span class="pill ok">Ready</span>` : rm.rustdesk ? ` <span class="pill warn">Installed, no ID yet</span>` : ` <span class="pill">Not set up</span>`}</h4>
+    ${rm.rustdeskId ? `<div class="row"><span class="meta">ID</span></div>${copyBox("dRdId", rm.rustdeskId)}
+      ${d.remotePass ? `<div class="row" style="margin-top:8px"><span class="meta">Password</span></div>${copyBox("dRdPass", d.remotePass)}` : ""}
+      <div class="row" style="margin-top:10px"><a class="btn primary" href="rustdesk://connection/new/${encodeURIComponent(rm.rustdeskId)}${d.remotePass ? "?password=" + encodeURIComponent(d.remotePass) : ""}">🖥 Connect</a>
+        <button class="btn" data-cmd="remote">Reset password / repair</button>
+        <span class="meta">First time: install the free RustDesk app on your own PC (rustdesk.com).</span></div>`
+      : `<div class="row"><button class="btn primary" data-cmd="remote">🖥 Set up remote desktop</button><span class="meta">Installs RustDesk on the PC (1-2 min).</span></div>`}
+    ${rm.log ? `<p class="meta" style="margin:8px 0 0">Last setup step: ${esc(rm.log)}${rm.at ? " · " + ago(rm.at) : ""}</p>` : ""}
+    <h4 style="margin:18px 0 6px">SSH ${rm.ssh ? `<span class="pill ok">ON</span>` : `<span class="pill">OFF</span>`}</h4>
+    <div class="row"><button class="btn primary" data-cmd="sshon">SSH on</button><button class="btn" data-cmd="sshoff">SSH off</button>
+      <span class="meta">Login with the Windows account's password${rm.sshUser ? " (user " + esc(rm.sshUser) + ")" : ""}.</span></div>
+    ${d.sshLan ? `<p class="meta" style="margin:8px 0 0">From the office network:</p>${copyBox("dSshLan", d.sshLan)}` : ""}
+    ${S.sshReady ? `<p class="meta" style="margin:12px 0 4px">From anywhere (tunnel through the portal):</p>
+      <div class="row"><button class="btn" data-ssh="1">Tunnel ON</button><button class="btn" data-ssh="">Tunnel OFF</button></div>
+      ${d.ssh && d.sshCmd ? copyBox("dSshTunCmd", d.sshCmd) + `<p class="meta" style="margin:6px 0 0">Password 1: tunnel password${S.sshTunnelPass ? " " + esc(S.sshTunnelPass) : ""}. Password 2: the Windows password.</p>` : ""}` : ""}`;
+  $("dCmds").innerHTML = withUnpin(cmds).filter(c => !["remote", "sshon", "sshoff"].includes(c)).map(c => `<button class="btn ${c === "unlock" || c === "screenshot" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dResCard").hidden = !d.lastResult;
+  if (d.lastResult) {
+    const r = d.lastResult;
+    $("dResAt").textContent = `${r.type}${r.name ? " · " + r.name : ""} · ${r.ok ? "✓ done" : "✗ failed"} · ${ago(r.at)}`;
+    if ($("dRes").textContent !== (r.output || "(no output)")) $("dRes").textContent = r.output || "(no output)";
+  }
   $("dShotCard").hidden = !d.screenshotAt;
   if (d.screenshotAt) {
     const src = `/api/devices/${encodeURIComponent(d.id)}/screenshot.jpg?t=${d.screenshotAt}`;
     if ($("dShot").getAttribute("src") !== src) $("dShot").src = src;
     $("dShotAt").textContent = ago(d.screenshotAt);
   }
+  const inf = d.info || {}, off = !isOnline(d);
+  $("dPerfAt").textContent = off ? "Offline · values from " + ago(d.lastSeen) : "Live · updated " + ago(d.lastSeen);
+  $("dPerf").innerHTML = gauge("CPU load", d.cpu, 70, 90, "%", [inf.CPU, inf.Cores, d.cpu == null && d.type?.startsWith("android") ? "Update the tablet app to 10.18" : /^Estimated/.test(inf["CPU load"] || "") ? "Load estimated from clock speed" : ""].filter(Boolean).join(" · "))
+    + gauge("RAM", d.ram, 80, 95, "%", inf.Memory || (inf["Free memory"] ? inf["Free memory"] + " free" : ""))
+    + gauge("Storage (ROM)", d.disk, 80, 95, "%", inf.Storage || (inf["Free disk C:"] ? "C: " + inf["Free disk C:"] + " free" : ""))
+    + gauge("Temperature", d.temp, 60, 75, "°C", d.temp != null ? inf["Temperature sensor"] || (d.type?.startsWith("android") ? "Battery sensor" : "")
+      : d.type === "windows" ? "No temperature sensor readable on this PC (or agent not updated yet)" : "Not reported by this device");
   $("dKv").innerHTML = Object.entries(rows).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   const [hist, ev, logs] = await Promise.all([
     api(`/api/devices/${d.id}/history`).catch(() => ({ history: [] })),
@@ -1206,14 +1352,24 @@ VIEWS.device = async (id, first) => {
   $("dChart").innerHTML = chart(hist.history);
   $("dEvents").innerHTML = ev.events.slice(0, 100).map(eventRow).join("") || `<tr><td class="empty">Nothing yet</td></tr>`;
   const pre = $("dLogs"), atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 10;
-  if (pre.textContent !== logs) { pre.textContent = (d.logsAt ? `Uploaded ${ago(d.logsAt)}\n\n` : "") + logs; if (atEnd || first) pre.scrollTop = pre.scrollHeight; }
+  const text = (d.logsAt ? `Uploaded ${when(d.logsAt)}\n\n` : "") + logs; // a fixed time, so the text only changes with new logs
+  if (pre.textContent !== text) { pre.textContent = text; if (atEnd || first) pre.scrollTop = pre.scrollHeight; }
 };
+
+// Half-ring gauge (Grafana style) for the device page: v in % (or °C on a 0-100 scale); colour by warn/bad level.
+function gauge(name, v, warnAt, badAt, unit, sub) {
+  const col = v == null ? "--line" : v >= badAt ? "--bad" : v >= warnAt ? "--warn" : "--ok", p = Math.min(100, Math.max(0, v ?? 0));
+  return `<div class="gauge"><svg viewBox="0 0 120 70"><path d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke="${css("--line")}" stroke-width="11" stroke-linecap="round"/>
+    ${v == null ? "" : `<path d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke="${css(col)}" stroke-width="11" stroke-linecap="round" pathLength="100" stroke-dasharray="${p} 100"/>`}
+    <text x="60" y="58" text-anchor="middle" font-size="20" font-weight="700" fill="currentColor">${v == null ? "–" : Math.round(v * 10) / 10 + unit}</text></svg>
+    <div class="l">${esc(name)}</div><div class="meta">${esc(sub || "")}</div></div>`;
+}
 
 // history rows: [time, battery, cpu, ram, disk, temp]
 function chart(h) {
   if (!h || h.length < 2) return `<p class="empty">Collecting… a point is saved every 5 minutes.</p>`;
   const W = 600, H = 160, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
-  const lines = [["Battery %", 1, css("--ok")], ["Memory %", 3, "#3b82f6"], ["Storage %", 4, css("--accent")]];
+  const lines = [["Battery %", 1, css("--ok")], ["CPU %", 2, "#a855f7"], ["Memory %", 3, "#3b82f6"], ["Storage %", 4, css("--accent")]];
   const x = t => 4 + (W - 8) * (t - t0) / Math.max(1, t1 - t0), y = v => H - 6 - (H - 12) * v / 100;
   const paths = lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) =>
     `<polyline fill="none" stroke="${c}" stroke-width="2" points="${h.filter(r => r[i] != null).map(r => x(r[0]).toFixed(1) + "," + y(r[i]).toFixed(1)).join(" ")}"/>`);
@@ -1282,7 +1438,7 @@ VIEWS.site = async (name, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>IP</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden>No devices in this site yet. Click <b>Add devices</b>.</div></div></div>
       <div class="cols">
         <div class="card"><h3>Open alerts<span class="grow"></span><a href="#/alerts" class="meta">All alerts →</a></h3><table><tbody id="sAlerts"></tbody></table></div>
@@ -1309,7 +1465,7 @@ VIEWS.site = async (name, first) => {
   $("sStats").innerHTML = [["", list.length, "Total devices"], ["ok", on.length, "Online"], ["bad", list.length - on.length, "Offline"],
     ["warn", list.filter(STATUS.unlocked[1]).length, "Unlocked kiosks"], ["warn", list.filter(STATUS.low[1]).length, "Low battery"], ["warn", list.filter(STATUS.maintenance[1]).length, "In maintenance"], ["bad", alerts.length, "Open alerts"]]
     .map(([c, n, l]) => `<div class="stat ${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
-  $("sDonut").innerHTML = donut(on.length, list.length - on.length);
+  $("sDonut").innerHTML = donut(siteStats(name).n, list.length);
   $("sOff").innerHTML = list.filter(d => !isOnline(d)).sort((a, b) => b.lastSeen - a.lastSeen).map(d =>
     `<tr class="click" data-dev="${esc(d.id)}"><td><span class="code">${esc(d.code || "")}</span></td><td class="name">${esc(label(d))}</td><td class="meta">since ${ago(d.lastSeen)}</td></tr>`).join("")
     || `<tr><td class="empty">All devices online 🎉</td></tr>`;
@@ -1368,7 +1524,7 @@ function addDevicesToSite(name) {
     });
 }
 
-const alertIcon = a => ({ offline: "📴", battery: "🪫", crash: "💥" }[a.kind] || "⚠️");
+const alertIcon = a => ({ offline: "📴", battery: "🪫", crash: "💥", cpu: "🔥", ram: "🧠", disk: "💾", temp: "🌡️" }[a.kind] || "⚠️");
 VIEWS.alerts = () => {
   const open = S.alerts.filter(a => !a.resolvedAt).reverse(), done = S.alerts.filter(a => a.resolvedAt).reverse().slice(0, 100);
   const row = a => `<tr><td>${alertIcon(a)}</td><td class="wrap"><div class="name">${esc(a.text)}</div>
@@ -1460,8 +1616,8 @@ VIEWS.tasks = (arg, first) => {
     || `<tr><td colspan="7" class="empty">No tasks yet</td></tr>`;
 };
 
-async function upload(kind, file, labelText) {
-  const q = new URLSearchParams({ kind, name: file.name, ...(labelText ? { label: labelText } : {}) });
+async function upload(kind, file, labelText, notes) {
+  const q = new URLSearchParams({ kind, name: file.name, ...(labelText ? { label: labelText } : {}), ...(notes ? { notes } : {}) });
   // Cloud: the file goes straight to storage, then the server checks it. Office PC: start returns no link.
   const s = await api("/api/upload/start?" + q, {});
   if (s.uploadUrl) {
@@ -1481,13 +1637,14 @@ VIEWS.apps = (arg, first) => {
       <div class="cols">
         <div class="card"><h3>Upload app (.apk)</h3><form class="pad row" id="aForm">
           <input type="file" id="aFile" accept=".apk" required><input id="aLabel" placeholder="Name (e.g. VMS v2.1)">
+          <textarea id="aNotes" rows="3" maxlength="2000" style="width:100%" placeholder="Release notes (optional): what's new / fixed in this version"></textarea>
           <button class="btn primary">Upload</button></form></div>
         <div class="card"><h3>Upload file</h3><form class="pad row" id="fForm">
           <input type="file" id="fFile" required><button class="btn primary">Upload</button></form></div>
       </div>
-      <div class="card"><h3>Apps<span class="grow"></span><button class="btn" data-dlall="apps">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
+      <div class="card"><h3>Apps<span class="grow"></span><button class="btn" data-dlall="apps">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Release notes</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
       <div class="card"><h3>Files<span class="grow"></span><button class="btn" data-dlall="files">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody id="fRows"></tbody></table></div></div>`;
-    $("aForm").onsubmit = e => { e.preventDefault(); const f = $("aFile").files[0]; toast("Uploading…"); act(() => upload("app", f, $("aLabel").value).then(() => e.target.reset()), "App uploaded"); };
+    $("aForm").onsubmit = e => { e.preventDefault(); const f = $("aFile").files[0]; toast("Uploading…"); act(() => upload("app", f, $("aLabel").value, $("aNotes").value.trim()).then(() => e.target.reset()), "App uploaded"); };
     $("fForm").onsubmit = e => { e.preventDefault(); const f = $("fFile").files[0]; toast("Uploading…"); act(() => upload("file", f).then(() => e.target.reset()), "File uploaded"); };
     $("view").onclick = e => {
       const all = e.target.closest("[data-dlall]")?.dataset.dlall;
@@ -1497,32 +1654,73 @@ VIEWS.apps = (arg, first) => {
       if (!b) return;
       const [kind, id] = [b.dataset.kind, b.dataset.id];
       if (b.dataset.x === "send") chooseDevices(kind === "apps" ? "install" : "file", list => command(list, kind === "apps" ? "install" : "file", kind === "apps" ? { appId: id } : { fileId: id }));
+      if (b.dataset.x === "notes") appNotes(id);
       if (b.dataset.x === "kiosk") act(() => api(`/api/apps/${id}/kiosk`, {}), "Used for QR enrollment");
       if (b.dataset.x === "del" && confirm("Delete this upload?")) act(() => api(`/api/${kind}/${id}/delete`, {}), "Deleted");
     };
   }
-  $("aRows").innerHTML = S.apps.slice().reverse().map(a => `<tr><td class="name">${esc(a.label)}</td><td>${fmtSize(a.size)}</td><td class="meta">${ago(a.at)}</td>
+  $("aRows").innerHTML = S.apps.slice().reverse().map(a => `<tr><td class="name">${esc(a.label)}</td>
+      <td class="click" data-x="notes" data-id="${a.id}" title="View / edit the release notes" style="max-width:260px">${a.notes ? esc(a.notes.split("\n")[0].slice(0, 70)) + (a.notes.length > 70 || a.notes.includes("\n") ? "…" : "") : `<span class="meta">+ Add notes</span>`}
+        ${a.by ? `<div class="meta">by ${esc(a.by)}</div>` : ""}</td><td>${fmtSize(a.size)}</td><td class="meta">${ago(a.at)}</td>
       <td>${S.kioskApp === a.id ? `<span class="pill ok">Used for QR enrollment</span>` : `<button class="btn ghost" data-x="kiosk" data-kind="apps" data-id="${a.id}">Use for QR</button>`}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="apps" data-id="${a.id}">Install on devices…</button>
       <a class="btn" href="/download/app/${a.id}.apk" download>⬇ Download</a>
-      <button class="btn ghost" data-x="del" data-kind="apps" data-id="${a.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No apps uploaded</td></tr>`;
+      <button class="btn ghost" data-x="del" data-kind="apps" data-id="${a.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No apps uploaded</td></tr>`;
   $("fRows").innerHTML = S.files.slice().reverse().map(f => `<tr><td class="name">${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td class="meta">${ago(f.at)}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="files" data-id="${f.id}">Send to devices…</button>
       <a class="btn" href="/download/file/${f.id}" download>⬇ Download</a>
       <button class="btn ghost" data-x="del" data-kind="files" data-id="${f.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="4" class="empty">No files uploaded</td></tr>`;
 };
 
-// Pick which devices get an app / file: all, a site, a type, or the ones ticked on the Devices page.
+// Release notes of an uploaded app: shown and edited in one box (optional, kept as a record).
+function appNotes(id) {
+  const a = S.apps.find(x => x.id === id);
+  if (!a) return;
+  dialog(`<h2>${esc(a.label)}</h2><p class="meta">Uploaded ${new Date(a.at).toLocaleString()}${a.by ? " by " + esc(a.by) : ""}</p>
+    <label class="meta">Release notes</label><textarea id="anText" rows="9" maxlength="2000" style="width:min(560px,80vw);display:block" placeholder="What's new / fixed in this version">${esc(a.notes || "")}</textarea>`,
+    "Save", () => act(() => api(`/api/apps/${id}/notes`, { notes: $("anText").value.trim() }), "Release notes saved"));
+}
+
+// Pick which devices get an app / file: sites on the left; pointing at one (or clicking / focusing it) lists its devices
+// on the right to tick. The site box ticks its whole site. Starts with the devices ticked on the Devices page.
 function chooseDevices(cmd, done) {
   const able = S.devices.filter(d => (S.commands[d.type] || []).includes(cmd));
   if (!able.length) return toast("No devices can do this yet", true);
-  dialog(`<h2>Choose devices</h2><select id="cdT" style="width:100%">${picked.size ? `<option value="picked">${picked.size} selected on the Devices page</option>` : ""}${targetSelect()}</select>
-    <p class="meta">Only Android devices running the kiosk app can receive apps and files (${able.length} now).</p>`, "Next", () => {
-      const v = $("cdT").value, t = v === "picked" ? null : parseTarget(v);
-      const list = (v === "picked" ? [...picked].map(dev) : S.devices.filter(d => t.all || (t.group != null ? (d.group || "") === t.group : d.type === t.type)))
-        .filter(d => d && able.includes(d));
-      list.length ? done(list) : toast("None of those devices can do this", true);
-    });
+  const sel = new Set(able.filter(d => picked.has(d.id)).map(d => d.id));
+  const of = g => able.filter(d => (d.group || "") === g), sites = groups().filter(g => of(g).length);
+  const verb = cmd === "install" ? "Install on" : "Send to", n = k => `${k} device${k === 1 ? "" : "s"}`;
+  let cur = sites[0];
+  dialog(`<h2>Choose devices</h2>
+    <p class="meta">Point at a site to see its devices, then tick the ones you want. Only Android devices running the kiosk app can receive apps and files (${able.length} now).</p>
+    <div class="cd-grid"><div class="cd-list" id="cdSites"></div><div class="cd-list" id="cdDevs"></div></div><p class="meta" id="cdN"></p>`,
+    verb + " devices", () => { const list = able.filter(d => sel.has(d.id)); list.length ? done(list) : toast("Tick at least one device", true); });
+  const ok = $("dlg").querySelector('button[value="ok"]');
+  const render = () => {
+    $("cdSites").innerHTML = `<label class="cd-row" data-site="__all"><input type="checkbox" ${sel.size === able.length ? "checked" : ""}><b class="grow">All sites</b><span class="meta">${able.length}</span></label>`
+      + sites.map(g => {
+        const k = of(g).filter(d => sel.has(d.id)).length, t = of(g).length;
+        return `<label class="cd-row ${g === cur ? "on" : ""}" data-site="${esc(g)}"><input type="checkbox" ${k === t ? "checked" : ""} ${k && k < t ? "data-part" : ""}>
+          <span class="grow">${esc(groupName(g))}</span><span class="meta">${k ? k + " / " : ""}${t}</span></label>`;
+      }).join("");
+    $("cdSites").querySelectorAll("[data-part]").forEach(i => (i.indeterminate = true));
+    $("cdDevs").innerHTML = `<div class="meta" style="padding:4px 9px"><b>${esc(groupName(cur))}</b></div>` + of(cur).map(d => `<label class="cd-row">
+      <input type="checkbox" data-dev="${esc(d.id)}" ${sel.has(d.id) ? "checked" : ""}><span class="code">${esc(d.code || "")}</span>
+      <span class="grow">${esc(label(d))} <span class="meta">· ${esc(TYPES[d.type] || d.type)}</span></span>${statusPill(d)}</label>`).join("");
+    $("cdN").textContent = n(sel.size) + " selected";
+    ok.textContent = `${verb} ${n(sel.size)}`;
+  };
+  const show = e => { const g = e.target.closest("[data-site]")?.dataset.site; if (g != null && g !== "__all" && g !== cur) { cur = g; render(); } };
+  $("cdSites").onmouseover = $("cdSites").onfocusin = show;
+  $("cdSites").onclick = e => {
+    const g = e.target.closest("[data-site]")?.dataset.site;
+    if (g == null) return;
+    if (e.target.tagName !== "INPUT") { e.preventDefault(); return show(e); } // the name only shows the site (touch screens)
+    for (const d of g === "__all" ? able : of(g)) e.target.checked ? sel.add(d.id) : sel.delete(d.id);
+    if (g !== "__all") cur = g;
+    render();
+  };
+  $("cdDevs").onchange = e => { const id = e.target.dataset.dev; if (id) { e.target.checked ? sel.add(id) : sel.delete(id); render(); } };
+  render();
 }
 
 // Announcements: a message and/or picture that pops up on the kiosk devices until someone taps Acknowledge.
@@ -1665,7 +1863,7 @@ const FEATURES = [
   ["Offline mode (local network)", "done", "Runs fully on this PC's network, no internet needed"],
   ["Windows / Linux support", "done", "agents/agent.ps1 and agents/agent.sh"],
   ["Mobile admin app", "partial", "Portal works on phones and can be added to the home screen"],
-  ["Performance monitoring", "partial", "Memory / storage / battery trends; per-app usage not yet"],
+  ["Performance monitoring", "partial", "CPU load, RAM, storage and temperature gauges on each device's page; per-app usage not yet"],
   ["Rooted & non-rooted support", "partial", "Works without root (device owner); root-only extras not yet"],
   ["Remote control (VNC screen control)", "next", "Next phase. Android asks for consent each session unless the app is system-signed (Telpo) or the device is rooted"],
   ["Screen recording", "next", "Comes with remote control"],
@@ -2364,7 +2562,8 @@ $("maxSpeak").onclick = () => {
 maxSpeakBtn();
 // "Max moves around": off = he stays in his corner (still talks and points from there)
 const moveBtn = () => { $("maxMove").style.opacity = window.MaxBot?.moves ? 1 : 0.4; $("maxMove").title = window.MaxBot?.moves ? "Max flies around the page (click to keep him in the corner)" : "Max stays in the corner (click to let him fly around)"; };
-addEventListener("maxbot-ready", () => { $("maxMove").hidden = false; moveBtn(); });
+addEventListener("maxbot-ready", () => { $("maxMove").hidden = $("maxSleep").hidden = false; moveBtn(); });
+$("maxSleep").onclick = () => { maxOpen(false); window.MaxBot.sleeping = true; };
 $("maxMove").onclick = () => { window.MaxBot.moves = !window.MaxBot.moves; moveBtn(); };
 $("maxLog").onclick = async e => {
   const h = e.target.closest("[data-hint]");
@@ -2416,6 +2615,8 @@ const SIZE = small() ? 120 : 168;            // canvas size in CSS px
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let moves = true;                           // "Max moves around" (panel toggle), per browser
 try { moves = localStorage.getItem("maxMoves") !== "off"; } catch {}
+let sleeping = false;                       // "Max sleeps" (panel 🌙), per browser: quiet until clicked; alerts still wake him
+try { sleeping = localStorage.getItem("maxSleep") === "on"; } catch {}
 
 // ---- stage: a small transparent canvas that travels over the page (cheaper than a full-screen one) ----
 const el = document.createElement("div");
@@ -2556,7 +2757,7 @@ function pointAt(target, text, { ms = 6500, tone = "", alert = false, stay = fal
       else play("T_Fly_To_Point", { once: true, then: () => { play("Point_In", { once: true, then: () => loop("Point_Hold") }); } });
       mode = "point";
       clearTimeout(pointTimer);
-      pointTimer = setTimeout(() => { holderFace = 0; play("Point_Out", { once: true }); setTimeout(() => goHome(), 700); }, ms);
+      pointTimer = setTimeout(() => { holderFace = 0; play("Point_Out", { once: true }); setTimeout(() => goHome(doze), 700); }, ms);
     });
   }, stay ? 0 : 350);
 }
@@ -2576,11 +2777,20 @@ function talk(text) {
 let talkTimer;
 function greet() { play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") }); }
 
+// ---- sleep: dimmed in his corner with 💤 and quiet; an alert wakes him for its message, then he dozes off again ----
+function doze() { if (!sleeping) return; el.classList.add("asleep"); mixer.timeScale = 0.25; loop("Idle_Hover"); }
+function rouse() { el.classList.remove("asleep"); mixer.timeScale = 1; }
+function setSleep(v) {
+  sleeping = v;
+  try { localStorage.setItem("maxSleep", v ? "on" : "off"); } catch {}
+  if (v) { stopTour(); homeOverride = null; goHome(doze); } else { rouse(); play("Notice_User", { once: true, then: greet }); }
+}
+
 // ---- idle life: small one-shot fidgets; bored after a few quiet minutes ----
 let lastUser = Date.now();
 for (const ev of ["pointerdown", "keydown", "wheel"]) addEventListener(ev, () => (lastUser = Date.now()), { passive: true });
 setInterval(() => {
-  if (mode !== "idle" || document.hidden) return;
+  if (mode !== "idle" || document.hidden || sleeping) return;
   if (Date.now() - lastUser > 3 * 60000) return play("Bored", { once: true });
   if (Math.random() < 0.45) play(pick(["Idle_Adjust_Cap", "Idle_Check_Watch", "Look_Around", "Idle_Stretch", "Idle_Scan_Patrol", "Idle_Boot_Check", "Idle_Hover_B"]), { once: true });
 }, 9000);
@@ -2605,6 +2815,7 @@ canvas.addEventListener("pointerup", () => {
   if (d?.moved) { homeOverride = { x: pos.x, y: pos.y }; return; } // stays where it was dropped
   const p = panel();
   stopTour(); // stops a running tour
+  if (sleeping) setSleep(false); // clicking wakes him
   if (p.hidden) { maxOpen(true); setTimeout(() => goHome(), 50); }
   maxHello();
 });
@@ -2641,6 +2852,7 @@ function frame(now) {
 const h0 = home();
 pos.x = h0.x; pos.y = h0.y; place();
 loop("Idle_Hover");
+doze(); // asleep since last time
 requestAnimationFrame(frame);
 addEventListener("resize", () => { if (!flight && mode === "idle" && !homeOverride) { const h = home(); pos.x = h.x; pos.y = h.y; place(); } });
 
@@ -2649,7 +2861,7 @@ window.MaxBot = {
   listen, think, greet, say, goHome,
   talk(text) { talk(text); },
   // the panel opened / closed: dock next to it or back to the corner
-  dock() { if (!homeOverride) goHome(); },
+  dock() { if (!homeOverride && !sleeping) goHome(); },
   // after an answer: point at the first device / ticket it mentions if it is on the page
   answered(text, proposals) {
     talk(text);
@@ -2658,17 +2870,18 @@ window.MaxBot = {
     if (proposals?.length) setTimeout(() => pointAt(document.querySelector("#maxLog [data-go]"), "Press Confirm if that's right.", { stay: true, ms: 5000 }), 900);
     else if (target && moves) setTimeout(() => pointAt(target, `${d.code} · ${label(d)}`), 1200);
   },
-  alert(target, text) { if (moves) pointAt(target, text, { alert: true, tone: "bad", ms: 7000, stay: true }); else say(text, 7000, "bad"); },
-  tip(target, text) { if (!tourOn && moves && text) pointAt(target, text, { ms: 5500, stay: true }); },
+  alert(target, text) { rouse(); if (moves) pointAt(target, text, { alert: true, tone: "bad", ms: 7000, stay: true }); else say(text, 7000, "bad"); },
+  tip(target, text) { if (!tourOn && !sleeping && moves && text) pointAt(target, text, { ms: 5500, stay: true }); },
   announce(text, { ms = 12000, tone = "", onClick } = {}) {
     clearTimeout(pointTimer);
     holderFace = 0;
+    rouse();
     flyTo((innerWidth - SIZE) / 2, (innerHeight - SIZE) / 2, () => {
       say(text, ms, (tone + " announce").trim());
       bubble.onclick = () => { bubble.hidden = true; onClick?.(); };
       play("T_Fly_To_Alert", { once: true, then: () => loop("Alert_Critical_Wave") });
       mode = "point";
-      pointTimer = setTimeout(() => { bubble.onclick = () => (bubble.hidden = true); goHome(); }, ms);
+      pointTimer = setTimeout(() => { bubble.onclick = () => (bubble.hidden = true); goHome(doze); }, ms);
     });
   },
   pointAt, flyTo,
@@ -2683,6 +2896,8 @@ window.MaxBot = {
     tourStep();
   },
   stopTour,
+  get sleeping() { return sleeping; },
+  set sleeping(v) { setSleep(!!v); },
   get moves() { return moves; },
   set moves(v) { moves = v; try { localStorage.setItem("maxMoves", v ? "on" : "off"); } catch {} if (!v) { homeOverride = null; goHome(); } },
 };

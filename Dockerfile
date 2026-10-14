@@ -6,6 +6,7 @@ WORKDIR /app
 
 COPY functions/server.js ./functions/server.js
 COPY dashboard ./dashboard
+COPY agents ./agents
 
 ENV PORT=8080
 ENV DATA_DIR=/app/server
