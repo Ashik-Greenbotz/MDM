@@ -377,6 +377,7 @@
   <button class="btn icon" id="soundBtn" title="Alarm sound when a device goes offline"></button>
   <button class="btn" id="mapBtn" title="Live location of all devices"><span class="mapico"></span>Map</button>
   <a class="btn bell" href="#/alerts" title="Open alerts"><span class="bellico"></span><b id="bellN" hidden></b></a>
+  <button class="btn" id="vpnBtn" title="Connect my laptop / phone to the devices' VPN" hidden>🔒 VPN</button>
   <span class="who" id="who"></span><button class="btn" id="logout" title="Sign out"><span class="outico"></span><span class="t">Sign out</span></button>
 </header>
 <div class="layout">
@@ -513,6 +514,7 @@ async function refresh() {
   $("bellN").hidden = !n;
   $("bellN").textContent = n;
   $("who").innerHTML = S.me ? `${ico("user-round")}<span class="t">${esc(S.me.name || S.me.username)}</span>${S.me.readOnly ? `<span class="pill neutral">View only</span>` : ""}` : "";
+  $("vpnBtn").hidden = !(S.vpnReady && S.me?.admin);
   $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}` : "";
   renderNav();
   renderAlarm();
@@ -921,6 +923,29 @@ function rowClick(e) {
   location.hash = "#/device/" + encodeURIComponent(d.id);
 }
 
+// The signed-in admin's own WireGuard config (same every time): download, QR for the phone app, or copy.
+async function vpnMe() {
+  try {
+    const r = await api("/api/vpn/me", {});
+    const qr = qrcode(0, "M");
+    qr.addData(r.conf);
+    qr.make();
+    const url = URL.createObjectURL(new Blob([r.conf], { type: "text/plain" }));
+    dialog(`<h2>Connect my laptop / phone</h2>
+      <p class="meta">Your VPN address: <b>${esc(r.address || "–")}</b>. Keep this file private: it is your key to the VPN.</p>
+      <ol class="meta" style="padding-left:18px;line-height:1.6">
+        <li>Install WireGuard (<a href="https://www.wireguard.com/install/" target="_blank" rel="noopener">wireguard.com/install</a>).</li>
+        <li>Laptop: <b>Import tunnel(s) from file</b> → the downloaded <b>mdm-vpn.conf</b>. Phone: <b>+</b> → <b>Scan from QR code</b>.</li>
+        <li><b>Activate</b> it, then use the VPN commands on the device pages.</li></ol>
+      <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap"><div class="qr" style="width:210px;background:#fff;padding:6px;border-radius:10px">${qr.createSvgTag({ cellSize: 3, margin: 2, scalable: true })}</div>
+        <div style="flex:1;min-width:220px"><a class="btn primary" href="${url}" download="mdm-vpn.conf">⬇ Download mdm-vpn.conf</a>
+          <pre class="log" id="vpnConf" style="margin-top:8px;max-height:200px;white-space:pre-wrap;word-break:break-all">${esc(r.conf)}</pre>
+          <button type="button" class="btn ghost" id="vpnCopy">Copy</button></div></div>`);
+    $("vpnCopy").onclick = () => navigator.clipboard.writeText(r.conf).then(() => toast("Copied"));
+  } catch (e) { toast("VPN: " + e.message, true); }
+}
+$("vpnBtn").onclick = vpnMe;
+
 function renderBulk() {
   if (document.activeElement?.closest("#bulk")) return; // the user is choosing a command: don't rebuild it under them
   const sel = [...picked].map(dev).filter(Boolean);
@@ -930,6 +955,7 @@ function renderBulk() {
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
     ${S.sshReady ? `<button class="btn" data-bssh="1">SSH on</button><button class="btn" data-bssh="">SSH off</button>` : ""}
+    ${S.vpnReady && me().admin ? `<button class="btn" data-bvpn="1">VPN on</button><button class="btn" data-bvpn="">VPN off</button>` : ""}
     <button class="btn danger" id="bDel">Remove</button>
     <button class="btn ghost" id="bClear">Clear selection</button></div>`;
   $("bCmd").onchange = e => { if (e.target.value) command(sel, e.target.value); e.target.value = ""; };
@@ -939,6 +965,8 @@ function renderBulk() {
   $("bClear").onclick = () => { picked.clear(); route(true); };
   for (const b of $("bulk").querySelectorAll("[data-bssh]")) b.onclick = () =>
     act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "ssh", on: !!b.dataset.bssh }), `Remote SSH ${b.dataset.bssh ? "on" : "off"}`);
+  for (const b of $("bulk").querySelectorAll("[data-bvpn]")) b.onclick = () =>
+    act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "vpn", on: !!b.dataset.bvpn }), `VPN ${b.dataset.bvpn ? "on" : "off"}`);
 }
 
 function deviceMenu(btn, d) {
@@ -1223,6 +1251,7 @@ VIEWS.device = async (id, first) => {
             <div class="row" style="margin-top:6px"><span class="meta">1. Tunnel password:</span><code id="dSshTun" style="user-select:all"></code><button class="btn ghost" data-copy="dSshTun">Copy</button></div>
             <div class="row" style="margin-top:6px"><span class="meta">2. Tablet login password:</span><code id="dSshPass" style="user-select:all"></code><button class="btn ghost" data-copy="dSshPass">Copy</button></div></div></div></div>
       <div class="card" id="dRemoteCard" hidden><h3>Remote access</h3><div class="pad" id="dRemote"></div></div>
+      <div class="card" id="dVpnCard" hidden><h3>VPN<span class="grow"></span><span id="dVpnState"></span></h3><div class="pad" id="dVpn"></div></div>
       <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
         <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
@@ -1236,6 +1265,9 @@ VIEWS.device = async (id, first) => {
       if (r && !confirm(`${r === "off" ? "Relay OFF (lock the door)" : r === "on" ? "Relay ON (door stays open until Relay OFF)" : `Pulse ${$("dPulse").value} s (opens the door)`} on ${label(dev(id))}?\n\nThis switches the real door relay.`)) return;
       if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
         { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
+      const vb = e.target.closest("[data-vpn]");
+      if (vb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/vpn`, { on: !!vb.dataset.vpn }), `VPN ${vb.dataset.vpn ? "on" : "off"}`);
+      if (e.target.closest("[data-vpnme]")) return vpnMe();
       const sb = e.target.closest("[data-ssh]");
       if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
       const cp = e.target.closest("[data-copy]");
@@ -1306,6 +1338,20 @@ VIEWS.device = async (id, first) => {
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
   const rm = d.remote || {}, copyBox = (cid, text) => `<div class="row" style="margin-top:6px"><code id="${cid}" style="user-select:all">${esc(text)}</code><button class="btn ghost" data-copy="${cid}">Copy</button></div>`;
   $("dRemoteCard").hidden = d.type !== "windows";
+  // VPN (WireGuard, admins): the device gets a private address; the commands below work from a laptop / phone on the VPN too
+  const vpnOk = S.vpnReady && me().admin && ["android-kiosk", "windows", "linux"].includes(d.type);
+  $("dVpnCard").hidden = !vpnOk;
+  if (vpnOk) {
+    const va = d.vpnAddress;
+    const vcmds = !va ? [] : d.type === "windows" ? [["SSH", `ssh ${rm.sshUser || "<user>"}@${va}`], ["Remote desktop (Windows)", `mstsc /v:${va}`], ["RustDesk direct (IP)", va]]
+      : d.type === "linux" ? [["SSH", `ssh <user>@${va}`]] : [["ADB", `adb connect ${va}:5555`], ["Screen (scrcpy)", `scrcpy -s ${va}:5555`]];
+    $("dVpnState").innerHTML = !d.vpn ? `<span class="pill">OFF</span>` : d.vpnUp ? `<span class="pill ok">Connected</span>` : `<span class="pill warn">Connecting…</span>`;
+    $("dVpn").innerHTML = `<div class="row"><button class="btn primary" data-vpn="1">VPN ON</button><button class="btn" data-vpn="">VPN OFF</button>
+        <span class="meta">${va ? `Address <b>${esc(va)}</b>` : "The device joins the private network (WireGuard) and gets its own address."}</span></div>
+      ${vcmds.map(([t, c], i) => `<p class="meta" style="margin:10px 0 0">${esc(t)}</p>${copyBox("dVpnC" + i, c)}`).join("")}
+      ${d.vpn ? `<p class="meta" style="margin:12px 0 0">Your laptop / phone must be on the VPN too: <button type="button" class="btn ghost" data-vpnme>🔒 Connect my laptop / phone</button>${S.vpnMine ? " (already set up)" : ""}</p>` : ""}
+      ${d.type === "android-kiosk" && d.vpn && d.vpnUp == null ? `<p class="meta">Tablets need app 10.19 or newer for the VPN.</p>` : ""}`;
+  }
   if (d.type === "windows") $("dRemote").innerHTML = `
     <h4 style="margin:0 0 6px">Remote desktop (RustDesk)${rm.rustdeskId ? ` <span class="pill ok">Ready</span>` : rm.rustdesk ? ` <span class="pill warn">Installed, no ID yet</span>` : ` <span class="pill">Not set up</span>`}</h4>
     ${rm.rustdeskId ? `<div class="row"><span class="meta">ID</span></div>${copyBox("dRdId", rm.rustdeskId)}
