@@ -518,16 +518,21 @@ public class DeviceService extends Service {
         handler.postDelayed(() -> net.execute(this::report), 3000);
     }
 
-    // ---- door relay (Telpo F8, F10B: sysfs file; other devices have none) ----
-    private static final File RELAY = new File("/sys/class/gpio-ctrl/relay1/enable");
-    // F10B (rk3568) is wired the other way: "0" opens the door, "1" locks it.
-    private static final boolean RELAY_INVERTED = "F10B".equals(Build.MODEL);
-    private static final String RELAY_ON = RELAY_INVERTED ? "0" : "1", RELAY_OFF = RELAY_INVERTED ? "1" : "0";
+    // ---- door relay (Telpo F8, F10B, F10: sysfs file; other devices have none) ----
+    // F8/F10B: readable and writable by the app. F10 (msm8953): write-only, root only, so it goes through su
+    // and its state is the last value we wrote (PREF_RELAY).
+    private static final File RELAY_GPIO = new File("/sys/class/gpio-ctrl/relay1/enable");
+    private static final File RELAY_TELPOIO = new File("/sys/class/telpoio/relay_en");
+    private static final File RELAY = RELAY_GPIO.exists() ? RELAY_GPIO : RELAY_TELPOIO;
+    private static final String PREF_RELAY = "relay";
+    // All our terminals are wired the same way: "0" opens the door (relay ON), "1" locks it (relay OFF).
+    private static final String RELAY_ON = "0", RELAY_OFF = "1";
     private final Runnable relayOff = () -> setRelay(false, 0);
 
     // null = this device has no relay.
-    private static Boolean relayState() {
+    private Boolean relayState() {
         if (!RELAY.exists()) return null;
+        if (!RELAY.canRead()) return getSharedPreferences("kiosk", MODE_PRIVATE).getBoolean(PREF_RELAY, false);
         try (BufferedReader r = new BufferedReader(new java.io.FileReader(RELAY))) {
             return RELAY_ON.equals(r.readLine().trim());
         } catch (Exception e) {
@@ -543,15 +548,31 @@ public class DeviceService extends Service {
             return;
         }
         boolean value = on || seconds > 0;
-        try (java.io.FileWriter w = new java.io.FileWriter(RELAY)) {
-            w.write(value ? RELAY_ON : RELAY_OFF);
+        try {
+            writeRelay(value ? RELAY_ON : RELAY_OFF);
         } catch (Exception e) {
             Log.w(TAG, "relay write failed", e);
             event(this, "Relay failed: " + e.getMessage());
             return;
         }
+        getSharedPreferences("kiosk", MODE_PRIVATE).edit().putBoolean(PREF_RELAY, value).apply();
         if (seconds > 0) handler.postDelayed(relayOff, seconds * 1000L);
         net.execute(this::report);
+    }
+
+    private static void writeRelay(String v) throws Exception {
+        if (RELAY.canWrite()) {
+            try (java.io.FileWriter w = new java.io.FileWriter(RELAY)) {
+                w.write(v);
+            }
+            return;
+        }
+        Process p = new ProcessBuilder("su", "0", "sh", "-c", "echo " + v + " > " + RELAY.getPath()).redirectErrorStream(true).start();
+        if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            p.destroy();
+            throw new Exception("su timed out");
+        }
+        if (p.exitValue() != 0) throw new Exception("su exit " + p.exitValue());
     }
 
     // Portal "Allowed apps": same effect as the admin menu's app picker. KioskActivity redraws its tiles via its pref listener.

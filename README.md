@@ -49,12 +49,13 @@ other Android / Telpo (lock screen, ring, restart, screenshot, install app, send
 
 Tablet admin menu: 6 taps top-right → password. **Server address** changes the server; **Theme** is Auto (follows the system), Light or Dark.
 
-## Door relay (Telpo F8, F10B)
-The Telpo F8 and F10B intercoms have a relay for a door lock. On its device page, **Relay (door)**:
+## Door relay (Telpo F8, F10B, F10)
+The Telpo F8, F10B and F10 intercoms have a relay for a door lock. On its device page, **Relay (door)**:
 - **Relay ON** / **Relay OFF**, or **⚡ Pulse** N seconds (on, then off by itself: opens the door).
 - **Maintenance mode switches the relay** (ticked by default): relay ON when maintenance starts, OFF when it ends.
 
-The card shows the state the tablet reports. Needs app 10.10 or newer. The app writes `1` / `0` to `/sys/class/gpio-ctrl/relay1/enable` (on / off). The F10B is wired the other way, so on it the app writes `0` for on (door open) and `1` for off.
+The card shows the state the tablet reports. Needs app 10.10 or newer. The app writes to `/sys/class/gpio-ctrl/relay1/enable` (F8, F10B): `0` for on (door open) and `1` for off (locked), the same on every device since app 10.13.
+The F10 (Android 9) has its relay at `/sys/class/telpoio/relay_en`, which only root can write and nobody can read: app 10.13 or newer writes it through `su` and reports the last value it wrote.
 
 ## Our devices (13 Oct 2026)
 | Device | Android | Connection | Production Device ID |
