@@ -17,6 +17,7 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 - A push to **`main`** that changes `functions/server.js`, `dashboard/`, or the Docker/Caddy files is built and deployed automatically (GitHub Actions `docker-deploy.yml`; follow it in the repo's **Actions** tab). Other files (README, app) don't trigger a deploy.
 - Work on **`dev`**, then merge `dev` into `main` to go live. `main` has merge commits that `dev` doesn't, so always merge (no rebase, no force-push).
 - Commit only the files you changed (`git add <file>`, not `git add -A`). Keys never go to GitHub (see **Security**).
+- **New app version going live:** after the merge, upload the APK to production Apps & files: `node publish-apk.js <file.apk> <version> "release notes"` (needs `PROD_USER` / `PROD_PASSWORD` in `functions/.env`; `PROD_URL` overrides the default https://mdm.gbotz.site). It is labelled `Kiosk app v<version>` and set as the kiosk app. Each tablet's page then shows **Update available** with an **⬆ Update to latest version** button, which installs silently (device-owner tablets: no prompt, the kiosk screen comes back by itself, settings are kept).
 
 ## Portal pages
 - **Overview**: totals, devices per type and per site, open alerts, **🛠 Maintenance on all / off all**. **🗺 Map** (top bar) opens satellite view of all devices, with a **site** filter and a **device name / ID search**. A device without its own GPS shows at its site's coordinates (hollow marker); set them in Sites → Edit.
