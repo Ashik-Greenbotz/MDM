@@ -2214,7 +2214,7 @@ VIEWS.config = (arg, first) => {
         ${S.maintImage ? `<img class="shot" src="/api/config/maintenance-image?t=${S.maintImage}" alt="Maintenance image" style="max-height:220px;margin:0">`
           : `<div class="shot-msg" style="padding:16px;border:1px dashed var(--line);border-radius:14px;min-width:200px"><div style="font-size:34px">🛠</div><b>Built-in image</b><p class="meta">"System Maintenance"</p></div>`}
         <div><label class="btn" style="cursor:pointer">Upload image…<input type="file" id="cfgImg" accept="image/*" hidden></label>
-          ${S.maintImage ? `<button class="btn ghost" id="cfgImgReset">Use built-in image</button>` : ""}
+          ${S.maintCustom ? `<button class="btn ghost" id="cfgImgReset">Use default image</button>` : `<span class="pill neutral">Default image</span>`}
           <p class="meta" style="max-width:360px">Shown full screen on every device in maintenance. Portrait works best on tablets. Devices pick it up on their next check-in (needs the latest tablet app).</p></div></div>
     </div></div>
     <div class="card"><h3>⚡ Door relay per device type</h3>
@@ -2260,7 +2260,7 @@ VIEWS.config = (arg, first) => {
   if ($("cfgImgReset")) $("cfgImgReset").onclick = () => act(async () => {
     const r = await fetch("/api/config/maintenance-image?reset=1", { method: "POST" });
     if (!r.ok) throw new Error("HTTP " + r.status);
-  }, "Built-in maintenance image restored").then(() => VIEWS.config(null, true));
+  }, "Default maintenance image restored").then(() => VIEWS.config(null, true));
   // Relay rows: the detail fields only matter when the model has a relay.
   const sync = tr => tr.querySelectorAll("[data-f]:not([data-f=relay])").forEach(x => (x.disabled = tr.querySelector("[data-f=relay]").value !== "yes"));
   $("cfgRelay").querySelectorAll("tr").forEach(sync);

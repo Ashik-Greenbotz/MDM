@@ -66,14 +66,44 @@
   button#btn:hover::after { transform: translateX(100%); transition: transform .8s var(--ease); }
   button#btn:active { transform: scale(.98); }
   button#btn:disabled { cursor: default; }
-  /* "catch me" state after a wrong password: the button floats free and runs from the pointer (see dodge()) */
-  .card.tease #btn { position: fixed; left: 0; top: 0; width: 230px; margin: 0; z-index: 30;
-    background: linear-gradient(135deg, var(--bad), #ff6b6e); box-shadow: 0 12px 34px rgba(229,56,59,.45);
-    transition: left .18s var(--ease), top .18s var(--ease), background .3s, box-shadow .3s; }
-  .card.tease #btn:hover { transform: none; }
+  /* the button is a little ship: two jet flames under it, hovering. After a wrong password it breaks free (moved to
+     <body>, so the card's backdrop-filter doesn't trap position: fixed) and flies around the whole screen. */
+  .ship { position: relative; }
+  .ship:not(.free) .flame { display: none; } /* flames only while it's flying */
+  @keyframes hover { 50% { translate: 0 -5px; } }
+  .flame { position: absolute; top: 100%; width: 16px; height: 28px; margin-left: -8px; pointer-events: none; transform-origin: top center;
+    border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%; filter: drop-shadow(0 0 6px rgba(255,140,0,.9));
+    background: radial-gradient(ellipse at 50% 15%, #fff 0 14%, #ffe066 32%, #ff8a00 58%, rgba(255,60,0,.6) 70%, transparent 74%);
+    animation: flicker .09s ease-in-out infinite alternate; }
+  .flame:nth-of-type(1) { left: 24%; } .flame:nth-of-type(2) { left: 76%; animation-delay: -.05s; }
+  /* exhaust points away from where it's flying (data-dir set in dodge()); each flame pivots on its nozzle at the button edge */
+  .ship[data-dir="down"] .flame { top: 0; rotate: 180deg; }
+  .ship[data-dir="right"] .flame, .ship[data-dir="left"] .flame { left: 0; rotate: 90deg; }
+  .ship[data-dir="left"] .flame { left: 100%; rotate: -90deg; }
+  .ship[data-dir="right"] .flame:nth-of-type(1), .ship[data-dir="left"] .flame:nth-of-type(1) { top: 30%; }
+  .ship[data-dir="right"] .flame:nth-of-type(2), .ship[data-dir="left"] .flame:nth-of-type(2) { top: 70%; }
+  @keyframes flicker { from { transform: scale(.85, .75); opacity: .8; } to { transform: scale(1, 1.15); opacity: 1; } }
+  .ship.free { position: fixed; left: 0; top: 0; width: 230px; margin: 0; z-index: 30; animation: hover 1.2s ease-in-out infinite;
+    transition: left .25s var(--ease), top .25s var(--ease); }
+  .ship.free .flame { height: 40px; }
+  .ship.free #btn { background: linear-gradient(135deg, var(--bad), #ff6b6e); box-shadow: 0 8px 22px rgba(229,56,59,.4); }
+  .ship.free #btn:hover { transform: none; }
+  .ship.win #btn { background: linear-gradient(135deg, #22c55e, #4ade80); box-shadow: 0 10px 30px rgba(34,197,94,.55); }
+  .ship.win { animation: rumble .06s linear infinite; } .ship.win .flame { height: 48px; }
+  @keyframes rumble { 50% { translate: 1.5px -1px; } }
+  .ship.go { transition: top 1.2s cubic-bezier(.55,0,.85,.4); } .ship.go .flame { height: 100px; }
+  .puff { position: fixed; z-index: 29; width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: rgba(210,210,220,.75); pointer-events: none;
+    animation: puff .7s ease-out forwards; }
+  @keyframes puff { from { transform: scale(.4); } to { transform: scale(2.8); opacity: 0; } }
+  body.leaving .card { opacity: 0; transform: scale(.96); transition: opacity 1s .3s, transform 1s .3s; }
+  button#btn.fire { animation: kick .25s var(--ease); }
+  @keyframes kick { 30% { translate: 4px 0; } }
+  .bullet { position: fixed; z-index: 31; width: 16px; height: 4px; border-radius: 2px; background: #ffd23f; pointer-events: none;
+    box-shadow: 0 0 10px 3px rgba(255,170,0,.85); animation: shot .45s linear forwards; }
+  @keyframes shot { to { transform: translateX(var(--dx)); opacity: .2; } }
   button#btn .dot { display: none; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff;
     border-radius: 50%; animation: spin .8s linear infinite; }
-  button#btn:disabled .dot { display: inline-block; }
+  button#btn.busy .dot { display: inline-block; }
   .err { color: var(--bad); font-size: 14px; min-height: 1.5em; margin: -6px 0 10px; }
   .theme { position: fixed; top: 16px; right: 16px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--edge); background: var(--card);
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font-size: 18px; cursor: pointer; transition: transform .3s var(--ease); }
@@ -92,7 +122,7 @@
 <body>
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 <button class="theme" id="theme" type="button" aria-label="Change theme"></button>
-<form class="card" id="form">
+<form class="card" id="form" novalidate>
   <div class="logo-wrap"><img class="logo" src="/logo.png" alt="Interlock Group"></div>
   <h1>Device Remote Management</h1>
   <p class="sub">Sign in to manage your tablets</p>
@@ -101,7 +131,10 @@
   <label for="password">Password</label>
   <input id="password" type="password" autocomplete="current-password" required>
   <div class="err" id="err" role="alert"></div>
-  <button id="btn"><span class="dot"></span><span id="lbl">Sign in</span></button>
+  <div class="ship" id="ship">
+    <button id="btn" type="button"><span class="dot"></span><span id="lbl">Type to sign in</span></button>
+    <span class="flame" aria-hidden="true"></span><span class="flame" aria-hidden="true"></span>
+  </div>
 </form>
 <footer class="copy">2026 © Interlock Security Systems · Developed by Ashik</footer>
 <script>
@@ -121,60 +154,115 @@ function themeBtn(b, after) {
 themeBtn(document.getElementById("theme"));
 const card = document.getElementById("form"), btn = document.getElementById("btn"), lbl = document.getElementById("lbl");
 const shake = () => { card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake"); };
-// After a wrong password the button runs from the pointer and dares you to press Enter instead. Keyboard submit still
-// works (Enter), so it stays usable; reduced-motion users just get the new label, no chase.
+// No Enter, no click: the password is checked by itself once they stop typing. After a wrong one the button runs
+// around inside its box and shoots at the pointer. Reduced-motion users get the labels only, no chase or bullets.
 const pw = document.getElementById("password"), user = document.getElementById("user");
+const ship = document.getElementById("ship"), err = document.getElementById("err");
 const chase = !matchMedia("(prefers-reduced-motion: reduce)").matches;
 const NEAR = 95; // how close the pointer may get before the button bolts
-let teasing = false;
-// Leap to a random spot on the page, kept on-screen and away from the pointer (px,py) so it doesn't jump under it.
+const say = t => lbl.textContent = t;
+let teasing = false, busy = false, timer, lastTried = "";
+// Bang: the button kicks and a bullet flies out of its left edge off the screen.
+function fire() {
+  btn.classList.remove("fire"); void btn.offsetWidth; btn.classList.add("fire");
+  if (!chase) return;
+  const g = btn.getBoundingClientRect(), b = document.createElement("i");
+  const x = g.left - 16;
+  b.className = "bullet"; b.style.left = x + "px"; b.style.top = (g.top + g.height / 2 - 2) + "px";
+  b.style.setProperty("--dx", -(x + 40) + "px");
+  document.body.append(b); b.onanimationend = () => b.remove();
+}
+// Fly to a random spot on the screen (flames included, kept fully visible), away from the pointer (px,py).
 function dodge(px, py) {
-  const pad = 14, w = btn.offsetWidth, h = btn.offsetHeight;
+  const pad = 14, w = ship.offsetWidth, h = btn.offsetHeight + 46;
   let x, y, tries = 0;
   do {
     x = pad + Math.random() * Math.max(0, innerWidth - w - pad * 2);
     y = pad + Math.random() * Math.max(0, innerHeight - h - pad * 2);
   } while (++tries < 12 && px != null && Math.hypot(x + w / 2 - px, y + h / 2 - py) < 260);
-  btn.style.left = Math.round(x) + "px"; btn.style.top = Math.round(y) + "px";
+  const dx = x - parseFloat(ship.style.left), dy = y - parseFloat(ship.style.top);
+  ship.dataset.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up");
+  clearTimeout(ship.landed); ship.landed = setTimeout(() => delete ship.dataset.dir, 300); // hovering again: flames back below
+  ship.style.left = Math.round(x) + "px"; ship.style.top = Math.round(y) + "px";
 }
-// The button stays visible, floating free, and the game runs until the right password gets in (press Enter to submit).
+// Right password: turn green and rumble, then blast off the top of the screen in a puff of smoke and open the dashboard.
+function fly() {
+  if (!chase) return location.href = "/";
+  const r = ship.getBoundingClientRect();
+  document.body.append(ship); ship.className = "ship free win"; delete ship.dataset.dir;
+  ship.style.width = r.width + "px"; ship.style.left = r.left + "px"; ship.style.top = r.top + "px";
+  setTimeout(() => {
+    document.body.classList.add("leaving");
+    ship.classList.add("go"); ship.style.top = -r.height - 140 + "px";
+    setInterval(() => {
+      const s = ship.getBoundingClientRect();
+      for (const f of [.24, .76]) {
+        const p = document.createElement("i");
+        p.className = "puff"; p.style.left = s.left + s.width * f + "px"; p.style.top = s.bottom + 30 + "px";
+        document.body.append(p); p.onanimationend = () => p.remove();
+      }
+    }, 45);
+  }, 800);
+  setTimeout(() => location.href = "/", 2000);
+}
 function tease() {
-  lbl.textContent = "Enter the correct password";
   if (!chase || teasing) return;
   teasing = true;
-  const r = btn.getBoundingClientRect(); // start where it already is, then it will flee the pointer
-  card.classList.add("tease");
-  btn.style.left = Math.round(r.left) + "px"; btn.style.top = Math.round(r.top) + "px";
+  const r = ship.getBoundingClientRect(); // take off from where it sits in the card
+  document.body.append(ship); ship.classList.add("free");
+  ship.style.left = Math.round(r.left) + "px"; ship.style.top = Math.round(r.top) + "px";
 }
-// Flee whenever the pointer comes within NEAR px of the floating button (distance to its nearest edge).
+// Flee (and shoot) whenever the pointer comes within NEAR px of the button (distance to its nearest edge).
 addEventListener("pointermove", e => {
-  if (!teasing) return;
+  if (!teasing || busy) return;
   const r = btn.getBoundingClientRect();
   const dx = e.clientX - Math.max(r.left, Math.min(e.clientX, r.right));
   const dy = e.clientY - Math.max(r.top, Math.min(e.clientY, r.bottom));
-  if (Math.hypot(dx, dy) < NEAR) dodge(e.clientX, e.clientY);
+  if (Math.hypot(dx, dy) < NEAR) { fire(); dodge(e.clientX, e.clientY); }
 });
-btn.addEventListener("pointerdown", e => { if (teasing) { e.preventDefault(); dodge(e.clientX, e.clientY); } });
 addEventListener("resize", () => teasing && dodge());
-// Validate as they type: the moment the fields look ready again, nudge them to press Enter.
-const sayReady = () => { if (teasing) lbl.textContent = user.value.trim() && pw.value ? "Looks good — press Enter" : "Enter the correct password"; };
-pw.addEventListener("input", sayReady);
-user.addEventListener("input", sayReady);
-document.getElementById("form").onsubmit = async e => {
-  e.preventDefault();
-  const err = document.getElementById("err");
-  if (!user.value.trim() || !pw.value) { err.textContent = "Enter your username and password"; shake(); return; }
-  btn.disabled = true; err.textContent = "";
+// Clicking or Enter just checks right away (no waiting); empty fields get a nudge.
+const now = () => {
+  if (!user.value.trim() || !pw.value) { err.textContent = "Type your username and password"; shake(); return; }
+  clearTimeout(timer); check(true);
+};
+btn.addEventListener("pointerdown", e => { e.preventDefault(); if (teasing) { fire(); dodge(e.clientX, e.clientY); } else now(); });
+card.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); now(); } });
+card.onsubmit = e => e.preventDefault();
+// Validate as they type: try the login when they pause. A wrong answer from a pause stays quiet (they may still be
+// typing) and only shows if they stop for another WAIT ms. The same pair is never sent twice, and the server still
+// locks an IP out after 5 wrong tries a minute.
+const WAIT = 1500;
+let quiet;
+function queue() {
+  clearTimeout(timer); clearTimeout(quiet);
+  if (busy) return;
+  if (!user.value.trim() || pw.value.length < 4) return say(teasing ? "Enter the correct password" : "Type to sign in");
+  say("Checking…");
+  timer = setTimeout(check, 500);
+}
+function wrong(msg) {
+  err.textContent = msg; say("Wrong — enter the correct password");
+  tease(); fire(); shake();
+}
+async function check(loud) {
+  const key = user.value.trim() + "\n" + pw.value;
+  if (key === lastTried) { if (loud) shake(); return say("Enter the correct password"); }
+  busy = true; lastTried = key; btn.classList.add("busy"); err.textContent = "";
   try {
     const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user: user.value.trim(), password: pw.value }) });
-    if (r.ok) { location.href = "/"; return; }
-    err.textContent = (await r.json().catch(() => ({}))).error || "Sign-in failed";
-    tease();
-  } catch { err.textContent = "Cannot reach the server"; }
-  shake();
-  btn.disabled = false;
-};
+    if (r.ok) { say("🚀 Welcome!"); fly(); return; }
+    const msg = (await r.json().catch(() => ({}))).error || "Sign-in failed";
+    if (r.status === 429) lastTried = "";
+    if (loud || r.status === 429) wrong(msg); else quiet = setTimeout(() => wrong(msg), WAIT);
+  } catch { err.textContent = "Cannot reach the server"; lastTried = ""; shake(); }
+  busy = false; btn.classList.remove("busy");
+  if (user.value.trim() + "\n" + pw.value !== key) queue(); // they kept typing while we checked
+}
+pw.addEventListener("input", queue);
+user.addEventListener("input", queue);
+setTimeout(queue, 600); // browser autofill
 </script>
 </body>
 </html>
