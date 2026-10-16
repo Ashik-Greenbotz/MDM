@@ -12,6 +12,10 @@ services:
       DEVICE_KEY: ${DEVICE_KEY:?set a random DEVICE_KEY in .env}
       TIME_ZONE: ${TIME_ZONE:-Asia/Singapore}
       AGENT_KEY: ${AGENT_KEY:-} # optional: empty = the server makes one and keeps it
+      # Barrier control: the MQTT broker (login stays on the server)
+      MQTT_URL: ${MQTT_URL:-}
+      MQTT_USER: ${MQTT_USER:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       TUNNEL_PASSWORD: ${TUNNEL_PASSWORD:-}
       TUNNEL_HOST: ${TUNNEL_HOST:-}
       # Max, the AI assistant (optional)

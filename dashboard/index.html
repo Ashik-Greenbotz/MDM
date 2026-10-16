@@ -101,6 +101,14 @@
   .stat.ok .n { color: var(--ok); } .stat.bad .n { color: var(--bad); } .stat.warn .n { color: var(--warn); }
 
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 18px; }
+  /* Barrier control: two cameras side by side, two big open buttons under them */
+  .cams, .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 18px; }
+  .cam-box { aspect-ratio: 16 / 9; background: #0b0f17; border-radius: 0 0 14px 14px; overflow: hidden; display: grid; place-items: center; color: #94a3b8; }
+  .cam-box img, .cam-box iframe { width: 100%; height: 100%; object-fit: contain; border: 0; display: block; }
+  .gate { padding: 18px; text-align: center; }
+  .btn.gate-btn { width: 100%; font-size: 22px; padding: 22px 16px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .btn.gate-btn small { font-size: 13px; opacity: .85; font-weight: 500; }
+  .gate-state { margin-top: 12px; font-weight: 600; min-height: 22px; }
   .card { background: linear-gradient(180deg, var(--sheen), transparent 140px), var(--card); backdrop-filter: saturate(170%) blur(24px);
     -webkit-backdrop-filter: saturate(170%) blur(24px); border: 1px solid var(--edge); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 18px; transition: box-shadow .35s var(--ease), border-color .35s; }
   .card:hover { box-shadow: var(--shadow-hi); }
@@ -1673,7 +1681,7 @@ VIEWS.site = async (name, first) => {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
       <div class="row" style="margin-bottom:4px;gap:12px">${siteLogo(site, true)}<h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
-        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
+        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
       <div class="cols">
@@ -2195,7 +2203,93 @@ VIEWS.bug = async (id, first) => {
 // Honest status of every feature on the roadmap.
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)" };
+// ---------------- Barrier control (Remote Command Centre): two live cameras and the open buttons of one site ----------------
+// The server holds the MQTT broker login and the camera addresses; the page only sees names, states and results.
+const GATES = [["visitor", "Visitor Barrier"], ["resident", "Resident Barrier"]];
+const gateBusy = {};
+setInterval(() => document.querySelectorAll("img[data-snap]").forEach(i => { if (i.complete) i.src = i.dataset.snap + "&t=" + Date.now(); }), 1000); // snapshot cameras
+VIEWS.barrier = async (name, first) => {
+  if (first) {
+    $("view").innerHTML = `
+      <p><a href="#/site/${encodeURIComponent(name)}">← ${esc(name)}</a></p>
+      <div class="row" style="margin-bottom:14px;gap:12px"><h2 style="margin:0">🚧 Barrier Control</h2><span class="meta">${esc(name)}</span><span id="bMqtt"></span>
+        <span class="grow" style="flex:1"></span>${me().admin ? `<button class="btn" id="bSetup">⚙ Setup…</button>` : ""}</div>
+      <div class="cams">${[0, 1].map(i => `<div class="card" style="margin:0"><h3><span id="bCamName${i}">${i ? "Resident" : "Visitor"} barrier camera</span><span class="grow"></span><span id="bCamTag${i}"></span></h3>
+        <div class="cam-box" id="bCam${i}">Loading…</div></div>`).join("")}</div>
+      <div class="gates" style="margin:18px 0">${GATES.map(([k, l]) => `<div class="card gate" style="margin:0">
+        <button class="btn primary gate-btn" data-gate="${k}"><span id="bLabel-${k}">${l}</span><small>Open barrier</small></button>
+        <div class="gate-state" id="bState-${k}"></div><div class="meta" id="bRes-${k}"></div></div>`).join("")}</div>
+      <div class="card"><h3>Command log (audit)</h3><div class="table-wrap" style="max-height:320px"><table>
+        <thead><tr><th>Time</th><th>User</th><th>Barrier</th><th>Command</th><th>Result</th></tr></thead><tbody id="bLog"></tbody></table></div></div>`;
+    $("view").onclick = e => {
+      const g = e.target.closest("[data-gate]");
+      if (g) openGate(name, g.dataset.gate);
+      if (e.target.id === "bSetup") barrierSetup(name);
+    };
+  }
+  let st;
+  try { st = await api("/api/barrier?site=" + encodeURIComponent(name)); }
+  catch (e) { if ($("bMqtt")) $("bMqtt").innerHTML = `<span class="pill bad">${esc(e.message)}</span>`; return; }
+  if (!$("bLog") || decodeURIComponent(location.hash.split("/")[2] || "") !== name) return; // left the page meanwhile
+  $("bMqtt").innerHTML = !st.mqtt.configured ? `<span class="pill warn">MQTT broker not set up on the server</span>`
+    : st.mqtt.connected ? `<span class="pill ok">● MQTT connected</span>` : `<span class="pill bad">MQTT offline${st.mqtt.error ? ": " + esc(st.mqtt.error) : ""}</span>`;
+  st.cams.forEach((c, i) => {
+    $("bCamName" + i).textContent = c.name;
+    $("bCamTag" + i).innerHTML = c.set ? `<span class="pill bad">● LIVE</span>` : "";
+    const src = c.set ? (c.mode === "iframe" ? c.url : `/api/barrier/cam?site=${encodeURIComponent(name)}&i=${i}&v=${c.v}`) : "";
+    const box = $("bCam" + i);
+    if (box.dataset.src === src + c.mode) return; // keep the stream running across refreshes
+    box.dataset.src = src + c.mode;
+    box.innerHTML = !c.set ? `<span>No camera set up${me().admin ? " (⚙ Setup…)" : ""}</span>`
+      : c.mode === "iframe" ? `<iframe src="${esc(src)}" allow="autoplay; fullscreen" title="${esc(c.name)}"></iframe>`
+      : `<img alt="${esc(c.name)}" src="${esc(src)}"${c.mode === "snapshot" ? ` data-snap="${esc(src)}"` : ""} onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'Camera not reachable'}))">`;
+  });
+  for (const g of st.gates) {
+    $("bLabel-" + g.key).textContent = g.label;
+    const btn = document.querySelector(`[data-gate="${g.key}"]`);
+    btn.disabled = !!gateBusy[g.key] || !g.set || !st.mqtt.connected;
+    btn.title = !g.set ? "Not set up yet" : !st.mqtt.connected ? "MQTT broker offline" : "";
+    $("bState-" + g.key).innerHTML = g.state ? `Barrier state: <span class="pill ${/open/i.test(g.state) ? "ok" : /close/i.test(g.state) ? "" : "warn"}">${esc(g.state)}</span> <span class="meta">${ago(g.stateAt)}</span>`
+      : g.set ? `<span class="meta">${g.stateTopic ? "No state from the controller yet" : "No state feedback set up"}</span>` : `<span class="meta">Not set up yet</span>`;
+  }
+  $("bLog").innerHTML = st.log.map(x => `<tr><td>${new Date(x.at).toLocaleString()}</td><td>${esc(x.user)}</td><td>${esc(x.barrier)}</td><td><code>${esc(x.command)}</code></td>
+    <td><span class="pill ${x.ok ? "ok" : x.ok === false ? "bad" : "warn"}">${esc(x.result)}</span></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No commands yet</td></tr>`;
+};
+async function openGate(site, key) {
+  const label = $("bLabel-" + key).textContent;
+  if (gateBusy[key] || !confirm(`Open the ${label} at ${site}?`)) return;
+  gateBusy[key] = true;
+  const btn = document.querySelector(`[data-gate="${key}"]`), res = $("bRes-" + key);
+  btn.disabled = true; res.textContent = "Sending command…";
+  try {
+    const r = await api("/api/barrier/open", { site, gate: key });
+    res.innerHTML = `<span class="pill ${r.ok ? "ok" : r.ok === false ? "bad" : "warn"}">${esc(r.result)}</span>`;
+  } catch (e) { res.innerHTML = `<span class="pill bad">${esc(e.message)}</span>`; }
+  gateBusy[key] = false;
+  VIEWS.barrier(site, false);
+}
+async function barrierSetup(site) {
+  const c = (await api("/api/barrier?config=1&site=" + encodeURIComponent(site))).config;
+  const inp = (id, v, lab, ph, w = "100%") => `<label style="display:block;width:${w}"><span class="meta">${lab}</span><input id="${id}" value="${esc(v || "")}" placeholder="${esc(ph)}" style="width:100%"></label>`;
+  dialog(`<h2>Barrier setup · ${esc(site)}</h2>
+    <p class="meta">The MQTT broker address and login are set on the server (MQTT_URL, MQTT_USER, MQTT_PASSWORD), never in the browser.
+      Camera addresses stay on the server too; the portal streams them through.</p>
+    ${[0, 1].map(i => `<h3>Camera ${i + 1}</h3><div class="row">${inp("cfN" + i, c.cams[i].name, "Name", "", "48%")}
+      <label style="display:block;width:48%"><span class="meta">Type</span><select id="cfM${i}" style="width:100%">${options([["mjpeg", "MJPEG stream (http)"], ["snapshot", "JPEG snapshot, refreshed every second"], ["iframe", "Web player page (https, e.g. go2rtc)"]], c.cams[i].mode)}</select></label>
+      ${inp("cfU" + i, c.cams[i].url, "Camera address (kept on the server)", "http://user:pass@192.168.1.64/ISAPI/Streaming/channels/102/httpPreview")}</div>`).join("")}
+    ${GATES.map(([k]) => { const g = c.gates[k]; return `<h3>${esc(g.label)}</h3><div class="row">
+      ${inp("gL" + k, g.label, "Button name", "", "48%")}${inp("gT" + k, g.topic, "Command topic", "site1/barrier/visitor/cmd", "48%")}
+      ${inp("gP" + k, g.payload, "Command payload", "OPEN", "48%")}${inp("gA" + k, g.ackTopic, "Acknowledgement topic (optional)", "site1/barrier/visitor/ack", "48%")}
+      ${inp("gM" + k, g.ackMatch, "Reply text meaning success (optional)", "OK", "48%")}${inp("gS" + k, g.stateTopic, "Barrier state topic (optional)", "site1/barrier/visitor/state", "48%")}</div>`; }).join("")}
+    <p class="meta">With an acknowledgement topic the portal waits up to 8 s for the controller's reply; with a state topic it shows the barrier's real state (e.g. from a sensor).</p>`,
+    "Save", () => act(() => api("/api/barrier/config", { site,
+      cams: [0, 1].map(i => ({ name: $("cfN" + i).value, mode: $("cfM" + i).value, url: $("cfU" + i).value })),
+      gates: Object.fromEntries(GATES.map(([k]) => [k, { label: $("gL" + k).value, topic: $("gT" + k).value, payload: $("gP" + k).value,
+        ackTopic: $("gA" + k).value, ackMatch: $("gM" + k).value, stateTopic: $("gS" + k).value }])) }), "Barrier setup saved")
+      .then(() => { $("bCam0").dataset.src = $("bCam1").dataset.src = ""; VIEWS.barrier(site, false); }));
+}
+
 // ---------------- Configuration (admins): maintenance mode, Max, WhatsApp alerts, relay per device type ----------------
 const cfgMaint = () => {
   const on = S.devices.filter(d => d.maintenance);
