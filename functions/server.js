@@ -9,6 +9,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const { Readable } = require("node:stream");
+const { spawn } = require("node:child_process");
 const Mqtt = require("./mqtt");
 
 const CLOUD = !!process.env.K_SERVICE; // set by Cloud Functions / Cloud Run
@@ -1309,6 +1310,25 @@ function addBug(d, b) {
   bugs.push({ id: rid(), deviceId: d.id, code: d.code || null, deviceName: label(d), site: d.group || "", kind, app, at, summary: bugSummary(text), text, seenAt: Date.now() });
   if (bugs.length > BUGS_KEEP) bugs.splice(0, bugs.length - BUGS_KEEP);
 }
+// RTSP cameras (most DVRs / NVRs): browsers can't play RTSP, so ffmpeg pulls the stream and the server sends it on as
+// MJPEG (~5 frames a second, 960 px wide), which an <img> shows. Needs ffmpeg on the server (in the Docker image;
+// FFMPEG=path on a PC). ponytail: one ffmpeg per viewer; share one per camera if many people watch at once.
+const FFMPEG = process.env.FFMPEG || "ffmpeg";
+function rtspToMjpeg(src, res) {
+  const ff = spawn(FFMPEG, ["-loglevel", "error", "-rtsp_transport", "tcp", "-i", src, "-an", "-vf", "scale=960:-2", "-r", "5",
+    "-q:v", "7", "-f", "mpjpeg", "pipe:1"], { stdio: ["ignore", "pipe", "ignore"] });
+  const stop = () => ff.kill("SIGKILL"), timer = setTimeout(stop, 15000); // no picture in 15 s: give up
+  ff.on("error", () => { clearTimeout(timer); if (!res.headersSent) send(res, 502, { error: "ffmpeg is not installed on the server" }); });
+  ff.stdout.once("data", first => {
+    clearTimeout(timer);
+    res.writeHead(200, { "Content-Type": "multipart/x-mixed-replace;boundary=ffmpeg", "Cache-Control": "no-store" });
+    res.write(first);
+    ff.stdout.pipe(res);
+  });
+  ff.on("close", () => { clearTimeout(timer); if (!res.headersSent) send(res, 502, { error: "camera not reachable" }); else res.end(); });
+  res.on("close", stop); // viewer left
+}
+
 // ---- Remote barrier control (Remote Command Centre): two cameras + two MQTT barriers per site ----
 // The broker address and login live only in the environment (MQTT_URL mqtt:// or mqtts://, MQTT_USER, MQTT_PASSWORD).
 // Topics, payloads and camera addresses are in portal.barriers[site], kept out of portal.sites (which every browser receives).
@@ -2160,8 +2180,9 @@ async function handler(req, res) {
         if (!u.admin) return deny();
         const t = (v, n = 200) => String(v ?? "").trim().slice(0, n);
         const cams = [0, 1].map(i => { const c = body.cams?.[i] || {};
-          return { name: t(c.name, 60) || DEF_CAMS[i].name, mode: ["mjpeg", "snapshot", "iframe"].includes(c.mode) ? c.mode : "mjpeg", url: t(c.url, 500), v: Date.now() }; });
-        if (cams.some(c => c.url && !/^https?:\/\/[^\s]+$/i.test(c.url))) return send(res, 400, { error: "Camera address must start with http:// or https://" });
+          const url = t(c.url, 500), rtsp = /^rtsps?:\/\//i.test(url); // an rtsp:// address is always an RTSP camera
+          return { name: t(c.name, 60) || DEF_CAMS[i].name, mode: rtsp ? "rtsp" : ["mjpeg", "snapshot", "iframe"].includes(c.mode) ? c.mode : "mjpeg", url, v: Date.now() }; });
+        if (cams.some(c => c.url && !/^(https?|rtsps?):\/\/[^\s]+$/i.test(c.url))) return send(res, 400, { error: "Camera address must start with http://, https:// or rtsp://" });
         const gates = Object.fromEntries(GATE_KEYS.map(k => { const g = body.gates?.[k] || {};
           return [k, { label: t(g.label, 40) || DEF_GATE[k], topic: t(g.topic), payload: t(g.payload, 500), ackTopic: t(g.ackTopic), ackMatch: t(g.ackMatch, 60), stateTopic: t(g.stateTopic) }]; }));
         if (Object.values(gates).some(g => /[#+]/.test(g.topic))) return send(res, 400, { error: "A command topic can't contain # or +" });
@@ -2186,6 +2207,7 @@ async function handler(req, res) {
       if (req.method === "GET" && p === "/api/barrier/cam") {
         const c = cfg.cams[Number(url.searchParams.get("i"))];
         if (!c?.url || c.mode === "iframe") return send(res, 404, { error: "no camera" });
+        if (c.mode === "rtsp") return rtspToMjpeg(c.url, res);
         const target = new URL(c.url), headers = {};
         if (target.username) {
           headers.authorization = "Basic " + Buffer.from(decodeURIComponent(target.username) + ":" + decodeURIComponent(target.password)).toString("base64");

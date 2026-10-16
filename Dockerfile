@@ -11,7 +11,9 @@ COPY agents ./agents
 ENV PORT=8080
 ENV DATA_DIR=/app/server
 
-RUN mkdir -p /app/server && chown -R node:node /app
+# ffmpeg: turns RTSP barrier cameras into MJPEG for the browser
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /app/server && chown -R node:node /app
 
 USER node
 EXPOSE 8080

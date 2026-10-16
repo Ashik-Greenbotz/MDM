@@ -2276,7 +2276,7 @@ async function barrierSetup(site) {
     <p class="meta">The MQTT broker address and login are set on the server (MQTT_URL, MQTT_USER, MQTT_PASSWORD), never in the browser.
       Camera addresses stay on the server too; the portal streams them through.</p>
     ${[0, 1].map(i => `<h3>Camera ${i + 1}</h3><div class="row">${inp("cfN" + i, c.cams[i].name, "Name", "", "48%")}
-      <label style="display:block;width:48%"><span class="meta">Type</span><select id="cfM${i}" style="width:100%">${options([["mjpeg", "MJPEG stream (http)"], ["snapshot", "JPEG snapshot, refreshed every second"], ["iframe", "Web player page (https, e.g. go2rtc)"]], c.cams[i].mode)}</select></label>
+      <label style="display:block;width:48%"><span class="meta">Type</span><select id="cfM${i}" style="width:100%">${options([["mjpeg", "MJPEG stream (http)"], ["snapshot", "JPEG snapshot, refreshed every second"], ["rtsp", "RTSP camera / DVR (rtsp://, converted on the server)"], ["iframe", "Web player page (https, e.g. go2rtc)"]], c.cams[i].mode)}</select></label>
       ${inp("cfU" + i, c.cams[i].url, "Camera address (kept on the server)", "http://user:pass@192.168.1.64/ISAPI/Streaming/channels/102/httpPreview")}</div>`).join("")}
     ${GATES.map(([k]) => { const g = c.gates[k]; return `<h3>${esc(g.label)}</h3><div class="row">
       ${inp("gL" + k, g.label, "Button name", "", "48%")}${inp("gT" + k, g.topic, "Command topic", "site1/barrier/visitor/cmd", "48%")}
