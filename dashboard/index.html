@@ -205,6 +205,12 @@
   .hlegend tr[data-s]:hover td { background: var(--hover); }
   .hlegend tr.off { opacity: .4; }
   @media (max-width: 760px) { .hchart { flex-direction: column; } .hlegend { width: 100%; } }
+  ol.cmds { margin: 0 0 10px; padding-left: 22px; display: grid; gap: 8px; }
+  ol.cmds li::marker { color: var(--muted); font-size: 12px; }
+  ol.cmds .row { gap: 8px; align-items: flex-start; }
+  ol.cmds code { flex: 1; font: 12px/1.5 ui-monospace, Consolas, monospace; background: var(--btn); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; word-break: break-all; }
+  ol.cmds .btn { padding: 4px 10px; font-size: 12px; }
+  ol.cmds .meta { font-size: 12px; margin-top: 2px; }
   details.steps > summary { cursor: pointer; list-style: none; font-weight: 600; padding: 10px 0; color: var(--accent); }
   details.steps > summary::-webkit-details-marker { display: none; }
   details.steps > summary::before { content: "▸"; display: inline-block; margin-right: 8px; transition: transform .2s var(--ease); }
@@ -878,16 +884,21 @@ function addDeviceSteps(type) {
         ${app ? `<a class="btn primary" href="/download/app/${esc(app.id)}.apk" download="${esc(apk)}">⬇ Download ${esc(app.label)}</a>` : `<p class="meta">No kiosk app uploaded yet: upload it on <b>Apps &amp; files</b>.</p>`}`)
     + step(2, "Connect the device", `<p class="meta" style="margin-top:0">Connect the device to your laptop by USB and make sure it is detected by ADB (Android Debug Bridge).</p>`)
     + step(3, "Set device owner", `<p class="meta" style="margin-top:0">Open a command prompt in the folder containing the APK and run the following commands:</p>
-      ${pre("adCmd", [
-        "adb devices",
-        `adb install -r "${apk}"`,
-        "adb shell dpm set-device-owner com.greenbotz.kiosk/.AdminReceiver",
-        "adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow",
-        "adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService",
-        "adb shell settings put secure accessibility_enabled 1",
-        "adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow",
-        "adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode kiosk",
-      ].join("\n"))}
+      ${(() => {
+        const cmds = [
+          ["adb devices", "Check the device is connected (it must show as device)"],
+          [`adb install -r "${apk}"`, "Install the app"],
+          ["adb shell dpm set-device-owner com.greenbotz.kiosk/.AdminReceiver", "Make the app device owner (kiosk mode, lock / unlock)"],
+          ["adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow", "Allow the app-pinning override button"],
+          ["adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService", "Turn on screenshots and remote control"],
+          ["adb shell settings put secure accessibility_enabled 1", "Switch accessibility on (needed by the line above)"],
+          ["adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow", "Screenshots on Android 9 / 10 without a prompt"],
+          ["adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode kiosk", "Start the kiosk app"],
+        ];
+        return `<ol class="cmds">${cmds.map(([c, what], i) => `<li><div class="row"><code id="adC${i}">${esc(c)}</code><button type="button" class="btn ghost" data-copy="#adC${i}">Copy</button></div>
+            <div class="meta">${what}</div></li>`).join("")}</ol>
+          <pre id="adCmd" hidden>${esc(cmds.map(c => c[0]).join("\n"))}</pre><button type="button" class="btn" data-copy="#adCmd">Copy all</button>`;
+      })()}
       <p class="meta">Ensure the command returns <b>Success: Device owner set</b>.</p>`)
     + step(4, "Complete device setup", `<p class="meta" style="margin-top:0">Click <b>Create Device ID</b> to generate a unique key. Enter the Device ID on the device, configure the settings, and connect it to the portal.</p>`)
     + step(5, "Test the device", `<p class="meta" style="margin-top:0">Verify that the device appears in the portal and test all features to ensure everything is working correctly.</p>`);
