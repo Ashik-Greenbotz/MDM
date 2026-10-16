@@ -205,6 +205,10 @@
   .hlegend tr[data-s]:hover td { background: var(--hover); }
   .hlegend tr.off { opacity: .4; }
   @media (max-width: 760px) { .hchart { flex-direction: column; } .hlegend { width: 100%; } }
+  details.steps > summary { cursor: pointer; list-style: none; font-weight: 600; padding: 10px 0; color: var(--accent); }
+  details.steps > summary::-webkit-details-marker { display: none; }
+  details.steps > summary::before { content: "▸"; display: inline-block; margin-right: 8px; transition: transform .2s var(--ease); }
+  details.steps[open] > summary::before { transform: rotate(90deg); }
   .card > h3 .tabs.hr { margin: 0; padding: 0; gap: 4px; }
   .card > h3 .tabs.hr .btn { padding: 4px 10px; font-size: 12px; }
   #view.enter .hchart .ln { stroke-dasharray: 4000; animation: draw 1.6s var(--ease); }
@@ -870,15 +874,10 @@ function addDeviceSteps(type) {
   if (type === "tablet") {
     const app = S.kioskApp && S.apps.find(x => x.id === S.kioskApp), apk = app ? app.label + ".apk" : "mdmkiosk app.apk";
     const step = (n, title, body) => `<h4 style="margin:16px 0 6px">${n}. ${title}</h4>${body}`;
-    return step(1, "Get the latest app", `<p class="meta">${app
-        ? `<a class="btn primary" href="/download/app/${esc(app.id)}.apk" download="${esc(apk)}">⬇ Download ${esc(app.label)}</a> uploaded ${ago(app.at)}.`
-        : "No kiosk app uploaded yet."}
-        Newer build? Upload it on <b>Apps &amp; files</b> and click <b>Use for QR</b> on it, so this link always gives the latest app.</p>`)
-    + step(2, "Prepare the tablet", `<ol class="meta" style="padding-left:18px;line-height:1.6;margin:0">
-        <li>Settings → Accounts → remove <b>all</b> Google / Samsung accounts (device owner fails while any account is on it).</li>
-        <li>Settings → About → tap <b>Build number</b> 7 times → Developer options → turn on <b>USB debugging</b>.</li>
-        <li>Plug it into the PC by USB and tap <b>Allow</b> (Wi-Fi instead: <code>adb connect &lt;tablet IP&gt;:5555</code>). <code>adb devices</code> must list it as <b>device</b>.</li></ol>`)
-    + step(3, "Install the app and make it device owner", `<p class="meta" style="margin-top:0">Open a command window in the folder with the downloaded APK and run these (or double-click <b>setup-tablet.bat</b>, it does the same):</p>
+    return step(1, "Install the latest app", `<p class="meta" style="margin-top:0">Download and install the latest Kiosk app on the device.</p>
+        ${app ? `<a class="btn primary" href="/download/app/${esc(app.id)}.apk" download="${esc(apk)}">⬇ Download ${esc(app.label)}</a>` : `<p class="meta">No kiosk app uploaded yet: upload it on <b>Apps &amp; files</b>.</p>`}`)
+    + step(2, "Connect the device", `<p class="meta" style="margin-top:0">Connect the device to your laptop by USB and make sure it is detected by ADB (Android Debug Bridge).</p>`)
+    + step(3, "Set device owner", `<p class="meta" style="margin-top:0">Open a command prompt in the folder containing the APK and run the following commands:</p>
       ${pre("adCmd", [
         "adb devices",
         `adb install -r "${apk}"`,
@@ -889,14 +888,9 @@ function addDeviceSteps(type) {
         "adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow",
         "adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode kiosk",
       ].join("\n"))}
-      <p class="meta">The device owner line must say <b>Success: Device owner set</b>. "already several accounts" = an account is still on the tablet; "already provisioned" = factory reset it first.
-        For a monitor-only device use <code>--es mode monitor</code> on the last line.</p>`)
-    + step(4, "Configure it", `<ol class="meta" style="padding-left:18px;line-height:1.6;margin:0">
-        <li>Fill in <b>Name</b> and <b>Site</b> above and click <b>Create Device ID</b>.</li>
-        <li>On the tablet's <b>Set up this device</b> screen choose <b>Production</b> (or <b>Debug</b> + this PC's IP) and type the Device ID.</li>
-        <li>Check the <b>model</b> and <b>usage</b> (onsite / technical team), tap <b>Connect</b>.</li>
-        <li>Pick the <b>allowed apps</b>, then <b>Save and finish</b>. The tablet appears in Devices within a minute.</li>
-        <li>Already set up? Tap the top-right corner 6 times → admin password → <b>Link device ID</b> → type the ID.</li></ol>`);
+      <p class="meta">Ensure the command returns <b>Success: Device owner set</b>.</p>`)
+    + step(4, "Complete device setup", `<p class="meta" style="margin-top:0">Click <b>Create Device ID</b> to generate a unique key. Enter the Device ID on the device, configure the settings, and connect it to the portal.</p>`)
+    + step(5, "Test the device", `<p class="meta" style="margin-top:0">Verify that the device appears in the portal and test all features to ensure everything is working correctly.</p>`);
   }
   if (!S.me?.admin) return `<p class="meta">Ask an administrator: installing the agent on a PC needs the PC key, which only admins can see.</p>`;
   if (!key) return noKey;
@@ -937,7 +931,9 @@ function addDevice() {
   const dlg = $("dlg"), okBtn = dlg.querySelector('button[value="ok"]');
   const show = () => {
     const t = $("adType").value;
-    $("adSteps").innerHTML = addDeviceSteps(t);
+    // the steps stay folded under "Installation procedure" until clicked
+    const open = $("adSteps").querySelector("details")?.open;
+    $("adSteps").innerHTML = `<details class="steps"${open ? " open" : ""}><summary>Installation procedure</summary>${addDeviceSteps(t)}</details>`;
     dlg.querySelectorAll("[data-tab]").forEach(el => (el.hidden = t !== "tablet"));
     okBtn.textContent = t === "tablet" ? "Create Device ID" : "Done";
   };
