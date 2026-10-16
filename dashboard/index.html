@@ -342,7 +342,17 @@
   #maxBot canvas:active { cursor: grabbing; }
   /* asleep: dimmed in his corner with a floating 💤 */
   #maxBot.asleep canvas { filter: grayscale(.5) brightness(.85) drop-shadow(0 10px 18px rgba(0,0,0,.25)); opacity: .75; }
-  #maxBot.asleep::after { content: "💤"; position: absolute; right: 16%; top: 2%; font-size: 26px; pointer-events: none; animation: zzz 2.4s ease-in-out infinite; }
+  /* his bed: frame + mattress + pillow behind him, blanket in front; he lies down on it (see "lie" in the frame loop) */
+  #maxBot canvas { position: relative; }
+  #maxBot .max-bed, #maxBot .max-blanket { display: none; position: absolute; pointer-events: none; }
+  #maxBot.asleep .max-bed, #maxBot.asleep .max-blanket { display: block; }
+  #maxBot .max-bed { left: 8%; right: 8%; bottom: 10%; height: 13%; border-radius: 4px; background: linear-gradient(#f4f6fa 0 55%, #9a6a43 55%); box-shadow: 0 6px 10px rgba(0,0,0,.18); }
+  #maxBot .max-bed::before, #maxBot .max-bed::after { content: ""; position: absolute; bottom: -18%; width: 7%; background: #8a5a35; border-radius: 6px 6px 2px 2px; }
+  #maxBot .max-bed::before { left: -5%; height: 260%; } /* headboard */
+  #maxBot .max-bed::after { right: -5%; height: 170%; } /* footboard */
+  #maxBot .max-bed i { position: absolute; left: 4%; bottom: 50%; width: 24%; height: 60%; background: #fff; border-radius: 40%; box-shadow: inset 0 -2px 3px rgba(0,0,0,.12); } /* pillow */
+  #maxBot .max-blanket { left: 40%; right: 9%; bottom: 17%; height: 15%; border-radius: 40% 6px 4px 4px; background: repeating-linear-gradient(90deg, #f7931e 0 10px, #f9a948 10px 20px); opacity: .95; box-shadow: 0 2px 4px rgba(0,0,0,.15); }
+  #maxBot.asleep::after { content: "💤"; position: absolute; left: 10%; top: 12%; z-index: 1; font-size: 26px; pointer-events: none; animation: zzz 2.4s ease-in-out infinite; }
   @keyframes zzz { 0%, 100% { transform: translateY(0); opacity: .6; } 50% { transform: translateY(-8px); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { #maxBot.asleep::after { animation: none; } }
   .max-bubble { position: absolute; bottom: 92%; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(280px, 70vw); padding: 9px 13px;
@@ -2714,7 +2724,7 @@ try { sleeping = localStorage.getItem("maxSleep") === "on"; } catch {}
 // ---- stage: a small transparent canvas that travels over the page (cheaper than a full-screen one) ----
 const el = document.createElement("div");
 el.id = "maxBot";
-el.innerHTML = `<div class="max-bubble" hidden></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Max, the assistant: click to talk, drag to move"></canvas>`;
+el.innerHTML = `<div class="max-bubble" hidden></div><div class="max-bed"><i></i></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Max, the assistant: click to talk, drag to move"></canvas><div class="max-blanket"></div>`;
 const canvas = el.querySelector("canvas"), bubble = el.querySelector(".max-bubble");
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); } catch { throw new Error("no WebGL, keeping the flat Max"); }
@@ -2759,6 +2769,10 @@ model.traverse(o => {
 });
 holder.add(model);
 scene.add(holder);
+// Lying on his bed: turned onto his side (head on the pillow, left), body centred over the mattress.
+const body = new THREE.Box3().setFromObject(model), BED_Y = -0.08; // ponytail: mattress height in scene units, matched to .max-bed by eye
+const LIE = { x: (body.min.y + body.max.y) / 2, y: BED_Y + (body.max.x - body.min.x) / 2 };
+let lie = 0;
 const mixer = new THREE.AnimationMixer(model), clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
 document.body.append(el);
 document.getElementById("maxBtn").classList.add("gone"); // the 3D Max replaces the flat button
@@ -2937,8 +2951,12 @@ function frame(now) {
       play("Arrive_Brake", { once: true, fade: 0.2 });
       f.after?.(); // may start pointing / landing right away
     }
-  } else turn += (holderFace * 0.7 - turn) * 0.08;
+  } else turn += ((lie > 0.01 ? 0 : holderFace * 0.7) - turn) * 0.08;
   holder.rotation.y = turn;
+  lie += ((el.classList.contains("asleep") ? 1 : 0) - lie) * (calm ? 1 : 0.06);
+  if (!flight) holder.rotation.z = lie * Math.PI / 2;
+  holder.position.set(lie * LIE.x, lie * LIE.y, 0);
+  holder.scale.setScalar(1 - lie * 0.15);
   mixer.update(dt);
   renderer.render(scene, camera);
 }
