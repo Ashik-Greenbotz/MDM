@@ -302,6 +302,38 @@ async function checkUploaded(key, name) {
   return digestInfo(Number(meta.size), hash);
 }
 
+// Kiosk APK signing check. Android only installs an update signed with the same key as the installed app, and the whole
+// fleet is signed with one key (KIOSK_CERT_SHA256). An upload of our kiosk app signed with any other key (e.g. built on
+// another laptop) is refused, so it can never be sent to a device. Other apps' APKs are not checked.
+const KIOSK_CERT = (process.env.KIOSK_CERT_SHA256 || "7478efb4dab73459e54da7d92ff794e1ea1e23ba215c1da686195b31d888b6ee").toLowerCase();
+const KIOSK_PKG = Buffer.from("com.greenbotz.kiosk", "utf16le"); // resources.arsc (stored uncompressed) names the package in UTF-16
+// SHA-256 of the first signer's certificate in the APK Signature Scheme v2/v3 block (null if there is none).
+function apkSigner(buf) {
+  try {
+    let e = buf.length - 22;
+    while (e > buf.length - 65557 && e >= 0 && buf.readUInt32LE(e) !== 0x06054b50) e--; // end of central directory
+    const cd = buf.readUInt32LE(e + 16);
+    if (buf.toString("latin1", cd - 16, cd) !== "APK Sig Block 42") return null;
+    for (let o = cd - Number(buf.readBigUInt64LE(cd - 24)); o < cd - 24;) { // pairs: u64 length, u32 id, value
+      const len = Number(buf.readBigUInt64LE(o)), id = buf.readUInt32LE(o + 8);
+      if (id === 0x7109871a || id === 0xf05368c0) {
+        let p = o + 12 + 4 + 4 + 4;      // signers seq, first signer, signed data: each u32 length-prefixed
+        p += 4 + buf.readUInt32LE(p) + 4; // skip the digests, then into the certificates seq
+        return crypto.createHash("sha256").update(buf.subarray(p + 4, p + 4 + buf.readUInt32LE(p))).digest("hex");
+      }
+      o += 8 + len;
+    }
+  } catch {}
+  return null;
+}
+// Throws if buf is our kiosk app signed with another key.
+function checkKioskApk(buf) {
+  if (!buf || !buf.includes(KIOSK_PKG)) return;
+  const signer = apkSigner(buf);
+  if (signer !== KIOSK_CERT) throw fail(400, `This kiosk APK is signed with a different key (${signer ? signer.slice(0, 8) + "…" : "unknown"}), ` +
+    `so tablets would refuse it ("signatures do not match"). Build it with the production key (${KIOSK_CERT.slice(0, 8)}…, prod-debug.keystore).`);
+}
+
 const disposition = name => `attachment; filename="${String(name).replace(/[^\w.-]/g, "_")}"`;
 async function sendFile(res, key, name) {
   if (CLOUD) {
@@ -2029,6 +2061,9 @@ async function handler(req, res) {
         if (CLOUD) return send(res, 400, { error: "use /api/upload/start" });
         info = await receiveFile(req, keyOf(id));
       }
+      if (kind === "app" && info.size < 300 * 1024 * 1024) {
+        try { checkKioskApk(await store.read(keyOf(id))); } catch (e) { await store.remove(keyOf(id)); throw e; }
+      }
       const notes = String(url.searchParams.get("notes") || "").slice(0, 2000); // optional release notes, kept as a record
       if (kind === "app") portal.apps.push({ id, label: String(url.searchParams.get("label") || name.replace(/\.apk$/i, "")).slice(0, 80), ...info, at: Date.now(), notes, by: u.username });
       else portal.files.push({ id, name, ...info, at: Date.now() });
@@ -2228,4 +2263,4 @@ if (require.main === module) {
     });
   });
 }
-module.exports = { handler };
+module.exports = { handler, apkSigner, checkKioskApk };

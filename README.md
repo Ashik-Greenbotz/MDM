@@ -193,6 +193,7 @@ The F10 checked in to **production** once as **2987** before it was moved to loc
 | `functions/server.js` | Portal server, plain Node.js. Office PC: `node server.js`, data in `server/`. |
 | `functions/index.js` | Runs `server.js` as a Firebase Cloud Function (see `firebase.json`). |
 | `functions/test-whatsapp.js` | End-to-end check of the WhatsApp offline alerts: `node test-whatsapp.js`. |
+| `functions/test-apk-signer.js` | Check of the kiosk APK signing guard (production key accepted, other keys refused). |
 | `functions/test-tickets.js` | End-to-end check of device models, relay profiles and tickets: `node test-tickets.js`. |
 | `functions/.env.example` | Copy to `functions/.env` (not in git): admin login, `DEVICE_KEY`, time zone. |
 | `server/` | Office PC data (not in git): `devices.json`, `portal.json` (incl. WhatsApp numbers), `history/` (health charts, one file per device), `logs/`, `uploads/`. |
@@ -226,6 +227,12 @@ The F10 checked in to **production** once as **2987** before it was moved to loc
 | `res/values(-night)/` | Light/dark colours and themes (glass look). |
 | `res/drawable(-night)/` | Logo (light/dark), glass panels, gradient, Wi-Fi / Ethernet / battery icons, maintenance image. |
 | `setup-tablet.bat` | One-time USB setup of a new tablet (`setup-tablet.bat monitor` for monitor-only devices). |
+
+### Signing key (one key for every tablet)
+Android only installs an app update signed with the **same key** as the app already on the tablet. All tablets use the key from the old laptop: `prod-debug.keystore` (SHA-256 `7478efb4...`, created 19 Aug 2026; not in git, **keep a backup**). On 16 Oct 2026 an APK built with another PC's key was refused by every production tablet (`INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match`). Two guards stop that now:
+- **Build**: `app/build.gradle` refuses to build unless `local.properties` has `signing.keystore=prod-debug.keystore` and that file is the production key. On a new PC: copy `prod-debug.keystore` into the project folder and add that line.
+- **Portal**: an upload of the kiosk app (`com.greenbotz.kiosk`) signed with any other key is refused with an explanation (`KIOSK_CERT_SHA256` overrides the expected key). Other apps' APKs are not checked. Check: `node functions/test-apk-signer.js <production.apk> <other-key.apk>`.
+- Office test tablets that got an APK signed with another key need one `adb uninstall com.greenbotz.kiosk`, reinstall and setup.
 
 ### Built apps (not in git, they contain device keys)
 | Path | What |
