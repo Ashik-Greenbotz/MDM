@@ -1141,11 +1141,17 @@ async function liveView(d) {
       <p class="meta">${isOnline(d) ? "The device picks this up on its next check-in, usually within 10 seconds." : `⚠️ ${esc(label(d))} is offline (last seen ${ago(d.lastSeen)}).`}</p></div>
     <img class="shot" id="liveImg" alt="Live screen of ${esc(label(d))}" hidden draggable="false" style="cursor:pointer;touch-action:none;user-select:none">
     <div class="foot"><button class="btn" data-k="back">◀ Back</button><button class="btn" data-k="home">● Home</button><button class="btn" data-k="recents">▢ Recents</button>
+      ${[["unlock", "🔓 Unlock 2 min"], ["lock", "🔒 Lock"], ["singleapp", "📌 Pin app…"], ["unpin", "Unpin app"]]
+        .filter(([c]) => withUnpin(S.commands[d.type] || []).includes(c)).map(([c, t]) => `<button class="btn" data-c="${c}">${t}</button>`).join("")}
       <span class="grow"></span><span class="meta" id="liveAt"></span><button class="btn" data-k="close">Close</button></div>`;
   dl.classList.add("live");
   dl.onclose = () => { open = false; dl.classList.remove("live"); };
   const send = b => api(base, b).catch(e => toast(e.message, true));
-  dl.onclick = e => { const k = e.target.closest("[data-k]")?.dataset.k; if (k === "close") dl.close(); else if (k) send({ a: k }); };
+  dl.onclick = e => {
+    const k = e.target.closest("[data-k]")?.dataset.k, c = e.target.closest("[data-c]")?.dataset.c;
+    if (c) return command([dev(d.id) || d], c); // kiosk commands: same as the device page (unlock re-locks itself after 2 min)
+    if (k === "close") dl.close(); else if (k) send({ a: k });
+  };
   const img = $("liveImg"), at = e => { const r = img.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
   img.onpointerdown = e => { e.preventDefault(); down = at(e); img.setPointerCapture(e.pointerId); };
   img.onpointerup = e => {
