@@ -2701,26 +2701,35 @@ function drawMap() {
     b.default.addTo(map);
     L.control.layers(b.all).addTo(map);
   }
-  // Filters: site and a name / ID search. A device without its own GPS fix is drawn at its site's coordinates (hollow marker).
-  const site = $("mapSite").value, q = $("mapQ").value.trim().toLowerCase(), seen = new Set(), perSite = {};
-  let none = 0;
+  // Filters: site and a name / ID search. Every device is drawn. Without its own GPS fix (hollow marker) it goes to:
+  // its site's coordinates, else a device with GPS on the same network (same public IP, or same LAN /24), else Singapore (grey).
+  const site = $("mapSite").value, q = $("mapQ").value.trim().toLowerCase(), seen = new Set(), perPoint = {};
+  const net = d => pubIp(d) || (d.localIp || "").split(".").slice(0, 3).join(".");
+  const gpsNet = {};
+  for (const d of S.devices) if (d.lat != null && net(d)) gpsNet[net(d)] ||= d;
+  let guessed = 0;
   for (const d of S.devices) {
     if (site && (d.group || "") !== (site === "__none" ? "" : site)) continue;
     if (q && ![label(d), d.code, d.id].some(x => String(x || "").toLowerCase().includes(q))) continue;
-    const at = siteOf(d.group || ""), own = d.lat != null;
-    if (!own && at.lat == null) { none++; continue; }
+    const at = siteOf(d.group || ""), own = d.lat != null, mate = !own && at.lat == null && gpsNet[net(d)];
+    const base = own ? [d.lat, d.lng] : at.lat != null ? [at.lat, at.lng] : mate ? [mate.lat, mate.lng] : [1.3521, 103.8198];
+    const where = own ? `±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}`
+      : at.lat != null ? "Shown at the site's location (no GPS from this device)"
+      : mate ? `Shown next to ${esc(label(mate))} (same network; no GPS or site location)`
+      : "Location unknown: shown in the middle of Singapore. Give its site a location on the Sites page.";
+    if (!own && at.lat == null) guessed++;
     seen.add(d.id);
-    // ponytail: devices sharing a site's point get a small spiral offset so each one can be clicked
-    const k = own ? 0 : (perSite[d.group] = (perSite[d.group] || 0) + 1) - 1;
-    const ll = own ? [d.lat, d.lng] : [at.lat + 0.00006 * Math.sqrt(k) * Math.cos(k * 2.4), at.lng + 0.00006 * Math.sqrt(k) * Math.sin(k * 2.4)];
+    // ponytail: devices sharing a point get a small spiral offset so each one can be clicked
+    const key = own ? d.id : base.join(","), k = own ? 0 : (perPoint[key] = (perPoint[key] || 0) + 1) - (mate ? 0 : 1);
+    const ll = [base[0] + 0.00006 * Math.sqrt(k) * Math.cos(k * 2.4), base[1] + 0.00006 * Math.sqrt(k) * Math.sin(k * 2.4)];
     const popup = `<b>${esc(label(d))}</b>${d.code ? " · " + esc(d.code) : ""}<br>${esc(d.group || "No site")}<br>${isOnline(d) ? "Online" : "Offline"}${d.battery != null ? " · battery " + d.battery + "%" : ""}<br>
-      <span class="meta">${own ? `±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}` : "Shown at the site's location (no GPS from this device)"}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
+      <span class="meta">${where}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
     markers[d.id] ||= L.circleMarker(ll, { radius: 9, weight: 3 }).addTo(map);
-    const col = isOnline(d) ? "#22c55e" : "#ef4444";
-    markers[d.id].setLatLng(ll).setStyle(own ? { color: "#fff", fillColor: col, fillOpacity: .95 } : { color: col, fillColor: "#fff", fillOpacity: .85 }).bindPopup(popup);
+    const col = !own && at.lat == null && !mate ? "#94a3b8" : isOnline(d) ? "#22c55e" : "#ef4444";
+    markers[d.id].setLatLng(ll).setStyle(own ? { color: "#fff", fillColor: col, fillOpacity: .95, dashArray: null } : { color: col, fillColor: "#fff", fillOpacity: .85, dashArray: mate || at.lat != null ? null : "3 3" }).bindPopup(popup);
   }
   for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
-  $("mapCount").textContent = `${seen.size} on map${none ? ` · ${none} without a location` : ""}`;
+  $("mapCount").textContent = `${seen.size} on map${guessed ? ` · ${guessed} without GPS or site location (approximate)` : ""}`;
   const pts = Object.values(markers).map(m => m.getLatLng());
   if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 }); fitted = true; }
 }
