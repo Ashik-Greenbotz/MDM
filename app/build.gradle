@@ -23,6 +23,17 @@ android {
     // The production tablets were signed with the debug key of the PC that built 10.12/10.13. Android only installs an
     // update signed with the same key, so put a copy of that keystore next to the project and its path in
     // local.properties (signing.keystore=prod-debug.keystore); keystores are not in git. Without it: this PC's debug key.
+    // Guard (16 Oct 2026, after an update was refused by every production tablet): no APK is built without that key,
+    // so no laptop can make a kiosk app the tablets won't accept.
+    def prodCert = "7478efb4dab73459e54da7d92ff794e1ea1e23ba215c1da686195b31d888b6ee"
+    def ksPath = localProps.getProperty("signing.keystore")
+    if (!ksPath || !rootProject.file(ksPath).exists())
+        throw new GradleException("Production signing key missing. Copy prod-debug.keystore (SHA-256 ${prodCert.take(8)}...) into the project folder " +
+            "and add signing.keystore=prod-debug.keystore to local.properties. Building with this PC's own key makes an APK the tablets refuse.")
+    def ks = java.security.KeyStore.getInstance(rootProject.file(ksPath), "android".toCharArray())
+    def sha = java.security.MessageDigest.getInstance("SHA-256").digest(ks.getCertificate("androiddebugkey").encoded).encodeHex().toString()
+    if (sha != prodCert)
+        throw new GradleException("${ksPath} is the wrong key (${sha.take(8)}...); the production tablets need ${prodCert.take(8)}....")
     signingConfigs {
         if (localProps.getProperty("signing.keystore")) {
             prod {
