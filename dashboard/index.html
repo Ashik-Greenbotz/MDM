@@ -188,9 +188,23 @@
   .days label { margin-right: 8px; white-space: nowrap; color: var(--text) !important; }
   dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0; }
   dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; overflow-wrap: anywhere; font-weight: 500; }
-  .chart { width: 100%; height: 160px; display: block; }
-  #view.enter .chart polyline { stroke-dasharray: 3000; animation: draw 1.6s var(--ease); }
-  .chart polyline { filter: drop-shadow(0 2px 6px rgba(0,0,0,.15)); }
+  /* health chart (Grafana style): filled lines, axes, legend table on the right, hover crosshair */
+  .hchart { display: flex; gap: 8px; padding: 10px 14px 12px; position: relative; }
+  .hchart .plot { flex: 1; min-width: 0; position: relative; }
+  .hchart svg { display: block; width: 100%; }
+  .hchart .ax { font-size: 10.5px; fill: var(--muted); }
+  .hchart .tip { position: absolute; top: 4px; pointer-events: none; background: var(--dlg); border: 1px solid var(--edge); border-radius: 10px;
+    padding: 7px 10px; font-size: 12px; box-shadow: var(--shadow-hi); white-space: nowrap; z-index: 2; backdrop-filter: blur(20px); }
+  .hchart .tip i, .hlegend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .hlegend { width: 250px; flex: none; font-size: 12px; border-collapse: collapse; align-self: flex-start; }
+  .hlegend th { color: var(--muted); font-weight: 500; text-align: right; padding: 3px 6px; }
+  .hlegend th:first-child { text-align: left; }
+  .hlegend td { padding: 4px 6px; text-align: right; font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); }
+  .hlegend td:first-child { text-align: left; white-space: nowrap; }
+  @media (max-width: 760px) { .hchart { flex-direction: column; } .hlegend { width: 100%; } }
+  .card > h3 .tabs.hr { margin: 0; padding: 0; gap: 4px; }
+  .card > h3 .tabs.hr .btn { padding: 4px 10px; font-size: 12px; }
+  #view.enter .hchart .ln { stroke-dasharray: 4000; animation: draw 1.6s var(--ease); }
   @keyframes draw { from { stroke-dashoffset: 3000; } }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); padding: 0 18px 14px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
@@ -1311,6 +1325,7 @@ VIEWS.device = async (id, first) => {
         <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
+      <div class="card"><h3>Health<span class="grow"></span><span class="tabs hr" id="dRange"></span></h3><div id="dChart" class="hchart"></div></div>
       <div class="cols">
         <div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="dKv"></dl></div></div>
         <div>
@@ -1318,7 +1333,6 @@ VIEWS.device = async (id, first) => {
             <pre class="log" id="dRes" style="max-height:260px"></pre></div>
           <div class="card" id="dShotCard" hidden><h3>Last screenshot<span class="grow"></span><span class="meta" id="dShotAt"></span></h3>
             <div class="pad"><img class="shot" id="dShot" alt="Last screenshot" style="max-height:320px;cursor:zoom-in"></div></div>
-          <div class="card"><h3>Health · last 24 hours</h3><div id="dChart"></div></div>
           <div class="card"><h3>Activity<span class="grow"></span><a class="meta" href="#/activity">All activity →</a></h3>
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
         </div>
@@ -1481,7 +1495,7 @@ VIEWS.device = async (id, first) => {
     api(`/api/devices/${d.id}/logs`).catch(e => "No logs yet. Click \"Request new logs\"; they arrive within a few seconds when the device is online."),
   ]);
   if (!location.hash.startsWith("#/device/")) return;
-  $("dChart").innerHTML = chart(hist.history);
+  healthChart($("dChart"), hist);
   $("dEvents").innerHTML = ev.events.slice(0, 100).map(eventRow).join("") || `<tr><td class="empty">Nothing yet</td></tr>`;
   const pre = $("dLogs"), atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 10;
   const text = (d.logsAt ? `Uploaded ${when(d.logsAt)}\n\n` : "") + logs; // a fixed time, so the text only changes with new logs
@@ -1497,22 +1511,98 @@ function gauge(name, v, warnAt, badAt, unit, sub) {
     <div class="l">${esc(name)}</div><div class="meta">${esc(sub || "")}</div></div>`;
 }
 
-// history rows: [time, battery, cpu, ram, disk, temp]
-function chart(h) {
-  if (!h || h.length < 2) return `<p class="empty">Collecting… a point is saved every 5 minutes.</p>`;
-  const W = 600, H = 160, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
-  const lines = [["Battery %", 1, css("--ok")], ["CPU %", 2, "#a855f7"], ["Memory %", 3, "#3b82f6"], ["Storage %", 4, css("--accent")]];
-  const x = t => 4 + (W - 8) * (t - t0) / Math.max(1, t1 - t0), y = v => H - 6 - (H - 12) * v / 100;
-  const paths = lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) =>
-    `<polyline fill="none" stroke="${c}" stroke-width="2" points="${h.filter(r => r[i] != null).map(r => x(r[0]).toFixed(1) + "," + y(r[i]).toFixed(1)).join(" ")}"/>`);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      ${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}" stroke-dasharray="3 4"/>
-        <text x="${W - 4}" y="${y(v) - 3}" text-anchor="end" font-size="10" fill="${css("--muted")}">${v}%</text>`).join("")}${paths.join("")}</svg>
-    <div class="legend">${lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) => {
-        const last = [...h].reverse().find(r => r[i] != null)[i];
-        return `<span><i style="background:${c}"></i>${n.replace(" %", "")} <b>${Math.round(last)}%</b></span>`;
-      }).join("")}
-      <span>${new Date(t0).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} → now</span></div>`;
+// Health chart (Grafana style). Rows: [time, battery, cpu, ram, disk, temp]; the server keeps 24 h of 5-minute points
+// and a month of hourly averages, so week / month use the hourly ones plus the latest 5-minute points.
+const HEALTH_SERIES = [["CPU", 2, "#fade2a", "%"], ["Memory", 3, "#5794f2", "%"], ["Battery", 1, "#73bf69", "%"], ["Storage", 4, "#ff9830", "%"], ["Temperature", 5, "#f2495c", "°C"]];
+const HEALTH_RANGES = [["24h", "Last 24 h"], ["today", "Today"], ["week", "This week"], ["month", "This month"]];
+let healthRange = "24h";
+try { healthRange = localStorage.getItem("healthRange") || "24h"; } catch {}
+function healthChart(el, hist) {
+  $("dRange").innerHTML = HEALTH_RANGES.map(([k, t]) => `<button class="btn ${k === healthRange ? "primary" : "ghost"}" data-r="${k}">${t}</button>`).join("");
+  $("dRange").onclick = e => {
+    const r = e.target.closest("[data-r]")?.dataset.r;
+    if (!r) return;
+    healthRange = r;
+    try { localStorage.setItem("healthRange", r); } catch {}
+    el.dataset.key = "";
+    healthChart(el, hist);
+  };
+  const now = Date.now(), day = new Date(); day.setHours(0, 0, 0, 0);
+  const t0 = { "24h": now - 864e5, today: +day, week: +day - ((day.getDay() + 6) % 7) * 864e5, month: +new Date(day.getFullYear(), day.getMonth(), 1) }[healthRange];
+  const fine = (hist.history || []).filter(r => r[0] >= t0), hourly = (hist.hourly || []).filter(r => r[0] >= t0);
+  const coarse = healthRange === "week" || healthRange === "month";
+  const after = hourly.length ? hourly[hourly.length - 1][0] + 36e5 : 0;
+  const h = coarse ? [...hourly, ...fine.filter(r => r[0] >= after)] : fine;
+  // The device page redraws every few seconds: keep the chart (and a hover in progress) unless something changed.
+  const key = [healthRange, h.length, h[h.length - 1]?.[0], el.clientWidth].join();
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  if (h.length < 2) return el.innerHTML = `<p class="empty" style="flex:1">${coarse && !hourly.length ? "Hourly history starts now: this view fills up over the coming hours and days."
+    : "Collecting… a point is saved every 5 minutes."}</p>`;
+  const series = HEALTH_SERIES.filter(([, i]) => h.some(r => r[i] != null));
+  const wide = el.clientWidth > 760, W = Math.max(300, el.clientWidth - 28 - (wide ? 258 : 0)), H = 230;
+  const L = 34, R = 8, T = 10, B = 24, t1 = now;
+  const x = t => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0), y = v => T + (H - T - B) * (1 - Math.min(100, Math.max(0, v)) / 100);
+  // a gap longer than 3 points means the device was off: break the line there
+  const gapMs = (coarse ? 36e5 : 3e5) * 3;
+  const segs = i => {
+    const out = [];
+    let cur = [];
+    for (const r of h) {
+      if (r[i] == null) continue;
+      if (cur.length && r[0] - cur[cur.length - 1][0] > gapMs) { out.push(cur); cur = []; }
+      cur.push(r);
+    }
+    if (cur.length) out.push(cur);
+    return out;
+  };
+  const f = n => n.toFixed(1);
+  const paths = series.map(([n, i, c], k) => segs(i).map(sg => {
+    const line = sg.map((r, j) => (j ? "L" : "M") + f(x(r[0])) + "," + f(y(r[i]))).join("");
+    const area = line + `L${f(x(sg[sg.length - 1][0]))},${H - B}L${f(x(sg[0][0]))},${H - B}Z`;
+    return `<path d="${area}" fill="url(#hg${k})" stroke="none"/><path class="ln" d="${line}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round"/>`;
+  }).join("")).join("");
+  // time axis: a step that leaves ~90 px between labels, on whole hours / local midnights
+  const span = t1 - t0, steps = [1, 2, 3, 6, 12, 24, 48, 72, 168].map(s => s * 36e5);
+  const step = steps.find(s => (W - L - R) * s / span >= 90) || steps[steps.length - 1];
+  const ticks = [];
+  for (let t = Math.ceil(t0 / 36e5) * 36e5; t <= t1; t += 36e5) {
+    const dt = new Date(t);
+    if (step < 864e5 ? dt.getHours() % (step / 36e5) === 0 : dt.getHours() === 0 && Math.round((t - t0) / 864e5) % (step / 864e5) === 0) ticks.push(t);
+  }
+  const lab = t => step < 864e5 ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : new Date(t).toLocaleDateString([], healthRange === "month" ? { day: "numeric", month: "short" } : { weekday: "short", day: "numeric" });
+  const stats = series.map(([n, i, c, u]) => {
+    const v = h.map(r => r[i]).filter(x => x != null);
+    return [n, c, u, v.reduce((a, b) => a + b, 0) / v.length, Math.max(...v), v[v.length - 1]];
+  });
+  const r1 = v => Math.round(v * 10) / 10;
+  el.innerHTML = `<div class="plot"><svg viewBox="0 0 ${W} ${H}" height="${H}">
+      <defs>${series.map(([, , c], k) => `<linearGradient id="hg${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".32"/><stop offset="1" stop-color="${c}" stop-opacity=".02"/></linearGradient>`).join("")}</defs>
+      ${[0, 25, 50, 75, 100].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}"/><text class="ax" x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`).join("")}
+      ${ticks.map(t => `<line x1="${f(x(t))}" x2="${f(x(t))}" y1="${T}" y2="${H - B}" stroke="${css("--line")}" stroke-dasharray="2 4"/><text class="ax" x="${f(x(t))}" y="${H - 7}" text-anchor="${x(t) > W - R - 30 ? "end" : x(t) < L + 30 ? "start" : "middle"}">${lab(t)}</text>`).join("")}
+      ${paths}<g class="hover" visibility="hidden"><line y1="${T}" y2="${H - B}" stroke="${css("--muted")}" stroke-dasharray="3 3"/>${series.map(([, , c]) => `<circle r="3.5" fill="${c}" stroke="${css("--card")}" stroke-width="1.5"/>`).join("")}</g>
+      <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip" hidden></div></div>
+    <table class="hlegend"><tr><th>Name</th><th>Mean</th><th>Max</th><th>Last</th></tr>
+      ${stats.map(([n, c, u, mean, max, last]) => `<tr><td><i style="background:${c}"></i>${n}</td><td>${r1(mean)}${u}</td><td>${r1(max)}${u}</td><td><b>${r1(last)}${u}</b></td></tr>`).join("")}</table>`;
+  // hover: nearest point in time, values of every series at it
+  const svg = el.querySelector("svg"), g = svg.querySelector(".hover"), tip = el.querySelector(".tip");
+  svg.onpointermove = e => {
+    const b = svg.getBoundingClientRect(), px = (e.clientX - b.left) * W / b.width;
+    if (px < L || px > W - R) return svg.onpointerleave();
+    const t = t0 + (px - L) / (W - L - R) * (t1 - t0);
+    const r = h.reduce((a, c) => Math.abs(c[0] - t) < Math.abs(a[0] - t) ? c : a);
+    const X = x(r[0]);
+    g.setAttribute("visibility", "visible");
+    g.querySelector("line").setAttribute("x1", X); g.querySelector("line").setAttribute("x2", X);
+    series.forEach(([, i], k) => { const ci = g.querySelectorAll("circle")[k]; ci.setAttribute("cx", X); ci.setAttribute("cy", r[i] == null ? -10 : y(r[i])); });
+    tip.innerHTML = `<b>${new Date(r[0]).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</b>${coarse && hourly.includes(r) ? " · hourly average" : ""}<br>`
+      + series.map(([n, i, c, u]) => `<i style="background:${c}"></i>${n} <b>${r[i] == null ? "–" : r1(r[i]) + u}</b>`).join("<br>");
+    tip.hidden = false;
+    const left = X * b.width / W;
+    tip.style.left = (left > b.width / 2 ? left - tip.offsetWidth - 12 : left + 12) + "px";
+  };
+  svg.onpointerleave = () => { g.setAttribute("visibility", "hidden"); tip.hidden = true; };
 }
 
 const siteOf = name => S.sites.find(x => x.name === name) || { name };

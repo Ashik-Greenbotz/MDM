@@ -29,6 +29,7 @@ const LOW_BATTERY = 20;
 // Clearing below amber, not red, so a value hovering at the limit doesn't open a new alert (and WhatsApp) every minute.
 const HEALTH_ALERTS = [["cpu", "CPU load", 90, 70, "%"], ["ram", "RAM usage", 95, 80, "%"], ["disk", "Storage (ROM) usage", 95, 80, "%"], ["temp", "Temperature", 75, 60, "°C"]];
 const HISTORY_EVERY_MS = 5 * 60 * 1000, HISTORY_KEEP = 288; // 24 h of 5-minute samples
+const HOURLY_KEEP = 31 * 24; // and a month of hourly averages (week / month views)
 // Devices take the server's time zone (fixes terminals shipped on UTC). Override with TIME_ZONE=Asia/Singapore etc.
 // Remote SSH: tablets hold a reverse tunnel to this sshd (the "tunnel" container). Off when no password is set.
 const TUNNEL_HOST = process.env.TUNNEL_HOST || "", TUNNEL_PORT = Number(process.env.TUNNEL_PORT || 2222);
@@ -1335,8 +1336,17 @@ async function handler(req, res) {
       }
       if (!d.historyAt || Date.now() - d.historyAt >= HISTORY_EVERY_MS) {
         d.historyAt = Date.now();
+        const prev = d.history?.[d.history.length - 1], hour = t => Math.floor(t / 36e5) * 36e5;
         (d.history ||= []).push([d.historyAt, ...HEALTH.map(k => d[k] ?? null)]);
         if (d.history.length > HISTORY_KEEP) d.history.shift();
+        if (prev && hour(prev[0]) !== hour(d.historyAt)) { // an hour ended: keep its average for the week / month views
+          const rows = d.history.filter(r => hour(r[0]) === hour(prev[0]));
+          (d.historyH ||= []).push([hour(prev[0]), ...HEALTH.map((k, i) => {
+            const v = rows.map(r => r[i + 1]).filter(x => x != null);
+            return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null;
+          })]);
+          if (d.historyH.length > HOURLY_KEEP) d.historyH.shift();
+        }
       }
       delete d.command; // old single-command format
       const command = d.queue?.shift() || null;
@@ -1579,7 +1589,7 @@ async function handler(req, res) {
       return send(res, 200, {
         now: Date.now(), commands: COMMANDS,
         me: { ...publicUser(u), allSites: all, modules: u.admin ? MODULES : u.modules || [] },
-        devices: mine(Object.values(devices)).map(({ history, token, queue: q, remotePass, vpnKey, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null,
+        devices: mine(Object.values(devices)).map(({ history, historyH, token, queue: q, remotePass, vpnKey, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null,
           vpnAddress: d.vpn && d.code ? vpnAddr(d) : null,
           remotePass: u.admin ? remotePass : undefined, // RustDesk password: admins only
           sshLan: d.remote?.ssh && d.localIp ? `ssh ${d.remote.sshUser || "user"}@${d.localIp}` : null,
@@ -1650,7 +1660,7 @@ async function handler(req, res) {
       const d = devices[m[1]];
       if (!d) return send(res, 404, { error: "no such device" });
       if (!can(u, "devices") || !sees(u, d)) return deny();
-      if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [] });
+      if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [], hourly: d.historyH || [] });
       const logs = await store.read(`logs/${d.id}.txt`);
       return logs ? send(res, 200, logs, "text/plain; charset=utf-8") : send(res, 404, { error: "no logs yet" });
     }
