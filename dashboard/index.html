@@ -1164,6 +1164,20 @@ async function liveView(d) {
     send(far ? { a: "swipe", x: down.x, y: down.y, x2: u.x, y2: u.y } : { a: "tap", ...down });
     down = null;
   };
+  // Mouse wheel = a swipe at the pointer (wheel down scrolls the page down, like a finger moving up; Shift+wheel or a
+  // trackpad scrolls sideways). Wheel ticks within 150 ms add up to one swipe, about a third of the screen per notch.
+  let wheel = null;
+  img.onwheel = e => {
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 300 : 1; // lines / pages -> pixels
+    wheel ||= { ...at(e), dx: 0, dy: 0, t: setTimeout(() => {
+      const w = wheel, k = v => Math.max(-0.6, Math.min(0.6, v / 300));
+      wheel = null;
+      send({ a: "swipe", x: w.x, y: w.y, x2: w.x - k(w.dx), y2: w.y - k(w.dy) });
+    }, 150) };
+    wheel.dx += e.deltaX * px;
+    wheel.dy += e.deltaY * px;
+  };
   // Scale the picture (up, too) to the largest size that fits the window, keeping its shape so clicks land right.
   const fit = () => {
     if (!img.naturalWidth) return;
