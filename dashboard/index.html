@@ -143,6 +143,9 @@
   .site-card a { color: inherit; text-decoration: none; }
   .site-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .site-head .name { font-size: 16px; font-weight: 650; }
+  .site-logo { width: 40px; height: 40px; flex: none; border-radius: 10px; object-fit: contain; background: var(--btn); border: 1px solid var(--line);
+    display: inline-grid; place-items: center; font-weight: 700; font-size: 17px; color: var(--accent); }
+  .site-logo.big { width: 52px; height: 52px; font-size: 22px; border-radius: 13px; }
   .site-health { display: flex; align-items: center; gap: 10px; }
   .site-health > b { font-size: 22px; font-variant-numeric: tabular-nums; }
   .site-health .meter { flex: 1; } .site-health .meter .bar { width: 100%; }
@@ -1634,6 +1637,9 @@ function healthChart(el, hist) {
 }
 
 const siteOf = name => S.sites.find(x => x.name === name) || { name };
+// A site's logo, or its first letter when it has none.
+const siteLogo = (site, big) => site.logo ? `<img class="site-logo${big ? " big" : ""}" src="${esc(site.logo)}" alt="">`
+  : `<span class="site-logo${big ? " big" : ""}" aria-hidden="true">${esc((groupName(site.name) || "?").trim().charAt(0).toUpperCase())}</span>`;
 VIEWS.sites = () => {
   $("view").innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Sites</h2>
       <button class="btn primary" data-s="add">+ Add site</button></div>
@@ -1644,7 +1650,7 @@ VIEWS.sites = () => {
         const href = g ? "#/site/" + encodeURIComponent(g) : "#/devices";
         return `<div class="card site-card">
           <a href="${href}" data-open="${esc(g)}" class="site-head">
-            <div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No location yet" : "Devices not in any site"))}</div></div>
+            <div class="row" style="gap:12px;align-items:center;flex-wrap:nowrap">${siteLogo(site)}<div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No location yet" : "Devices not in any site"))}</div></div></div>
             <span class="pill ${status[0]}">${status[1]}</span></a>
           <a href="${href}" data-open="${esc(g)}" class="site-health"><span class="meta">Fleet health</span>
             ${health == null ? "" : `<span class="meter ${health < 50 ? "bad" : health < 90 ? "warn" : ""}"><span class="bar"><b style="width:${health}%"></b></span></span>`}
@@ -1676,7 +1682,7 @@ VIEWS.site = async (name, first) => {
   if (first) {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
-      <div class="row" style="margin-bottom:4px"><h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
+      <div class="row" style="margin-bottom:4px;gap:12px">${siteLogo(site, true)}<h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
         ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
@@ -1738,6 +1744,9 @@ function siteForm(site) {
     <label class="meta">Site name</label><input id="sName" value="${esc(site?.name || "")}" placeholder="e.g. Tampines Hub" required autofocus>
     <label class="meta">Location</label><input id="sAddr" value="${esc(site?.address || "")}" placeholder="optional">
     <label class="meta">Contact</label><input id="sContact" value="${esc(site?.contact || "")}" placeholder="optional: person / phone">
+    <label class="meta">Logo</label><div class="row" style="gap:10px"><span id="sLogoPrev">${siteLogo(site || { name: "?" }, true)}</span>
+      <label class="btn" style="cursor:pointer">Upload…<input type="file" id="sLogo" accept="image/*" hidden></label>
+      <button class="btn ghost" type="button" id="sLogoDel" ${site?.logo ? "" : "hidden"}>Remove</button></div>
     <label class="meta">Coordinates</label><div class="row"><input id="sLat" style="width:110px" placeholder="latitude" value="${esc(site?.lat ?? "")}">
       <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div></div>
     <div id="sFound" class="chips" style="margin-top:8px"></div>
@@ -1745,9 +1754,29 @@ function siteForm(site) {
     site ? "Save" : "Add site", () => {
       const name = $("sName").value.trim();
       if (!name) return toast("Site name is required", true);
-      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name }),
+      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name, logo }),
         site ? "Site saved" : `Site "${name}" added`);
     });
+  // Logo: shrunk to fit 128 x 128 here, so the server only stores a few KB. undefined = unchanged, "" = removed.
+  let logo;
+  $("sLogo").onchange = () => {
+    const f = $("sLogo").files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 128 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      logo = c.toDataURL("image/webp", 0.9);
+      if (!logo.startsWith("data:image/webp")) logo = c.toDataURL("image/png"); // Safari can't make WebP
+      URL.revokeObjectURL(img.src);
+      $("sLogoPrev").innerHTML = siteLogo({ logo }, true);
+      $("sLogoDel").hidden = false;
+    };
+    img.onerror = () => toast("That file isn't an image", true);
+    img.src = URL.createObjectURL(f);
+  };
+  $("sLogoDel").onclick = () => { logo = ""; $("sLogoPrev").innerHTML = siteLogo({ name: $("sName").value || "?" }, true); $("sLogoDel").hidden = true; };
   $("sFind").onclick = () => geoSearch($("sAddr").value, $("sFound"), r => { $("sLat").value = r.lat; $("sLng").value = r.lng; if (!$("sAddr").value.trim()) $("sAddr").value = r.address; });
 }
 // OneMap address search through the server; shows the matches as chips and calls pick(result).

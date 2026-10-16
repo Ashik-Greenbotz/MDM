@@ -1838,6 +1838,13 @@ async function handler(req, res) {
       const at = point(body.lat, body.lng);
       if (!at && (num(body.lat) !== null || num(body.lng) !== null)) return send(res, 400, { error: "Latitude -90..90 and longitude -180..180, or leave both empty" });
       Object.assign(fields, { lat: at?.lat ?? null, lng: at?.lng ?? null });
+      // logo: a small image the portal already shrank to 128 px; "" removes it, left out keeps it.
+      // ponytail: stored inline in portal.json and sent with every state refresh; fine for tens of sites
+      if (body.logo === "") fields.logo = null;
+      else if (body.logo !== undefined) {
+        if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(String(body.logo)) || body.logo.length > 150000) return send(res, 400, { error: "logo must be a small PNG / JPEG / WebP image" });
+        fields.logo = body.logo;
+      }
       if (body.oldName) {
         // Rename / edit: move devices and tasks along with it.
         const old = portal.sites.find(x => x.name === body.oldName);
