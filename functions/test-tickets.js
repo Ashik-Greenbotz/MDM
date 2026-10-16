@@ -65,6 +65,15 @@ const waitFor = async (what, ok, keepOnline = [], ms = 30000) => {
   assert.equal(st.devices.find(d => d.id === "tech-tablet-0001").lat, undefined, "tech tablet location not kept without consent");
   assert.equal(st.technicians.find(t => t.id === near).availability, "available");
 
+  // ticket system on the tablet: off for this technician hides My tickets (config.ticketsOff), on again brings it back
+  assert.equal((await dev("tech-tablet-0001")).json.config.ticketsOff, false);
+  const nadia = st.technicians.find(t => t.id === near);
+  await portal("/api/technicians", { ...nadia, ticketsOff: true });
+  assert.equal((await dev("tech-tablet-0001")).json.config.ticketsOff, true, "ticket system off reaches the tablet");
+  await portal("/api/technicians", { ...nadia, ticketsOff: false });
+  assert.equal((await dev("tech-tablet-0001")).json.config.ticketsOff, false, "and back on");
+  assert.equal((await portal("/api/state")).json.technicians.find(t => t.id === near).base?.lat, 1.31, "other fields kept");
+
   // portal edit of the model wins over the tablet until the tablet changes it again
   await portal(`/api/devices/${panel.id}/config`, { model: "Telpo F10B" });
   r = await dev("onsite-panel-0001");

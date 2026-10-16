@@ -433,6 +433,7 @@ public class DeviceService extends Service {
             e.putString(Relay.PREF_MODEL, cfg.optString("model")).putString(Relay.PREF_USAGE, cfg.optString("usage", "onsite"))
                     .putString(PREF_TECH_NAME, cfg.isNull("tech") ? "" : cfg.optString("tech"));
         }
+        if (cfg != null) e.putBoolean(TechHomeActivity.PREF_TICKETS_OFF, cfg.optBoolean("ticketsOff"));
         if (reply.has("relayCfg")) {
             JSONObject rc = reply.optJSONObject("relayCfg");
             if (rc == null) e.remove(Relay.PREF_CFG); else e.putString(Relay.PREF_CFG, rc.toString());

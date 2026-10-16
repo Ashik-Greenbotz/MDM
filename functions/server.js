@@ -852,6 +852,7 @@ function techFrom(body, old) {
   return {
     name, phone, apikey: body.apikey === undefined ? old?.apikey || "" : String(body.apikey || "").trim().slice(0, 40),
     active: body.active !== false, shareLocation: !!body.shareLocation,
+    ticketsOff: !!body.ticketsOff, // hides the ticket system ("My tickets") on their tablet until turned back on
     skills: (Array.isArray(body.skills) ? body.skills : []).filter(x => CATEGORIES.includes(x)),
     region: String(body.region || "").trim().slice(0, 80),
     base: base ? { ...base, label: String(body.base.label || "").trim().slice(0, 120) } : null,
@@ -1329,18 +1330,21 @@ function rtspToMjpeg(src, res) {
   res.on("close", stop); // viewer left
 }
 
-// ---- Remote barrier control (Remote Command Centre): two cameras + two MQTT barriers per site ----
+// ---- Remote barrier control (Remote Command Centre): 1-6 cameras + 1-6 MQTT barriers per site (one of each until set up) ----
 // The broker: MQTT_URL (mqtt:// or mqtts://) + MQTT_USER / MQTT_PASSWORD in the environment win; otherwise the one an admin
 // saved on the Configuration page (portal.mqttBroker). Either way its password never goes to a browser.
 // Topics, payloads and camera addresses are in portal.barriers[site], kept out of portal.sites (which every browser receives).
 let mqtt = null;
-const GATE_KEYS = ["visitor", "resident"], BARRIER_TIMEOUT = 8000, BARRIER_GAP = 5000; // wait for the controller's reply; min gap between commands
-const DEF_CAMS = [{ name: "Visitor barrier camera", mode: "mjpeg", url: "" }, { name: "Resident barrier camera", mode: "mjpeg", url: "" }];
-const DEF_GATE = { visitor: "Visitor Barrier", resident: "Resident Barrier" };
+const BARRIER_TIMEOUT = 8000, BARRIER_GAP = 5000, BARRIER_MAX = 6; // wait for the controller's reply; min gap between commands; cameras / barriers per site
+const DEF_CAM = i => ({ name: `Camera ${i + 1}`, mode: "mjpeg", url: "" });
+const DEF_GATE = i => ({ key: "g" + (i + 1), label: `Barrier ${i + 1}`, topic: "", payload: "OPEN", ackTopic: "", ackMatch: "", stateTopic: "" });
+// Setup: { cams: [{ name, mode, url }], gates: [{ key, label, topic, payload, ackTopic, ackMatch, stateTopic }] }.
+// Setups saved before 1-6 kept gates as { visitor, resident }; they still read the same.
 const barrierOf = site => {
   const c = portal.barriers[site] || {};
-  return { cams: [0, 1].map(i => ({ ...DEF_CAMS[i], ...c.cams?.[i] })),
-    gates: Object.fromEntries(GATE_KEYS.map(k => [k, { label: DEF_GATE[k], topic: "", payload: "OPEN", ackTopic: "", ackMatch: "", stateTopic: "", ...c.gates?.[k] }])) };
+  const gates = Array.isArray(c.gates) ? c.gates : c.gates ? Object.entries(c.gates).map(([key, g]) => ({ key, ...g })) : [];
+  return { cams: (c.cams?.length ? c.cams : [{}]).map((x, i) => ({ ...DEF_CAM(i), ...x })),
+    gates: (gates.length ? gates : [{}]).map((g, i) => ({ ...DEF_GATE(i), ...g })) };
 };
 const gateLive = {}, gateLast = {}, ackWait = new Set(); // "site\nkey" -> last state from the controller / time of the last command
 const subscribeBarriers = () => { for (const c of Object.values(portal.barriers)) for (const g of Object.values(c.gates || {})) { mqtt?.subscribe(g.ackTopic); mqtt?.subscribe(g.stateTopic); } };
@@ -1354,13 +1358,13 @@ function startMqtt() {
 }
 function onBarrierMessage(topic, text) {
   for (const w of ackWait) if (w.topic === topic) w.done(text);
-  for (const [site, c] of Object.entries(portal.barriers)) for (const k of GATE_KEYS) {
-    if (c.gates?.[k]?.stateTopic === topic) gateLive[site + "\n" + k] = { state: text.trim().slice(0, 40), stateAt: Date.now() };
+  for (const site of Object.keys(portal.barriers)) for (const g of barrierOf(site).gates) {
+    if (g.stateTopic === topic) gateLive[site + "\n" + g.key] = { state: text.trim().slice(0, 40), stateAt: Date.now() };
   }
 }
 // Publishes the barrier's command, then waits for the controller's reply on its ack topic (if set up).
 async function openBarrier(site, k, by) {
-  const g = barrierOf(site).gates[k], entry = { at: Date.now(), user: by, site, barrier: g.label, command: g.payload };
+  const g = barrierOf(site).gates.find(x => x.key === k), entry = { at: Date.now(), user: by, site, barrier: g.label, command: g.payload };
   let w;
   try {
     if (!mqtt) throw new Error("MQTT broker not set up on the server");
@@ -1371,7 +1375,7 @@ async function openBarrier(site, k, by) {
     });
     await mqtt.publish(g.topic, g.payload);
     const r = await reply;
-    Object.assign(entry, !g.ackTopic ? { ok: null, result: "Sent to the controller (no confirmation set up)" }
+    Object.assign(entry, !g.ackTopic ? { ok: null, result: "Open command sent" }
       : r == null ? { ok: null, result: `No reply from the controller in ${BARRIER_TIMEOUT / 1000} s` }
       : !g.ackMatch || r.toLowerCase().includes(g.ackMatch.toLowerCase()) ? { ok: true, result: "Opened (confirmed by the controller)" }
       : { ok: false, result: "Controller replied: " + r.trim().slice(0, 80) });
@@ -1499,7 +1503,7 @@ async function handler(req, res) {
       // config: the model/usage the portal has (null until either side sets one). relayCfg: the relay file and values to use,
       // only when the profile is known; without it the app keeps finding the relay file itself (as before 10.14).
       const rp = relayProfile(d);
-      const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null } : null;
+      const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null, ticketsOff: !!techOf(d)?.ticketsOff } : null;
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,
@@ -2199,27 +2203,32 @@ async function handler(req, res) {
         return send(res, 200, {
           mqtt: { configured: !!mqtt, connected: !!mqtt?.connected, error: mqtt?.error || null },
           cams: cfg.cams.map(c => ({ name: c.name, mode: c.mode, set: !!c.url, v: c.v || 0, url: c.mode === "iframe" ? c.url : undefined })),
-          gates: GATE_KEYS.map(k => ({ key: k, label: cfg.gates[k].label, set: !!(cfg.gates[k].topic && cfg.gates[k].payload), stateTopic: !!cfg.gates[k].stateTopic, ...gateLive[site + "\n" + k] })),
+          gates: cfg.gates.map(g => ({ key: g.key, label: g.label, set: !!(g.topic && g.payload), stateTopic: !!g.stateTopic, ...gateLive[site + "\n" + g.key] })),
           log: portal.barrierLog.filter(x => x.site === site).slice(-30).reverse(),
         });
       }
       if (req.method === "POST" && p === "/api/barrier/config") {
         if (!u.admin) return deny();
         const t = (v, n = 200) => String(v ?? "").trim().slice(0, n);
-        const cams = [0, 1].map(i => { const c = body.cams?.[i] || {};
+        const list = x => (Array.isArray(x) ? x : []).slice(0, BARRIER_MAX);
+        const cams = list(body.cams).map((c, i) => {
           const url = t(c.url, 500), rtsp = /^rtsps?:\/\//i.test(url); // an rtsp:// address is always an RTSP camera
-          return { name: t(c.name, 60) || DEF_CAMS[i].name, mode: rtsp ? "rtsp" : ["mjpeg", "snapshot", "iframe"].includes(c.mode) ? c.mode : "mjpeg", url, v: Date.now() }; });
+          return { name: t(c.name, 60) || DEF_CAM(i).name, mode: rtsp ? "rtsp" : ["mjpeg", "snapshot", "iframe"].includes(c.mode) ? c.mode : "mjpeg", url, v: Date.now() }; });
         if (cams.some(c => c.url && !/^(https?|rtsps?):\/\/[^\s]+$/i.test(c.url))) return send(res, 400, { error: "Camera address must start with http://, https:// or rtsp://" });
-        const gates = Object.fromEntries(GATE_KEYS.map(k => { const g = body.gates?.[k] || {};
-          return [k, { label: t(g.label, 40) || DEF_GATE[k], topic: t(g.topic), payload: t(g.payload, 500), ackTopic: t(g.ackTopic), ackMatch: t(g.ackMatch, 60), stateTopic: t(g.stateTopic) }]; }));
-        if (Object.values(gates).some(g => /[#+]/.test(g.topic))) return send(res, 400, { error: "A command topic can't contain # or +" });
+        const used = new Set(); // each barrier keeps its key, so its live state and command guard follow it
+        const gates = list(body.gates).map((g, i) => {
+          const key = /^[\w-]{1,24}$/.test(g.key) && !used.has(g.key) ? g.key : "g" + crypto.randomBytes(3).toString("hex");
+          used.add(key);
+          return { key, label: t(g.label, 40) || DEF_GATE(i).label, topic: t(g.topic), payload: t(g.payload, 500), ackTopic: t(g.ackTopic), ackMatch: t(g.ackMatch, 60), stateTopic: t(g.stateTopic) }; });
+        if (!cams.length || !gates.length) return send(res, 400, { error: "Keep at least one camera and one barrier" });
+        if (gates.some(g => /[#+]/.test(g.topic))) return send(res, 400, { error: "A command topic can't contain # or +" });
         portal.barriers[site] = { cams, gates };
         subscribeBarriers();
         log(null, "barrier", `Barrier setup for ${site} changed by ${by}`);
         return ok();
       }
       if (req.method === "POST" && p === "/api/barrier/open") {
-        const k = String(body.gate || ""), g = cfg.gates[k], key = site + "\n" + k;
+        const k = String(body.gate || ""), g = cfg.gates.find(x => x.key === k), key = site + "\n" + k;
         if (!g) return send(res, 400, { error: "unknown barrier" });
         if (!g.topic || !g.payload) return send(res, 400, { error: `${g.label} isn't set up yet (⚙ Setup…)` });
         const wait = (gateLast[key] || 0) + BARRIER_GAP - Date.now();

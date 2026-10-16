@@ -102,12 +102,26 @@
 
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 18px; }
   /* Barrier control: two cameras side by side, two big open buttons under them */
-  .cams, .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 18px; }
+  .cams, .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 18px; }
+  .cams.one { grid-template-columns: minmax(0, 820px); justify-content: center; } /* a single camera doesn't fill the whole screen */
+  .cf-item { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px 12px; margin: 10px 0; }
+  .cf-item h4 { margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
   .cam-box { aspect-ratio: 16 / 9; background: #0b0f17; border-radius: 0 0 14px 14px; overflow: hidden; display: grid; place-items: center; color: #94a3b8; }
   .cam-box img, .cam-box iframe { width: 100%; height: 100%; object-fit: contain; border: 0; display: block; }
-  .gate { padding: 18px; text-align: center; }
-  .btn.gate-btn { width: 100%; font-size: 22px; padding: 22px 16px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .btn.gate-btn small { font-size: 13px; opacity: .85; font-weight: 500; }
+  .gate { padding: 14px; text-align: center; }
+  .btn.gate-btn { width: 100%; max-width: 460px; margin: 0 auto; display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: 18px;
+    font-size: 16px; font-weight: 600; text-align: left; white-space: normal; box-shadow: 0 8px 22px rgba(242,140,0,.28); }
+  .btn.gate-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(242,140,0,.38); }
+  .btn.gate-btn:active { transform: scale(.98); }
+  .gate-ico { flex: none; width: 46px; height: 46px; border-radius: 14px; background: rgba(255,255,255,.22); display: grid; place-items: center; }
+  .gate-ico svg { width: 30px; height: 30px; overflow: visible; }
+  .gate-ico .arm { transform-box: fill-box; transform-origin: 0 50%; transition: transform .45s var(--ease); }
+  .btn.gate-btn:hover .arm, .btn.gate-btn.sending .arm { transform: rotate(-32deg); } /* the barrier arm lifts */
+  .gate-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .gate-txt small { font-size: 12px; font-weight: 500; opacity: .85; }
+  .gate-go { flex: none; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.22); }
+  .btn.gate-btn:disabled { box-shadow: none; transform: none; }
+  .btn.gate-btn:disabled .arm { transform: none; }
   .gate-state { margin-top: 12px; font-weight: 600; min-height: 22px; }
   .card { background: linear-gradient(180deg, var(--sheen), transparent 140px), var(--card); backdrop-filter: saturate(170%) blur(24px);
     -webkit-backdrop-filter: saturate(170%) blur(24px); border: 1px solid var(--edge); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 18px; transition: box-shadow .35s var(--ease), border-color .35s; }
@@ -903,7 +917,7 @@ VIEWS.devices = (arg, first) => {
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
       <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
-      <td><button class="btn ghost" data-unpend="${esc(x.code)}">Cancel</button></td></tr>`).join(""));
+      <td><button class="btn danger" data-unpend="${esc(x.code)}" title="Remove this waiting Device ID">🗑 Remove</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
   $("all").checked = list.length > 0 && list.every(d => picked.has(d.id));
@@ -1010,7 +1024,7 @@ function addDevice() {
 
 function rowClick(e) {
   const un = e.target.closest("[data-unpend]");
-  if (un) { if (confirm(`Cancel Device ID ${un.dataset.unpend}?`)) act(() => api("/api/devices/pending/delete", { code: un.dataset.unpend }), "Cancelled"); return; }
+  if (un) { if (confirm(`Remove the waiting Device ID ${un.dataset.unpend}? A tablet can no longer link with it.`)) act(() => api("/api/devices/pending/delete", { code: un.dataset.unpend }), `Device ID ${un.dataset.unpend} removed`); return; }
   const tr = e.target.closest("tr[data-id]");
   if (!tr) return;
   const d = dev(tr.dataset.id);
@@ -2250,20 +2264,21 @@ const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites
   apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)" };
 // ---------------- Barrier control (Remote Command Centre): two live cameras and the open buttons of one site ----------------
 // The server holds the MQTT broker login and the camera addresses; the page only sees names, states and results.
-const GATES = [["visitor", "Visitor Barrier"], ["resident", "Resident Barrier"]];
+// Boom barrier: post, striped arm (.arm lifts on hover / while sending), base
+const GATE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="3" y="7" width="3.2" height="13" rx="1"/><path d="M1.5 20.5h6.2"/>
+  <g class="arm"><rect x="6.2" y="8.6" width="16" height="3.2" rx="1.6"/><path d="M10 8.6l-1.4 3.2M14 8.6l-1.4 3.2M18 8.6l-1.4 3.2"/></g></svg>`;
 const gateBusy = {}, gateSeen = {};
 setInterval(() => document.querySelectorAll("img[data-snap]").forEach(i => { if (i.complete) i.src = i.dataset.snap + "&t=" + Date.now(); }), 1000); // snapshot cameras
+const CAM_TYPES = [["mjpeg", "MJPEG stream (http)"], ["snapshot", "JPEG snapshot, refreshed every second"], ["rtsp", "RTSP camera / DVR (rtsp://, converted on the server)"], ["iframe", "Web player page (https, e.g. go2rtc)"]];
 VIEWS.barrier = async (name, first) => {
   if (first) {
     $("view").innerHTML = `
       <p><a href="#/site/${encodeURIComponent(name)}">← ${esc(name)}</a></p>
       <div class="row" style="margin-bottom:14px;gap:12px"><h2 style="margin:0">🚧 Barrier Control</h2><span class="meta">${esc(name)}</span><span id="bMqtt"></span>
         <span class="grow" style="flex:1"></span>${me().admin ? `<button class="btn" id="bSetup">⚙ Setup…</button>` : ""}</div>
-      <div class="cams">${[0, 1].map(i => `<div class="card" style="margin:0"><h3><span id="bCamName${i}">${i ? "Resident" : "Visitor"} barrier camera</span><span class="grow"></span><span id="bCamTag${i}"></span></h3>
-        <div class="cam-box loading" id="bCam${i}"></div></div>`).join("")}</div>
-      <div class="gates" style="margin:18px 0">${GATES.map(([k, l]) => `<div class="card gate" style="margin:0">
-        <button class="btn primary gate-btn" data-gate="${k}"><span id="bLabel-${k}">${l}</span><small>Open barrier</small></button>
-        <div class="gate-state" id="bState-${k}"></div><div class="meta" id="bRes-${k}"></div></div>`).join("")}</div>
+      <div class="cams" id="bCams"></div>
+      <div class="gates" id="bGates" style="margin:18px 0"></div>
       <div class="card"><h3>Command log (audit)</h3><div class="table-wrap" style="max-height:320px"><table>
         <thead><tr><th>Time</th><th>User</th><th>Barrier</th><th>Command</th><th>Result</th></tr></thead><tbody id="bLog"></tbody></table></div></div>`;
     $("view").onclick = e => {
@@ -2276,8 +2291,22 @@ VIEWS.barrier = async (name, first) => {
   try { st = await api("/api/barrier?site=" + encodeURIComponent(name)); }
   catch (e) { if ($("bMqtt")) $("bMqtt").innerHTML = `<span class="pill bad">${esc(e.message)}</span>`; return; }
   if (!$("bLog") || decodeURIComponent(location.hash.split("/")[2] || "") !== name) return; // left the page meanwhile
-  $("bMqtt").innerHTML = !st.mqtt.configured ? `<span class="pill warn">MQTT broker not set up on the server</span>`
+  $("bMqtt").innerHTML = !st.mqtt.configured ? `<span class="pill warn">MQTT broker not set up</span>`
     : st.mqtt.connected ? `<span class="pill ok">● MQTT connected</span>` : `<span class="pill bad">MQTT offline${st.mqtt.error ? ": " + esc(st.mqtt.error) : ""}</span>`;
+  // Build the camera / barrier boxes only when their number changes, so running streams aren't restarted.
+  if ($("bCams").children.length !== st.cams.length) {
+    $("bCams").className = "cams" + (st.cams.length === 1 ? " one" : "");
+    $("bCams").innerHTML = st.cams.map((c, i) => `<div class="card" style="margin:0"><h3><span id="bCamName${i}"></span><span class="grow"></span><span id="bCamTag${i}"></span></h3>
+      <div class="cam-box loading" id="bCam${i}"></div></div>`).join("");
+  }
+  const keys = st.gates.map(g => g.key).join("|");
+  if ($("bGates").dataset.keys !== keys) {
+    $("bGates").dataset.keys = keys;
+    $("bGates").innerHTML = st.gates.map(g => `<div class="card gate" style="margin:0">
+      <button class="btn primary gate-btn" data-gate="${esc(g.key)}"><span class="gate-ico">${GATE_ICON}</span>
+        <span class="gate-txt"><span id="bLabel-${esc(g.key)}"></span><small>Tap to open the barrier</small></span><span class="gate-go">Open ›</span></button>
+      <div class="gate-state" id="bState-${esc(g.key)}"></div><div class="meta" id="bRes-${esc(g.key)}"></div></div>`).join("");
+  }
   st.cams.forEach((c, i) => {
     $("bCamName" + i).textContent = c.name;
     $("bCamTag" + i).innerHTML = c.set ? `<span class="pill bad"><span class="rec">●</span> LIVE</span>` : "";
@@ -2292,13 +2321,13 @@ VIEWS.barrier = async (name, first) => {
   });
   for (const g of st.gates) {
     $("bLabel-" + g.key).textContent = g.label;
-    const btn = document.querySelector(`[data-gate="${g.key}"]`);
+    const btn = document.querySelector(`[data-gate="${CSS.escape(g.key)}"]`);
     btn.disabled = !!gateBusy[g.key] || !g.set || !st.mqtt.connected;
     btn.title = !g.set ? "Not set up yet" : !st.mqtt.connected ? "MQTT broker offline" : "";
     const popped = gateSeen[g.key] !== undefined && gateSeen[g.key] !== g.state; // the barrier just changed state
     gateSeen[g.key] = g.state;
     $("bState-" + g.key).innerHTML = g.state ? `Barrier state: <span class="pill ${/open/i.test(g.state) ? "ok" : /close/i.test(g.state) ? "" : "warn"}${popped ? " pop" : ""}">${esc(g.state)}</span> <span class="meta">${ago(g.stateAt)}</span>`
-      : g.set ? `<span class="meta">${g.stateTopic ? "No state from the controller yet" : "No state feedback set up"}</span>` : `<span class="meta">Not set up yet</span>`;
+      : g.set ? "" : `<span class="meta">Not set up yet</span>`;
   }
   $("bLog").innerHTML = st.log.map(x => `<tr><td>${new Date(x.at).toLocaleString()}</td><td>${esc(x.user)}</td><td>${esc(x.barrier)}</td><td><code>${esc(x.command)}</code></td>
     <td><span class="pill ${x.ok ? "ok" : x.ok === false ? "bad" : "warn"}">${esc(x.result)}</span></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No commands yet</td></tr>`;
@@ -2307,7 +2336,7 @@ async function openGate(site, key) {
   const label = $("bLabel-" + key).textContent;
   if (gateBusy[key] || !confirm(`Open the ${label} at ${site}?`)) return;
   gateBusy[key] = true;
-  const btn = document.querySelector(`[data-gate="${key}"]`), res = $("bRes-" + key);
+  const btn = document.querySelector(`[data-gate="${CSS.escape(key)}"]`), res = $("bRes-" + key);
   const card = btn.closest(".gate");
   card.classList.remove("done-ok", "done-bad");
   btn.disabled = true; btn.classList.add("sending"); res.textContent = "Sending command…";
@@ -2321,25 +2350,53 @@ async function openGate(site, key) {
   btn.classList.remove("sending"); void card.offsetWidth; if (mood) card.classList.add(mood);
   VIEWS.barrier(site, false);
 }
+// Setup (admins): any number of cameras and barriers, 1 to 6 each, added / removed in the dialog.
 async function barrierSetup(site) {
-  const c = (await api("/api/barrier?config=1&site=" + encodeURIComponent(site))).config;
-  const inp = (id, v, lab, ph, w = "100%") => `<label style="display:block;width:${w}"><span class="meta">${lab}</span><input id="${id}" value="${esc(v || "")}" placeholder="${esc(ph)}" style="width:100%"></label>`;
+  const [c, br] = await Promise.all([api("/api/barrier?config=1&site=" + encodeURIComponent(site)).then(r => r.config), api("/api/config/mqtt")]);
+  const inp = (f, v, lab, ph, w = "100%") => `<label style="display:block;width:${w}"><span class="meta">${lab}</span><input data-f="${f}" value="${esc(v || "")}" placeholder="${esc(ph)}" style="width:100%"></label>`;
+  const rm = `<span class="grow" style="flex:1"></span><button type="button" class="btn ghost danger" data-rm>Remove</button>`;
+  const camRow = x => `<div class="cf-item cf-cam"><h4>📷 <span data-n></span>${rm}</h4><div class="row">${inp("name", x.name, "Name", "", "48%")}
+      <label style="display:block;width:48%"><span class="meta">Type</span><select data-f="mode" style="width:100%">${options(CAM_TYPES, x.mode)}</select></label>
+      ${inp("url", x.url, "Camera address (kept on the server)", "rtsp://user:pass@host:554/cam/realmonitor?channel=1&subtype=1")}</div></div>`;
+  const gateRow = g => `<div class="cf-item cf-gate" data-key="${esc(g.key || "")}"><h4>🚧 <span data-n></span>${rm}</h4><div class="row">
+      ${inp("label", g.label, "Button name", "", "48%")}${inp("topic", g.topic, "Command topic", "VA/63/", "48%")}
+      ${inp("payload", g.payload ?? "OPEN", "Command payload (sent when the button is pressed)", '{"operation":"open"}')}</div></div>`;
   dialog(`<h2>Barrier setup · ${esc(site)}</h2>
-    <p class="meta">The MQTT broker address and login are set on the server (MQTT_URL, MQTT_USER, MQTT_PASSWORD), never in the browser.
-      Camera addresses stay on the server too; the portal streams them through.</p>
-    ${[0, 1].map(i => `<h3>Camera ${i + 1}</h3><div class="row">${inp("cfN" + i, c.cams[i].name, "Name", "", "48%")}
-      <label style="display:block;width:48%"><span class="meta">Type</span><select id="cfM${i}" style="width:100%">${options([["mjpeg", "MJPEG stream (http)"], ["snapshot", "JPEG snapshot, refreshed every second"], ["rtsp", "RTSP camera / DVR (rtsp://, converted on the server)"], ["iframe", "Web player page (https, e.g. go2rtc)"]], c.cams[i].mode)}</select></label>
-      ${inp("cfU" + i, c.cams[i].url, "Camera address (kept on the server)", "http://user:pass@192.168.1.64/ISAPI/Streaming/channels/102/httpPreview")}</div>`).join("")}
-    ${GATES.map(([k]) => { const g = c.gates[k]; return `<h3>${esc(g.label)}</h3><div class="row">
-      ${inp("gL" + k, g.label, "Button name", "", "48%")}${inp("gT" + k, g.topic, "Command topic", "site1/barrier/visitor/cmd", "48%")}
-      ${inp("gP" + k, g.payload, "Command payload", "OPEN", "48%")}${inp("gA" + k, g.ackTopic, "Acknowledgement topic (optional)", "site1/barrier/visitor/ack", "48%")}
-      ${inp("gM" + k, g.ackMatch, "Reply text meaning success (optional)", "OK", "48%")}${inp("gS" + k, g.stateTopic, "Barrier state topic (optional)", "site1/barrier/visitor/state", "48%")}</div>`; }).join("")}
-    <p class="meta">With an acknowledgement topic the portal waits up to 8 s for the controller's reply; with a state topic it shows the barrier's real state (e.g. from a sensor).</p>`,
-    "Save", () => act(() => api("/api/barrier/config", { site,
-      cams: [0, 1].map(i => ({ name: $("cfN" + i).value, mode: $("cfM" + i).value, url: $("cfU" + i).value })),
-      gates: Object.fromEntries(GATES.map(([k]) => [k, { label: $("gL" + k).value, topic: $("gT" + k).value, payload: $("gP" + k).value,
-        ackTopic: $("gA" + k).value, ackMatch: $("gM" + k).value, stateTopic: $("gS" + k).value }])) }), "Barrier setup saved")
-      .then(() => { $("bCam0").dataset.src = $("bCam1").dataset.src = ""; VIEWS.barrier(site, false); }));
+    <h3>MQTT broker <span class="meta" style="font-weight:400">(shared by all sites)</span> ${!br.host && !br.fromEnv ? `<span class="pill neutral">Not set</span>`
+      : br.connected ? `<span class="pill ok">● Connected</span>` : `<span class="pill bad">Not connected${br.error ? ": " + esc(br.error) : ""}</span>`}</h3>
+    ${br.fromEnv ? `<p class="meta">Set by the server's MQTT_URL setting.</p>` : `<div class="row">
+      <label style="display:block;width:48%"><span class="meta">Host or IP</span><input id="mqHost" value="${esc(br.host)}" placeholder="159.65.152.75" style="width:100%"></label>
+      <label style="display:block;width:22%"><span class="meta">Port</span><input id="mqPort" type="number" min="1" max="65535" value="${br.host ? br.port : ""}" placeholder="1883" style="width:100%"></label>
+      <label class="chip" style="align-self:flex-end"><input type="checkbox" id="mqTls" ${br.tls ? "checked" : ""}> TLS</label>
+      <label style="display:block;width:48%"><span class="meta">Username</span><input id="mqUser" value="${esc(br.username)}" autocomplete="off" style="width:100%"></label>
+      <label style="display:block;width:48%"><span class="meta">Password</span><input id="mqPass" type="password" autocomplete="new-password" placeholder="${br.hasPassword ? "•••••••• (saved, leave empty to keep)" : ""}" style="width:100%"></label></div>
+      <p class="meta">The password stays on the server and is never shown again.</p>`}
+    <h3>Cameras</h3><div id="cfCams">${c.cams.map(camRow).join("")}</div><button type="button" class="btn" id="cfAddCam">+ Add camera</button>
+    <h3 style="margin-top:18px">Barriers</h3><div id="cfGates">${c.gates.map(gateRow).join("")}</div><button type="button" class="btn" id="cfAddGate">+ Add barrier</button>
+    <p class="meta">1 to 6 of each.</p>`,
+    "Save", () => {
+      const read = (sel, fields) => [...document.querySelectorAll(sel)].map(row => Object.fromEntries(fields.map(f => [f, row.querySelector(`[data-f="${f}"]`).value])));
+      const cams = read("#cfCams .cf-cam", ["name", "mode", "url"]);
+      const gates = read("#cfGates .cf-gate", ["label", "topic", "payload"])
+        .map((g, i) => ({ key: document.querySelectorAll("#cfGates .cf-gate")[i].dataset.key, ...g }));
+      // the broker is saved only when something in it changed
+      const nb = !br.fromEnv && { host: $("mqHost").value.trim(), port: $("mqPort").value, tls: $("mqTls").checked, username: $("mqUser").value, password: $("mqPass").value };
+      const brokerChanged = nb && (nb.password || nb.host !== br.host || Number(nb.port || 1883) !== Number(br.host ? br.port : 1883) || nb.tls !== br.tls || nb.username !== br.username);
+      act(() => (brokerChanged ? api("/api/config/mqtt", nb) : Promise.resolve()).then(() => api("/api/barrier/config", { site, cams, gates })), "Barrier setup saved")
+        .then(() => { $("bCams").innerHTML = ""; $("bGates").dataset.keys = ""; VIEWS.barrier(site, false); });
+    });
+  // numbering, the add buttons' limit and "Remove" while at least one is left
+  const renumber = () => {
+    for (const [box, word, add] of [["cfCams", "Camera", "cfAddCam"], ["cfGates", "Barrier", "cfAddGate"]]) {
+      const rows = $(box).children;
+      [...rows].forEach((r, i) => { r.querySelector("[data-n]").textContent = `${word} ${i + 1}`; r.querySelector("[data-rm]").hidden = rows.length === 1; });
+      $(add).disabled = rows.length >= 6;
+    }
+  };
+  renumber();
+  $("cfAddCam").onclick = () => { $("cfCams").insertAdjacentHTML("beforeend", camRow({ name: `Camera ${$("cfCams").children.length + 1}`, mode: "rtsp" })); renumber(); };
+  $("cfAddGate").onclick = () => { $("cfGates").insertAdjacentHTML("beforeend", gateRow({ label: `Barrier ${$("cfGates").children.length + 1}` })); renumber(); };
+  $("dlg").onclick = e => { const b = e.target.closest("[data-rm]"); if (b) { b.closest(".cf-item").remove(); renumber(); } };
 }
 
 // ---------------- Configuration (admins): maintenance mode, Max, WhatsApp alerts, relay per device type ----------------
@@ -2381,12 +2438,6 @@ VIEWS.config = (arg, first) => {
       <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
       <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
         <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
-    <div class="card"><h3>🚧 Barrier MQTT broker<span class="grow"></span><span id="mqState"></span></h3><div class="pad">
-      <p class="meta" style="margin-top:0">The broker that Barrier Control sends the open commands to. The password stays on the server: leave it empty to keep the saved one.</p>
-      <div class="row" id="mqForm"><input id="mqHost" placeholder="Host or IP, e.g. 159.65.152.75" style="width:220px"><input id="mqPort" type="number" min="1" max="65535" placeholder="1883" style="width:90px">
-        <label class="chip"><input type="checkbox" id="mqTls"> TLS</label><input id="mqUser" placeholder="Username" style="width:160px" autocomplete="off">
-        <input id="mqPass" type="password" placeholder="Password" style="width:160px" autocomplete="new-password"><button class="btn primary" id="mqSave">Save &amp; connect</button></div>
-      <p class="meta" id="mqNote"></p></div></div>
     <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
       <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
         <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
@@ -2402,16 +2453,6 @@ VIEWS.config = (arg, first) => {
   $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
   $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
   $("cfgWaEdit").onclick = () => whatsappForm();
-  const mqShow = b => {
-    $("mqHost").value = b.host; $("mqPort").value = b.host ? b.port : ""; $("mqTls").checked = b.tls; $("mqUser").value = b.username; $("mqPass").value = "";
-    $("mqPass").placeholder = b.hasPassword ? "•••••••• (saved)" : "Password";
-    $("mqState").innerHTML = !b.host && !b.fromEnv ? `<span class="pill neutral">Not set</span>` : b.connected ? `<span class="pill ok">● Connected</span>`
-      : `<span class="pill bad">Not connected${b.error ? ": " + esc(b.error) : ""}</span>`;
-    $("mqNote").textContent = b.fromEnv ? "The server's MQTT_URL setting is in use and overrides this form." : "";
-  };
-  api("/api/config/mqtt").then(mqShow).catch(() => {});
-  $("mqSave").onclick = () => { toast("Connecting…"); act(() => api("/api/config/mqtt", { host: $("mqHost").value, port: $("mqPort").value, tls: $("mqTls").checked,
-    username: $("mqUser").value, password: $("mqPass").value }).then(mqShow), "Broker saved"); };
   $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
   // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
   $("cfgImg").onchange = () => {
@@ -2600,11 +2641,12 @@ function techForm(t) {
       <label>Skills</label><div class="chips">${S.categories.map(c => chip(c, t?.skills?.includes(c))).join("")}</div>
       <label>Options</label><div class="chips">
         <label class="chip"><input type="checkbox" id="tActive" ${t?.active === false ? "" : "checked"}>Active</label>
-        <label class="chip"><input type="checkbox" id="tShare" ${t?.shareLocation ? "checked" : ""}>Use their tablet's live location (they agreed)</label></div></div>
-    <p class="meta">No skills ticked = can take any job. Without live location sharing only the base location is used, and the tablet's location isn't stored.</p>`,
+        <label class="chip"><input type="checkbox" id="tShare" ${t?.shareLocation ? "checked" : ""}>Use their tablet's live location (they agreed)</label>
+        <label class="chip"><input type="checkbox" id="tTickets" ${t?.ticketsOff ? "" : "checked"}>Ticket system on their tablet</label></div></div>
+    <p class="meta">No skills ticked = can take any job. Without live location sharing only the base location is used, and the tablet's location isn't stored. Untick "Ticket system on their tablet" to hide My tickets on their tablet for now (it comes back within ~10 s when ticked again).</p>`,
     t ? "Save" : "Add member", () => {
       act(() => api("/api/technicians", { id: t?.id, name: $("tName").value, phone: $("tPhone").value, ...($("tKey").value ? { apikey: $("tKey").value } : {}),
-        region: $("tRegion").value, active: $("tActive").checked, shareLocation: $("tShare").checked,
+        region: $("tRegion").value, active: $("tActive").checked, shareLocation: $("tShare").checked, ticketsOff: !$("tTickets").checked,
         skills: [...$("dlg").querySelectorAll("input[name=skill]:checked")].map(i => i.value),
         base: { label: $("tBase").value, lat: $("tLat").value, lng: $("tLng").value } }), t ? "Saved" : "Team member added");
     });

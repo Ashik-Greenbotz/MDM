@@ -90,8 +90,11 @@ public class TechHomeActivity extends Activity {
         }
     }
 
+    // A technical team tablet, unless the portal has the ticket system turned off for that technician for now.
+    static final String PREF_TICKETS_OFF = "tickets_off";
     static boolean wanted(Context ctx) {
-        return "tech".equals(ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(Relay.PREF_USAGE, "onsite"));
+        SharedPreferences p = ctx.getSharedPreferences("kiosk", MODE_PRIVATE);
+        return "tech".equals(p.getString(Relay.PREF_USAGE, "onsite")) && !p.getBoolean(PREF_TICKETS_OFF, false);
     }
 
     // Apps the technician screen hands off to; they must be allowed in lock task mode or they won't open.
@@ -143,7 +146,7 @@ public class TechHomeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (!wanted(this)) { // usage changed back to onsite in the portal or the admin menu
+        if (!wanted(this)) { // usage changed back to onsite, or the ticket system turned off in the portal
             finish();
             return;
         }

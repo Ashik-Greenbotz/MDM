@@ -100,7 +100,8 @@ public class KioskActivity extends Activity {
     private final SharedPreferences.OnSharedPreferenceChangeListener codeListener = (p, key) -> {
         if (DeviceService.PREF_CODE.equals(key)) runOnUiThread(this::showDeviceCode);
         if (DeviceService.PREF_SERVER_OK.equals(key)) runOnUiThread(this::showStatus);
-        if (PREF_APPS.equals(key) || "tech_cache".equals(key) || Relay.PREF_USAGE.equals(key)) runOnUiThread(this::renderApps);
+        if (PREF_APPS.equals(key) || "tech_cache".equals(key) || Relay.PREF_USAGE.equals(key) || TechHomeActivity.PREF_TICKETS_OFF.equals(key))
+            runOnUiThread(this::renderApps);
     };
 
     // Battery % above the Device ID; ACTION_BATTERY_CHANGED is sticky, so registering also delivers the current level.
