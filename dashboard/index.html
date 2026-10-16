@@ -1637,9 +1637,10 @@ function healthChart(el, hist) {
 }
 
 const siteOf = name => S.sites.find(x => x.name === name) || { name };
-// A site's logo, or its first letter when it has none.
+// A site's logo, or a building icon when it has none.
+const BUILDING = `<svg viewBox="0 0 24 24" width="55%" height="55%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>`;
 const siteLogo = (site, big) => site.logo ? `<img class="site-logo${big ? " big" : ""}" src="${esc(site.logo)}" alt="">`
-  : `<span class="site-logo${big ? " big" : ""}" aria-hidden="true">${esc((groupName(site.name) || "?").trim().charAt(0).toUpperCase())}</span>`;
+  : `<span class="site-logo${big ? " big" : ""}" aria-hidden="true">${BUILDING}</span>`;
 VIEWS.sites = () => {
   $("view").innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Sites</h2>
       <button class="btn primary" data-s="add">+ Add site</button></div>
@@ -1776,7 +1777,7 @@ function siteForm(site) {
     img.onerror = () => toast("That file isn't an image", true);
     img.src = URL.createObjectURL(f);
   };
-  $("sLogoDel").onclick = () => { logo = ""; $("sLogoPrev").innerHTML = siteLogo({ name: $("sName").value || "?" }, true); $("sLogoDel").hidden = true; };
+  $("sLogoDel").onclick = () => { logo = ""; $("sLogoPrev").innerHTML = siteLogo({}, true); $("sLogoDel").hidden = true; };
   $("sFind").onclick = () => geoSearch($("sAddr").value, $("sFound"), r => { $("sLat").value = r.lat; $("sLng").value = r.lng; if (!$("sAddr").value.trim()) $("sAddr").value = r.address; });
 }
 // OneMap address search through the server; shows the matches as chips and calls pick(result).
