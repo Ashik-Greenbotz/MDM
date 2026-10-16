@@ -8,6 +8,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
+const { Readable } = require("node:stream");
+const Mqtt = require("./mqtt");
 
 const CLOUD = !!process.env.K_SERVICE; // set by Cloud Functions / Cloud Run
 const PORT = Number(process.env.PORT || 8080);
@@ -124,7 +126,7 @@ if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs", "history
 
 let devices = {};
 const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], announcements: [], whatsapp: [], waOutbox: [], waHistory: [], kioskApp: null,
-  technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {}, relayProfiles: {}, maintImage: null };
+  technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {}, relayProfiles: {}, maintImage: null, barriers: {}, barrierLog: [] };
 // Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
 // ("Add device", kept in portal.pending) and type it on the device to link it.
 const usedCodes = () => new Set([...Object.values(devices).map(d => d.code), ...portal.pending.map(x => x.code)]);
@@ -175,7 +177,7 @@ const same = (a, b) => {
 // ---- portal accounts ----
 // The ADMIN_USER / ADMIN_PASSWORD account is always a full admin (can't be locked out). More accounts live in portal.users:
 // { username, name, hash, admin, sites: ["*"] | [site names], modules: [MODULES...], readOnly, disabled, createdAt }
-const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs"];
+const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs", "barrier"];
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
@@ -476,7 +478,9 @@ async function callmebot(phone, apikey, text) {
     { signal: AbortSignal.timeout(20000) });
   const body = (await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   // CallMeBot answers 200 with an error text for a wrong key or number
-  if (!res.ok || /error|invalid|not (been )?(activated|registered)|wrong/i.test(body)) throw new Error(`HTTP ${res.status} ${body.slice(0, 150)}`);
+  // ...and 200 "You have 0 messages left ... subscribe ... Message not sent" when the free allowance is used up.
+  // The reply starts by echoing our text, so keep its end (the reason) for the activity log.
+  if (!res.ok || /error|invalid|not (been )?(activated|registered)|wrong|not sent|messages left|subscribe/i.test(body)) throw new Error(`HTTP ${res.status} ${body.slice(-160)}`);
 }
 let waBusy = false;
 // More than WA_BATCH messages due for one number at once (a site outage, 500 devices down): one summary message instead
@@ -1305,6 +1309,54 @@ function addBug(d, b) {
   bugs.push({ id: rid(), deviceId: d.id, code: d.code || null, deviceName: label(d), site: d.group || "", kind, app, at, summary: bugSummary(text), text, seenAt: Date.now() });
   if (bugs.length > BUGS_KEEP) bugs.splice(0, bugs.length - BUGS_KEEP);
 }
+// ---- Remote barrier control (Remote Command Centre): two cameras + two MQTT barriers per site ----
+// The broker address and login live only in the environment (MQTT_URL mqtt:// or mqtts://, MQTT_USER, MQTT_PASSWORD).
+// Topics, payloads and camera addresses are in portal.barriers[site], kept out of portal.sites (which every browser receives).
+const mqtt = process.env.MQTT_URL ? new Mqtt(process.env.MQTT_URL, { username: process.env.MQTT_USER, password: process.env.MQTT_PASSWORD }) : null;
+const GATE_KEYS = ["visitor", "resident"], BARRIER_TIMEOUT = 8000, BARRIER_GAP = 5000; // wait for the controller's reply; min gap between commands
+const DEF_CAMS = [{ name: "Visitor barrier camera", mode: "mjpeg", url: "" }, { name: "Resident barrier camera", mode: "mjpeg", url: "" }];
+const DEF_GATE = { visitor: "Visitor Barrier", resident: "Resident Barrier" };
+const barrierOf = site => {
+  const c = portal.barriers[site] || {};
+  return { cams: [0, 1].map(i => ({ ...DEF_CAMS[i], ...c.cams?.[i] })),
+    gates: Object.fromEntries(GATE_KEYS.map(k => [k, { label: DEF_GATE[k], topic: "", payload: "OPEN", ackTopic: "", ackMatch: "", stateTopic: "", ...c.gates?.[k] }])) };
+};
+const gateLive = {}, gateLast = {}, ackWait = new Set(); // "site\nkey" -> last state from the controller / time of the last command
+const subscribeBarriers = () => { for (const c of Object.values(portal.barriers)) for (const g of Object.values(c.gates || {})) { mqtt?.subscribe(g.ackTopic); mqtt?.subscribe(g.stateTopic); } };
+mqtt?.on("up", subscribeBarriers);
+mqtt?.on("message", (topic, text) => {
+  for (const w of ackWait) if (w.topic === topic) w.done(text);
+  for (const [site, c] of Object.entries(portal.barriers)) for (const k of GATE_KEYS) {
+    if (c.gates?.[k]?.stateTopic === topic) gateLive[site + "\n" + k] = { state: text.trim().slice(0, 40), stateAt: Date.now() };
+  }
+});
+// Publishes the barrier's command, then waits for the controller's reply on its ack topic (if set up).
+async function openBarrier(site, k, by) {
+  const g = barrierOf(site).gates[k], entry = { at: Date.now(), user: by, site, barrier: g.label, command: g.payload };
+  let w;
+  try {
+    if (!mqtt) throw new Error("MQTT broker not set up on the server");
+    const reply = g.ackTopic && new Promise(done => {
+      w = { topic: g.ackTopic, done: t => { ackWait.delete(w); clearTimeout(w.timer); done(t); } };
+      w.timer = setTimeout(() => w.done(null), BARRIER_TIMEOUT);
+      ackWait.add(w); // before publishing, so a fast reply isn't missed
+    });
+    await mqtt.publish(g.topic, g.payload);
+    const r = await reply;
+    Object.assign(entry, !g.ackTopic ? { ok: null, result: "Sent to the controller (no confirmation set up)" }
+      : r == null ? { ok: null, result: `No reply from the controller in ${BARRIER_TIMEOUT / 1000} s` }
+      : !g.ackMatch || r.toLowerCase().includes(g.ackMatch.toLowerCase()) ? { ok: true, result: "Opened (confirmed by the controller)" }
+      : { ok: false, result: "Controller replied: " + r.trim().slice(0, 80) });
+  } catch (e) {
+    w?.done(null);
+    Object.assign(entry, { ok: false, result: "Failed: " + e.message });
+  }
+  portal.barrierLog.push(entry);
+  if (portal.barrierLog.length > 5000) portal.barrierLog.splice(0, portal.barrierLog.length - 5000);
+  log(null, "barrier", `${g.label} at ${site}: ${entry.result} (by ${by})`);
+  return entry;
+}
+
 // Loads the saved data. The office PC also adds the built kiosk APK on first run.
 const ready = (async () => {
   devices = JSON.parse((await store.read("devices.json")) || "{}");
@@ -1956,6 +2008,7 @@ async function handler(req, res) {
         for (const t of portal.tasks) if (t.target?.group === old.name) t.target.group = name;
         for (const t of portal.tokens) if (t.group === old.name) t.group = name;
         for (const x of portal.users) x.sites = (x.sites || []).map(s => s === old.name ? name : s);
+        if (portal.barriers[old.name] && name !== old.name) { portal.barriers[name] = portal.barriers[old.name]; delete portal.barriers[old.name]; }
         Object.assign(old, { name }, fields);
         return ok();
       }
@@ -1968,6 +2021,7 @@ async function handler(req, res) {
       if (!u.admin) return deny(); // only admins delete sites
       for (const x of portal.users) x.sites = (x.sites || []).filter(s => s !== body.name);
       portal.sites = portal.sites.filter(x => x.name !== body.name);
+      delete portal.barriers[body.name];
       for (const d of Object.values(devices)) if (d.group === body.name) d.group = "";
       log(null, "site", `Site "${body.name}" deleted`);
       return ok();
@@ -2086,6 +2140,72 @@ async function handler(req, res) {
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
       return ok();
+    }
+    // ---------------- Barrier control: "barrier" module + the site must be one of the account's ----------------
+    if (p.startsWith("/api/barrier")) {
+      const site = String((req.method === "GET" ? url.searchParams.get("site") : body.site) || "");
+      if (!can(u, "barrier") || !siteOk(u, site)) return deny();
+      if (!portal.sites.some(x => x.name === site)) return send(res, 404, { error: "no such site" });
+      const cfg = barrierOf(site);
+      if (req.method === "GET" && p === "/api/barrier") {
+        if (url.searchParams.get("config")) return u.admin ? send(res, 200, { config: cfg }) : deny();
+        return send(res, 200, {
+          mqtt: { configured: !!mqtt, connected: !!mqtt?.connected, error: mqtt?.error || null },
+          cams: cfg.cams.map(c => ({ name: c.name, mode: c.mode, set: !!c.url, v: c.v || 0, url: c.mode === "iframe" ? c.url : undefined })),
+          gates: GATE_KEYS.map(k => ({ key: k, label: cfg.gates[k].label, set: !!(cfg.gates[k].topic && cfg.gates[k].payload), stateTopic: !!cfg.gates[k].stateTopic, ...gateLive[site + "\n" + k] })),
+          log: portal.barrierLog.filter(x => x.site === site).slice(-30).reverse(),
+        });
+      }
+      if (req.method === "POST" && p === "/api/barrier/config") {
+        if (!u.admin) return deny();
+        const t = (v, n = 200) => String(v ?? "").trim().slice(0, n);
+        const cams = [0, 1].map(i => { const c = body.cams?.[i] || {};
+          return { name: t(c.name, 60) || DEF_CAMS[i].name, mode: ["mjpeg", "snapshot", "iframe"].includes(c.mode) ? c.mode : "mjpeg", url: t(c.url, 500), v: Date.now() }; });
+        if (cams.some(c => c.url && !/^https?:\/\/[^\s]+$/i.test(c.url))) return send(res, 400, { error: "Camera address must start with http:// or https://" });
+        const gates = Object.fromEntries(GATE_KEYS.map(k => { const g = body.gates?.[k] || {};
+          return [k, { label: t(g.label, 40) || DEF_GATE[k], topic: t(g.topic), payload: t(g.payload, 500), ackTopic: t(g.ackTopic), ackMatch: t(g.ackMatch, 60), stateTopic: t(g.stateTopic) }]; }));
+        if (Object.values(gates).some(g => /[#+]/.test(g.topic))) return send(res, 400, { error: "A command topic can't contain # or +" });
+        portal.barriers[site] = { cams, gates };
+        subscribeBarriers();
+        log(null, "barrier", `Barrier setup for ${site} changed by ${by}`);
+        return ok();
+      }
+      if (req.method === "POST" && p === "/api/barrier/open") {
+        const k = String(body.gate || ""), g = cfg.gates[k], key = site + "\n" + k;
+        if (!g) return send(res, 400, { error: "unknown barrier" });
+        if (!g.topic || !g.payload) return send(res, 400, { error: `${g.label} isn't set up yet (⚙ Setup…)` });
+        const wait = (gateLast[key] || 0) + BARRIER_GAP - Date.now();
+        if (wait > 0) return send(res, 429, { error: `${g.label} just got a command; try again in ${Math.ceil(wait / 1000)} s` });
+        gateLast[key] = Date.now() + BARRIER_TIMEOUT; // also blocks a second press while this one runs
+        const r = await openBarrier(site, k, by);
+        gateLast[key] = Date.now();
+        return ok({ ok: r.ok, result: r.result });
+      }
+      // Camera stream through the server: the camera address and its login never reach the browser.
+      // ponytail: HTTP Basic login only; cameras that insist on Digest need a go2rtc / MediaMTX in front (or the iframe mode)
+      if (req.method === "GET" && p === "/api/barrier/cam") {
+        const c = cfg.cams[Number(url.searchParams.get("i"))];
+        if (!c?.url || c.mode === "iframe") return send(res, 404, { error: "no camera" });
+        const target = new URL(c.url), headers = {};
+        if (target.username) {
+          headers.authorization = "Basic " + Buffer.from(decodeURIComponent(target.username) + ":" + decodeURIComponent(target.password)).toString("base64");
+          target.username = target.password = "";
+        }
+        const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 10000);
+        res.on("close", () => ac.abort()); // viewer left: stop pulling the stream
+        try {
+          const r = await fetch(target, { headers, signal: ac.signal });
+          clearTimeout(timer);
+          if (!r.ok) return send(res, 502, { error: "camera answered HTTP " + r.status });
+          res.writeHead(200, { "Content-Type": r.headers.get("content-type") || "image/jpeg", "Cache-Control": "no-store" });
+          Readable.fromWeb(r.body).on("error", () => res.end()).pipe(res);
+        } catch {
+          clearTimeout(timer);
+          if (!res.headersSent) send(res, 502, { error: "camera not reachable" });
+        }
+        return;
+      }
+      return send(res, 404, { error: "not found" });
     }
     // ---------------- Max (assistant module) ----------------
     if (req.method === "POST" && p === "/api/assistant") {

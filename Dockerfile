@@ -4,7 +4,7 @@ FROM node:22-slim
 
 WORKDIR /app
 
-COPY functions/server.js functions/maintenance-default.jpg ./functions/
+COPY functions/server.js functions/mqtt.js functions/maintenance-default.jpg ./functions/
 COPY dashboard ./dashboard
 COPY agents ./agents
 

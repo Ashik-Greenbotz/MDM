@@ -85,6 +85,14 @@ ON / OFF / Pulse ask for confirmation, because they switch a real door. Detectin
 The card shows the state the tablet reports. Needs app 10.10 or newer. The app writes to `/sys/class/gpio-ctrl/relay1/enable` (F8, F10B): `0` for on (door open) and `1` for off (locked), the same on every device since app 10.13.
 The F10 (Android 9) has its relay at `/sys/class/telpoio/relay_en`, which only root can write and nobody can read: app 10.13 or newer writes it through `su` and reports the last value it wrote.
 
+## Barrier control (Remote Command Centre)
+- Each site has a **🚧 Barrier Control** button. It opens two live cameras (Visitor / Resident) and two buttons that open the barriers over MQTT. Every press is logged (user, site, barrier, command, time, result).
+- Access: the **Barrier control** page permission in Users & access, plus the site. Only admins see **⚙ Setup…** (camera addresses, MQTT topics, command payload, acknowledgement topic + success text, barrier state topic).
+- A press is "confirmed" only when the controller replies on the acknowledgement topic within 8 s. Without an ack topic it says "sent". The state topic shows the barrier's real state (e.g. a sensor). The same barrier can't be sent another command for 5 s.
+- Cameras stream through the portal, so their address and password never reach the browser. They must be HTTP MJPEG or JPEG snapshot with Basic login. RTSP or Digest-only cameras need go2rtc / MediaMTX in front (then use "Web player page").
+- Broker: runs on the cloud VM (docker compose service `mqtt`, Mosquitto), not on any office PC. To turn it on, edit the VM `.env`: `COMPOSE_PROFILES=ssh,mqtt`, `MQTT_USER`, `MQTT_PASSWORD`, `MQTT_URL=mqtt://mqtt:1883`; open TCP 8883 in the VM firewall; then `docker compose up -d`. Controllers connect to `mqtts://mdm.gbotz.site:8883` (TLS with the site's own certificate) with that login. The login is only in the server environment, never in the browser.
+- Code: `functions/mqtt.js` (small built-in MQTT client, no npm packages), `/api/barrier*` in `functions/server.js`, `VIEWS.barrier` in `dashboard/index.html`.
+
 ## Technical team and tickets
 The portal menu **Technical Team** has these tabs: Dashboard, Team members, Team devices, Tickets, Assignment, Workload & availability, Ticket history, Settings.
 
