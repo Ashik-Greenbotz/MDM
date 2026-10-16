@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Device Portal</title>
+<title>Device Remote Management</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#e6eeff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0a1024" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   /* Theme: html[data-theme] is set before paint by the head script (auto follows the system). */
@@ -22,16 +22,17 @@
     --glow1: rgba(242,140,0,.2); --glow2: rgba(64,120,255,.22); --glow3: rgba(190,110,255,.18);
     --ease: cubic-bezier(.2,.8,.2,1); color-scheme: light;
   }
+  /* dark: Apple's neutral greys (system background #000, grouped #1c1c1e, elevated #2c2c2e), no coloured tint */
   :root[data-theme="dark"] {
-    --bg: #0a1024; --bg-grad: linear-gradient(135deg, #0a1024 0%, #171c46 55%, #2a1a4a 100%);
-    --card: rgba(255,255,255,.07); --sheen: rgba(255,255,255,.07); --edge: rgba(255,255,255,.14); --solid: #171b40; --th: rgba(23,27,64,.82);
-    --dlg: rgba(23,27,64,.8); --btn: rgba(255,255,255,.08); --btn-hover: rgba(255,255,255,.15);
-    --text: #f3f5fa; --muted: #aeb4c4; --line: rgba(255,255,255,.08); --hover: rgba(255,255,255,.07);
-    --glass: rgba(14,18,44,.5); --accent-soft: rgba(242,140,0,.16);
-    --ok: #34d399; --ok-soft: rgba(52,211,153,.14); --bad: #ff6b6b; --bad-soft: rgba(255,107,107,.14); --warn: #ffc94d; --warn-soft: rgba(255,201,77,.14);
-    --shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 32px rgba(0,0,0,.35);
-    --shadow-hi: inset 0 1px 0 rgba(255,255,255,.12), 0 0 0 1px rgba(242,140,0,.22), 0 20px 50px rgba(0,0,0,.5), 0 0 40px rgba(242,140,0,.08);
-    --glow1: rgba(242,140,0,.16); --glow2: rgba(80,110,255,.28); --glow3: rgba(170,80,255,.22); color-scheme: dark;
+    --bg: #000000; --bg-grad: #000000;
+    --card: #1c1c1e; --sheen: rgba(255,255,255,.04); --edge: rgba(255,255,255,.08); --solid: #1c1c1e; --th: rgba(28,28,30,.92);
+    --dlg: rgba(36,36,38,.92); --btn: #2c2c2e; --btn-hover: #3a3a3c;
+    --text: #f5f5f7; --muted: #98989d; --line: rgba(84,84,88,.4); --hover: rgba(255,255,255,.05);
+    --glass: rgba(28,28,30,.72); --accent-soft: rgba(242,140,0,.16);
+    --ok: #30d158; --ok-soft: rgba(48,209,88,.15); --bad: #ff453a; --bad-soft: rgba(255,69,58,.15); --warn: #ffd60a; --warn-soft: rgba(255,214,10,.14);
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-hi: 0 0 0 1px rgba(255,255,255,.1), 0 12px 32px rgba(0,0,0,.6);
+    --glow1: transparent; --glow2: transparent; --glow3: transparent; color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html { -webkit-font-smoothing: antialiased; }
@@ -142,6 +143,9 @@
   .site-card a { color: inherit; text-decoration: none; }
   .site-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .site-head .name { font-size: 16px; font-weight: 650; }
+  .site-logo { width: 40px; height: 40px; flex: none; border-radius: 10px; object-fit: contain; background: var(--btn); border: 1px solid var(--line);
+    display: inline-grid; place-items: center; font-weight: 700; font-size: 17px; color: var(--accent); }
+  .site-logo.big { width: 52px; height: 52px; font-size: 22px; border-radius: 13px; }
   .site-health { display: flex; align-items: center; gap: 10px; }
   .site-health > b { font-size: 22px; font-variant-numeric: tabular-nums; }
   .site-health .meter { flex: 1; } .site-health .meter .bar { width: 100%; }
@@ -187,16 +191,42 @@
   .days label { margin-right: 8px; white-space: nowrap; color: var(--text) !important; }
   dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0; }
   dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; overflow-wrap: anywhere; font-weight: 500; }
-  .chart { width: 100%; height: 160px; display: block; }
-  #view.enter .chart polyline { stroke-dasharray: 3000; animation: draw 1.6s var(--ease); }
-  .chart polyline { filter: drop-shadow(0 2px 6px rgba(0,0,0,.15)); }
+  /* health chart (Grafana style): filled lines, axes, legend table on the right, hover crosshair */
+  .hchart { display: flex; gap: 8px; padding: 10px 14px 12px; position: relative; }
+  .hchart .plot { flex: 1; min-width: 0; position: relative; }
+  .hchart svg { display: block; width: 100%; }
+  .hchart .ax { font-size: 10.5px; fill: var(--muted); }
+  .hchart .tip { position: absolute; top: 4px; pointer-events: none; background: var(--dlg); border: 1px solid var(--edge); border-radius: 10px;
+    padding: 7px 10px; font-size: 12px; box-shadow: var(--shadow-hi); white-space: nowrap; z-index: 2; backdrop-filter: blur(20px); }
+  .hchart .tip i, .hlegend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .hlegend { width: 250px; flex: none; font-size: 12px; border-collapse: collapse; align-self: flex-start; }
+  .hlegend th { color: var(--muted); font-weight: 500; text-align: right; padding: 3px 6px; }
+  .hlegend th:first-child { text-align: left; }
+  .hlegend td { padding: 4px 6px; text-align: right; font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); }
+  .hlegend td:first-child { text-align: left; white-space: nowrap; }
+  .hlegend tr[data-s] { cursor: pointer; }
+  .hlegend tr[data-s]:hover td { background: var(--hover); }
+  .hlegend tr.off { opacity: .4; }
+  @media (max-width: 760px) { .hchart { flex-direction: column; } .hlegend { width: 100%; } }
+  ol.cmds { margin: 0 0 10px; padding-left: 22px; display: grid; gap: 8px; }
+  ol.cmds li::marker { color: var(--muted); font-size: 12px; }
+  ol.cmds .row { gap: 8px; align-items: flex-start; }
+  ol.cmds code { flex: 1; font: 12px/1.5 ui-monospace, Consolas, monospace; background: var(--btn); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; word-break: break-all; }
+  ol.cmds .btn { padding: 4px 10px; font-size: 12px; }
+  ol.cmds .meta { font-size: 12px; margin-top: 2px; }
+  details.steps > summary { cursor: pointer; list-style: none; font-weight: 600; padding: 10px 0; color: var(--accent); }
+  details.steps > summary::-webkit-details-marker { display: none; }
+  details.steps > summary::before { content: "▸"; display: inline-block; margin-right: 8px; transition: transform .2s var(--ease); }
+  details.steps[open] > summary::before { transform: rotate(90deg); }
+  .card > h3 .tabs.hr { margin: 0; padding: 0; gap: 4px; }
+  .card > h3 .tabs.hr .btn { padding: 4px 10px; font-size: 12px; }
+  #view.enter .hchart .ln { stroke-dasharray: 4000; animation: draw 1.6s var(--ease); }
   @keyframes draw { from { stroke-dashoffset: 3000; } }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); padding: 0 18px 14px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
   pre.log { margin: 0; padding: 14px 18px; max-height: 480px; overflow: auto; font: 12px/1.6 ui-monospace, "SF Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
   .qr { background: #fff; padding: 12px; border-radius: 14px; display: inline-block; }
   .qr svg { display: block; width: 280px; height: 280px; }
-  .feat td:first-child { white-space: normal; }
   .code { font: 700 13px/1 ui-monospace, "SF Mono", Consolas, monospace; letter-spacing: .08em; padding: 4px 8px; border-radius: 7px;
     background: var(--accent-soft); color: var(--accent); }
   tr.pending td { color: var(--muted); }
@@ -229,6 +259,14 @@
   dialog h2 { margin: 0 0 14px; font-size: 20px; letter-spacing: -.02em; }
   dialog .foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   #shotDlg { width: min(760px, calc(100vw - 24px)); }
+  /* remote control: as big as the window allows */
+  #shotDlg.live { width: min(1400px, calc(100vw - 24px)); max-height: calc(100vh - 16px); padding: 14px 18px; }
+  #shotDlg.live[open] { display: flex; flex-direction: column; }
+  #shotDlg.live h2 { margin: 0 0 8px; }
+  #shotDlg.live img.shot { max-width: none; max-height: none; } /* sized by fit() in liveView */
+  #shotDlg.live .foot { margin-top: 10px; }
+  #shotDlg .live-side { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+  #shotDlg .live-side:empty { display: none; }
   #shotDlg h2 .code { font-size: 13px; vertical-align: middle; }
   img.shot { display: block; max-width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; border-radius: 14px; border: 1px solid var(--line); background: #000;
     box-shadow: 0 20px 50px rgba(0,0,0,.3); animation: zoom .5s var(--ease); }
@@ -378,7 +416,7 @@
 <header>
   <img src="/logo.png" alt="">
   <div>
-    <h1>Device Portal</h1>
+    <h1>Device Remote Management</h1>
     <div class="sub">Interlock Group · every device across all sites</div>
   </div>
   <div class="grow"></div>
@@ -387,7 +425,6 @@
   <button class="btn icon" id="soundBtn" title="Alarm sound when a device goes offline"></button>
   <button class="btn" id="mapBtn" title="Live location of all devices"><span class="mapico"></span>Map</button>
   <a class="btn bell" href="#/alerts" title="Open alerts"><span class="bellico"></span><b id="bellN" hidden></b></a>
-  <button class="btn" id="vpnBtn" title="Connect my laptop / phone to the devices' VPN" hidden>🔒 VPN</button>
   <span class="who" id="who"></span><button class="btn" id="logout" title="Sign out"><span class="outico"></span><span class="t">Sign out</span></button>
 </header>
 <div class="layout">
@@ -428,24 +465,26 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", live: "🖥 Remote control", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
   remote: "🖥 Set up remote desktop", sshon: "SSH on", sshoff: "SSH off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Line icons from Lucide (lucide.dev, ISC licence), inlined so the portal works offline.
 const ICONS = {"activity":"<path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\"/>","bell":"<path d=\"M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9\"/><path d=\"M10.3 21a1.94 1.94 0 0 0 3.4 0\"/>","calendar-clock":"<path d=\"M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5\"/><path d=\"M16 2v4\"/><path d=\"M8 2v4\"/><path d=\"M3 10h5\"/><path d=\"M17.5 17.5 16 16.3V14\"/><circle cx=\"16\" cy=\"16\" r=\"6\"/>","layout-dashboard":"<rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/>","log-out":"<path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/><polyline points=\"16 17 21 12 16 7\"/><line x1=\"21\" x2=\"9\" y1=\"12\" y2=\"12\"/>","map-pin":"<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/>","map":"<path d=\"M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z\"/><path d=\"M15 5.764v15\"/><path d=\"M9 3.236v15\"/>","moon":"<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>","package":"<path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/><path d=\"M12 22V12\"/><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\"/><path d=\"m7.5 4.27 9 5.15\"/>","qr-code":"<rect width=\"5\" height=\"5\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"5\" height=\"5\" x=\"16\" y=\"3\" rx=\"1\"/><rect width=\"5\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/><path d=\"M21 16h-3a2 2 0 0 0-2 2v3\"/><path d=\"M21 21v.01\"/><path d=\"M12 7v3a2 2 0 0 1-2 2H7\"/><path d=\"M3 12h.01\"/><path d=\"M12 3h.01\"/><path d=\"M12 16v.01\"/><path d=\"M16 12h1\"/><path d=\"M21 12v.01\"/><path d=\"M12 21v-1\"/>","sparkles":"<path d=\"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z\"/><path d=\"M20 3v4\"/><path d=\"M22 5h-4\"/><path d=\"M4 17v2\"/><path d=\"M5 18H3\"/>","sun-moon":"<path d=\"M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.9 4.9 1.4 1.4\"/><path d=\"m17.7 17.7 1.4 1.4\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.3 17.7-1.4 1.4\"/><path d=\"m19.1 4.9-1.4 1.4\"/>","sun":"<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"m17.66 17.66 1.41 1.41\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.34 17.66-1.41 1.41\"/><path d=\"m19.07 4.93-1.41 1.41\"/>","tablet-smartphone":"<rect width=\"10\" height=\"14\" x=\"3\" y=\"8\" rx=\"2\"/><path d=\"M5 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-2.4\"/><path d=\"M8 18h.01\"/>","user-round":"<circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/>","users":"<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>","volume-2":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><path d=\"M16 9a5 5 0 0 1 0 6\"/><path d=\"M19.364 18.364a9 9 0 0 0 0-12.728\"/>","volume-x":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><line x1=\"22\" x2=\"16\" y1=\"9\" y2=\"15\"/><line x1=\"16\" x2=\"22\" y1=\"9\" y2=\"15\"/>"};
-Object.assign(ICONS, { wrench: "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
+Object.assign(ICONS, { settings: "<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
+  wrench: "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
   mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
+  bug: "<path d=\"m8 2 1.88 1.88\"/><path d=\"M14.12 3.88 16 2\"/><path d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/><path d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/><path d=\"M12 20v-9\"/><path d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/><path d=\"M6 13H2\"/><path d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/><path d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/><path d=\"M22 13h-4\"/><path d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>",
   send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
-  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["team", "wrench", "Technical Team"],
+  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["bugs", "bug", "Bug Finder"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
-  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["features", "sparkles", "Features"], ["users", "users", "Users & access"],
+  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" || page === "announcements" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team", bug: "bugs" }[page] || page);
 
 let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {}, technicians: [], models: [], statuses: {}, flow: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
@@ -524,7 +563,6 @@ async function refresh() {
   $("bellN").hidden = !n;
   $("bellN").textContent = n;
   $("who").innerHTML = S.me ? `${ico("user-round")}<span class="t">${esc(S.me.name || S.me.username)}</span>${S.me.readOnly ? `<span class="pill neutral">View only</span>` : ""}` : "";
-  $("vpnBtn").hidden = !(S.vpnReady && S.me?.admin);
   $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}` : "";
   renderNav();
   renderAlarm();
@@ -615,7 +653,7 @@ function renderNav() {
   const cur = (location.hash.slice(2) || "overview").split("/")[0];
   const counts = { devices: S.devices.length, sites: groups().filter(Boolean).length, alerts: openAlerts().length, tasks: S.tasks.length,
     team: S.ticketCounts ? S.ticketCounts.new + S.ticketCounts.resolved : 0 };
-  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") ? "on" : ""}">
+  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") || (cur === "bug" && k === "bugs") ? "on" : ""}">
     ${ico(icon)}<span class="t">${t}</span>${counts[k] ? `<span class="c ${k === "alerts" ? "bad" : ""}">${counts[k]}</span>` : ""}</a>`).join("");
 }
 
@@ -830,6 +868,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
+        ${(S.commands[d.type] || []).includes("live") ? `<button class="btn ghost" data-cmd="live" title="Remote control" aria-label="Remote control">🖥</button>` : ""}
         <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`;
 // Public (internet) address the portal saw the device's check-in from; null on the same LAN as the portal.
 const pubIp = d => { const ip = String(d.ip || "").replace(/^::ffff:/, ""); return !ip || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|fe80:|f[cd])/i.test(ip) ? null : ip; };
@@ -844,33 +883,28 @@ function addDeviceSteps(type) {
   if (type === "tablet") {
     const app = S.kioskApp && S.apps.find(x => x.id === S.kioskApp), apk = app ? app.label + ".apk" : "mdmkiosk app.apk";
     const step = (n, title, body) => `<h4 style="margin:16px 0 6px">${n}. ${title}</h4>${body}`;
-    return step(1, "Get the latest app", `<p class="meta">${app
-        ? `<a class="btn primary" href="/download/app/${esc(app.id)}.apk" download="${esc(apk)}">⬇ Download ${esc(app.label)}</a> uploaded ${ago(app.at)}.`
-        : "No kiosk app uploaded yet."}
-        Newer build? Upload it on <b>Apps &amp; files</b> and click <b>Use for QR</b> on it, so this link always gives the latest app.</p>`)
-    + step(2, "Prepare the tablet", `<ol class="meta" style="padding-left:18px;line-height:1.6;margin:0">
-        <li>Settings → Accounts → remove <b>all</b> Google / Samsung accounts (device owner fails while any account is on it).</li>
-        <li>Settings → About → tap <b>Build number</b> 7 times → Developer options → turn on <b>USB debugging</b>.</li>
-        <li>Plug it into the PC by USB and tap <b>Allow</b> (Wi-Fi instead: <code>adb connect &lt;tablet IP&gt;:5555</code>). <code>adb devices</code> must list it as <b>device</b>.</li></ol>`)
-    + step(3, "Install the app and make it device owner", `<p class="meta" style="margin-top:0">Open a command window in the folder with the downloaded APK and run these (or double-click <b>setup-tablet.bat</b>, it does the same):</p>
-      ${pre("adCmd", [
-        "adb devices",
-        `adb install -r "${apk}"`,
-        "adb shell dpm set-device-owner com.greenbotz.kiosk/.AdminReceiver",
-        "adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow",
-        "adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService",
-        "adb shell settings put secure accessibility_enabled 1",
-        "adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow",
-        "adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode kiosk",
-      ].join("\n"))}
-      <p class="meta">The device owner line must say <b>Success: Device owner set</b>. "already several accounts" = an account is still on the tablet; "already provisioned" = factory reset it first.
-        For a monitor-only device use <code>--es mode monitor</code> on the last line.</p>`)
-    + step(4, "Configure it", `<ol class="meta" style="padding-left:18px;line-height:1.6;margin:0">
-        <li>Fill in <b>Name</b> and <b>Site</b> above and click <b>Create Device ID</b>.</li>
-        <li>On the tablet's <b>Set up this device</b> screen choose <b>Production</b> (or <b>Debug</b> + this PC's IP) and type the Device ID.</li>
-        <li>Check the <b>model</b> and <b>usage</b> (onsite / technical team), tap <b>Connect</b>.</li>
-        <li>Pick the <b>allowed apps</b>, then <b>Save and finish</b>. The tablet appears in Devices within a minute.</li>
-        <li>Already set up? Tap the top-right corner 6 times → admin password → <b>Link device ID</b> → type the ID.</li></ol>`);
+    return step(1, "Install the latest app", `<p class="meta" style="margin-top:0">Download and install the latest Kiosk app on the device.</p>
+        ${app ? `<a class="btn primary" href="/download/app/${esc(app.id)}.apk" download="${esc(apk)}">⬇ Download ${esc(app.label)}</a>` : `<p class="meta">No kiosk app uploaded yet: upload it on <b>Apps &amp; files</b>.</p>`}`)
+    + step(2, "Connect the device", `<p class="meta" style="margin-top:0">Connect the device to your laptop by USB and make sure it is detected by ADB (Android Debug Bridge).</p>`)
+    + step(3, "Set device owner", `<p class="meta" style="margin-top:0">Open a command prompt in the folder containing the APK and run the following commands:</p>
+      ${(() => {
+        const cmds = [
+          ["adb devices", "Check the device is connected (it must show as device)"],
+          [`adb install -r "${apk}"`, "Install the app"],
+          ["adb shell dpm set-device-owner com.greenbotz.kiosk/.AdminReceiver", "Make the app device owner (kiosk mode, lock / unlock)"],
+          ["adb shell appops set com.greenbotz.kiosk SYSTEM_ALERT_WINDOW allow", "Allow the app-pinning override button"],
+          ["adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk/.ScreenshotService", "Turn on screenshots and remote control"],
+          ["adb shell settings put secure accessibility_enabled 1", "Switch accessibility on (needed by the line above)"],
+          ["adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow", "Screenshots on Android 9 / 10 without a prompt"],
+          ["adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode kiosk", "Start the kiosk app"],
+        ];
+        return `<ol class="cmds">${cmds.map(([c, what], i) => `<li><div class="row"><code id="adC${i}">${esc(c)}</code><button type="button" class="btn ghost" data-copy="#adC${i}">Copy</button></div>
+            <div class="meta">${what}</div></li>`).join("")}</ol>
+          <pre id="adCmd" hidden>${esc(cmds.map(c => c[0]).join("\n"))}</pre><button type="button" class="btn" data-copy="#adCmd">Copy all</button>`;
+      })()}
+      <p class="meta">Ensure the command returns <b>Success: Device owner set</b>.</p>`)
+    + step(4, "Complete device setup", `<p class="meta" style="margin-top:0">Click <b>Create Device ID</b> to generate a unique key. Enter the Device ID on the device, configure the settings, and connect it to the portal.</p>`)
+    + step(5, "Test the device", `<p class="meta" style="margin-top:0">Verify that the device appears in the portal and test all features to ensure everything is working correctly.</p>`);
   }
   if (!S.me?.admin) return `<p class="meta">Ask an administrator: installing the agent on a PC needs the PC key, which only admins can see.</p>`;
   if (!key) return noKey;
@@ -911,7 +945,9 @@ function addDevice() {
   const dlg = $("dlg"), okBtn = dlg.querySelector('button[value="ok"]');
   const show = () => {
     const t = $("adType").value;
-    $("adSteps").innerHTML = addDeviceSteps(t);
+    // the steps stay folded under "Installation procedure" until clicked
+    const open = $("adSteps").querySelector("details")?.open;
+    $("adSteps").innerHTML = `<details class="steps"${open ? " open" : ""}><summary>Installation procedure</summary>${addDeviceSteps(t)}</details>`;
     dlg.querySelectorAll("[data-tab]").forEach(el => (el.hidden = t !== "tablet"));
     okBtn.textContent = t === "tablet" ? "Create Device ID" : "Done";
   };
@@ -933,28 +969,6 @@ function rowClick(e) {
   location.hash = "#/device/" + encodeURIComponent(d.id);
 }
 
-// The signed-in admin's own WireGuard config (same every time): download, QR for the phone app, or copy.
-async function vpnMe() {
-  try {
-    const r = await api("/api/vpn/me", {});
-    const qr = qrcode(0, "M");
-    qr.addData(r.conf);
-    qr.make();
-    const url = URL.createObjectURL(new Blob([r.conf], { type: "text/plain" }));
-    dialog(`<h2>Connect my laptop / phone</h2>
-      <p class="meta">Your VPN address: <b>${esc(r.address || "–")}</b>. Keep this file private: it is your key to the VPN.</p>
-      <ol class="meta" style="padding-left:18px;line-height:1.6">
-        <li>Install WireGuard (<a href="https://www.wireguard.com/install/" target="_blank" rel="noopener">wireguard.com/install</a>).</li>
-        <li>Laptop: <b>Import tunnel(s) from file</b> → the downloaded <b>mdm-vpn.conf</b>. Phone: <b>+</b> → <b>Scan from QR code</b>.</li>
-        <li><b>Activate</b> it, then use the VPN commands on the device pages.</li></ol>
-      <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap"><div class="qr" style="width:210px;background:#fff;padding:6px;border-radius:10px">${qr.createSvgTag({ cellSize: 3, margin: 2, scalable: true })}</div>
-        <div style="flex:1;min-width:220px"><a class="btn primary" href="${url}" download="mdm-vpn.conf">⬇ Download mdm-vpn.conf</a>
-          <pre class="log" id="vpnConf" style="margin-top:8px;max-height:200px;white-space:pre-wrap;word-break:break-all">${esc(r.conf)}</pre>
-          <button type="button" class="btn ghost" id="vpnCopy">Copy</button></div></div>`);
-    $("vpnCopy").onclick = () => navigator.clipboard.writeText(r.conf).then(() => toast("Copied"));
-  } catch (e) { toast("VPN: " + e.message, true); }
-}
-$("vpnBtn").onclick = vpnMe;
 
 function renderBulk() {
   if (document.activeElement?.closest("#bulk")) return; // the user is choosing a command: don't rebuild it under them
@@ -965,7 +979,6 @@ function renderBulk() {
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
     ${S.sshReady ? `<button class="btn" data-bssh="1">SSH on</button><button class="btn" data-bssh="">SSH off</button>` : ""}
-    ${S.vpnReady && me().admin ? `<button class="btn" data-bvpn="1">VPN on</button><button class="btn" data-bvpn="">VPN off</button>` : ""}
     <button class="btn danger" id="bDel">Remove</button>
     <button class="btn ghost" id="bClear">Clear selection</button></div>`;
   $("bCmd").onchange = e => { if (e.target.value) command(sel, e.target.value); e.target.value = ""; };
@@ -975,8 +988,6 @@ function renderBulk() {
   $("bClear").onclick = () => { picked.clear(); route(true); };
   for (const b of $("bulk").querySelectorAll("[data-bssh]")) b.onclick = () =>
     act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "ssh", on: !!b.dataset.bssh }), `Remote SSH ${b.dataset.bssh ? "on" : "off"}`);
-  for (const b of $("bulk").querySelectorAll("[data-bvpn]")) b.onclick = () =>
-    act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "vpn", on: !!b.dataset.bvpn }), `VPN ${b.dataset.bvpn ? "on" : "off"}`);
 }
 
 function deviceMenu(btn, d) {
@@ -1122,6 +1133,72 @@ async function screenshot(d, send = true) {
   catch (e) { sendError = e.message; render(); }
 }
 
+// Live remote control (Android): the device streams its screen while this window is open and stops ~20 s after it
+// closes. Click = tap, drag = swipe. About 1 picture a second on Android 11-13, 3 on 14+; taps go through at once.
+async function liveView(d) {
+  const dl = $("shotDlg"), base = `/api/devices/${encodeURIComponent(d.id)}/live`;
+  shotTimers.forEach(clearInterval);
+  shotTimers = [];
+  let open = true, down = null;
+  dl.innerHTML = `<h2>🖥 ${esc(label(d))} <span class="code">${esc(d.code || "")}</span></h2>
+    <div class="shot-msg" id="liveWait"><div class="spin"></div><b>Connecting…</b>
+      <p class="meta">${isOnline(d) ? "The device picks this up on its next check-in, usually within 10 seconds." : `⚠️ ${esc(label(d))} is offline (last seen ${ago(d.lastSeen)}).`}</p></div>
+    <img class="shot" id="liveImg" alt="Live screen of ${esc(label(d))}" hidden draggable="false" style="cursor:pointer;touch-action:none;user-select:none">
+    <div class="live-side">${[["unlock", "🔓 Unlock 2 min"], ["lock", "🔒 Lock"], ["singleapp", "📌 Pin app…"], ["unpin", "Unpin app"]]
+      .filter(([c]) => withUnpin(S.commands[d.type] || []).includes(c)).map(([c, t]) => `<button class="btn" data-c="${c}">${t}</button>`).join("")}</div>
+    <div class="foot"><button class="btn" data-k="back">◀ Back</button><button class="btn" data-k="home">● Home</button><button class="btn" data-k="recents">▢ Recents</button>
+      <span class="grow"></span><span class="meta" id="liveAt"></span><button class="btn" data-k="close">Close</button></div>`;
+  dl.classList.add("live");
+  dl.onclose = () => { open = false; dl.classList.remove("live"); };
+  const send = b => api(base, b).catch(e => toast(e.message, true));
+  dl.onclick = e => {
+    const k = e.target.closest("[data-k]")?.dataset.k, c = e.target.closest("[data-c]")?.dataset.c;
+    if (c) return command([dev(d.id) || d], c); // kiosk commands: same as the device page (unlock re-locks itself after 2 min)
+    if (k === "close") dl.close(); else if (k) send({ a: k });
+  };
+  const img = $("liveImg"), at = e => { const r = img.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
+  img.onpointerdown = e => { e.preventDefault(); down = at(e); img.setPointerCapture(e.pointerId); };
+  img.onpointerup = e => {
+    if (!down) return;
+    const u = at(e), r = img.getBoundingClientRect(), far = Math.hypot((u.x - down.x) * r.width, (u.y - down.y) * r.height) > 12;
+    send(far ? { a: "swipe", x: down.x, y: down.y, x2: u.x, y2: u.y } : { a: "tap", ...down });
+    down = null;
+  };
+  // Scale the picture (up, too) to the largest size that fits the window, keeping its shape so clicks land right.
+  const fit = () => {
+    if (!img.naturalWidth) return;
+    const k = Math.min((dl.clientWidth - 40 - 2 * dl.querySelector(".live-side").offsetWidth) / img.naturalWidth, (innerHeight - 150) / img.naturalHeight); // centred, clear of the side buttons
+    img.style.width = Math.floor(img.naturalWidth * k) + "px";
+    img.style.height = Math.floor(img.naturalHeight * k) + "px";
+  };
+  addEventListener("resize", fit);
+  dl.addEventListener("close", () => removeEventListener("resize", fit), { once: true });
+  if (!dl.open) dl.showModal();
+  try { await api(`/api/devices/${d.id}/command`, { type: "live" }); } catch (e) { toast(e.message, true); return dl.close(); }
+  // Each request waits on the server for a picture newer than the last, so it shows the moment it arrives.
+  let lastAt = 0, shown = "";
+  while (open) {
+    try {
+      const r = await fetch(`${base}.jpg?after=${lastAt}`);
+      if (r.status === 401) { location.href = "/login"; break; }
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+      const at = Number(r.headers.get("x-frame-at")) || 0, lag = Math.round((Number(r.headers.get("x-now")) - at) / 1000);
+      if (r.status === 200) {
+        lastAt = at;
+        const next = URL.createObjectURL(await r.blob());
+        await new Promise(ok => { img.onload = img.onerror = ok; img.src = next; });
+        if (shown) URL.revokeObjectURL(shown);
+        shown = next;
+        img.hidden = false;
+        $("liveWait").hidden = true;
+        fit();
+      }
+      $("liveAt").textContent = !at ? "" : lag < 5 ? "● Live" : `No new picture for ${lag} s`;
+    } catch (e) { if (open) { toast(e.message, true); dl.close(); } break; }
+  }
+  if (shown) URL.revokeObjectURL(shown);
+}
+
 // target: same shape as /api/bulk ({ids} | {all:true} ...); n = how many devices, for the confirm text.
 function maintenance(target, on, n) {
   if (on && n > 1 && !confirm(`Show the maintenance screen on ${n} devices?`)) return;
@@ -1139,6 +1216,7 @@ function renderMaint() {
 async function command(list, type, extra = {}) {
   if (type === "maintOn" || type === "maintOff") return maintenance({ ids: list.map(d => d.id) }, type === "maintOn", list.length);
   if (type === "screenshot" && list.length === 1) return screenshot(list[0]);
+  if (type === "live") return list.length === 1 ? liveView(list[0]) : toast("Remote control works on one device at a time", true);
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
   if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
@@ -1235,6 +1313,7 @@ VIEWS.device = async (id, first) => {
         <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
+      <div class="card"><h3>Health<span class="grow"></span><span class="tabs hr" id="dRange"></span></h3><div id="dChart" class="hchart"></div></div>
       <div class="cols">
         <div class="card"><h3>Details</h3><div class="pad"><dl class="kv" id="dKv"></dl></div></div>
         <div>
@@ -1242,7 +1321,6 @@ VIEWS.device = async (id, first) => {
             <pre class="log" id="dRes" style="max-height:260px"></pre></div>
           <div class="card" id="dShotCard" hidden><h3>Last screenshot<span class="grow"></span><span class="meta" id="dShotAt"></span></h3>
             <div class="pad"><img class="shot" id="dShot" alt="Last screenshot" style="max-height:320px;cursor:zoom-in"></div></div>
-          <div class="card"><h3>Health · last 24 hours</h3><div id="dChart"></div></div>
           <div class="card"><h3>Activity<span class="grow"></span><a class="meta" href="#/activity">All activity →</a></h3>
             <div class="table-wrap" style="max-height:320px"><table><tbody id="dEvents"></tbody></table></div></div>
         </div>
@@ -1261,7 +1339,6 @@ VIEWS.device = async (id, first) => {
             <div class="row" style="margin-top:6px"><span class="meta">1. Tunnel password:</span><code id="dSshTun" style="user-select:all"></code><button class="btn ghost" data-copy="dSshTun">Copy</button></div>
             <div class="row" style="margin-top:6px"><span class="meta">2. Tablet login password:</span><code id="dSshPass" style="user-select:all"></code><button class="btn ghost" data-copy="dSshPass">Copy</button></div></div></div></div>
       <div class="card" id="dRemoteCard" hidden><h3>Remote access</h3><div class="pad" id="dRemote"></div></div>
-      <div class="card" id="dVpnCard" hidden><h3>VPN<span class="grow"></span><span id="dVpnState"></span></h3><div class="pad" id="dVpn"></div></div>
       <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
         <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
@@ -1275,9 +1352,6 @@ VIEWS.device = async (id, first) => {
       if (r && !confirm(`${r === "off" ? "Relay OFF (lock the door)" : r === "on" ? "Relay ON (door stays open until Relay OFF)" : `Pulse ${$("dPulse").value} s (opens the door)`} on ${label(dev(id))}?\n\nThis switches the real door relay.`)) return;
       if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
         { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
-      const vb = e.target.closest("[data-vpn]");
-      if (vb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/vpn`, { on: !!vb.dataset.vpn }), `VPN ${vb.dataset.vpn ? "on" : "off"}`);
-      if (e.target.closest("[data-vpnme]")) return vpnMe();
       const sb = e.target.closest("[data-ssh]");
       if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
       const cp = e.target.closest("[data-copy]");
@@ -1348,20 +1422,6 @@ VIEWS.device = async (id, first) => {
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
   const rm = d.remote || {}, copyBox = (cid, text) => `<div class="row" style="margin-top:6px"><code id="${cid}" style="user-select:all">${esc(text)}</code><button class="btn ghost" data-copy="${cid}">Copy</button></div>`;
   $("dRemoteCard").hidden = d.type !== "windows";
-  // VPN (WireGuard, admins): the device gets a private address; the commands below work from a laptop / phone on the VPN too
-  const vpnOk = S.vpnReady && me().admin && ["android-kiosk", "windows", "linux"].includes(d.type);
-  $("dVpnCard").hidden = !vpnOk;
-  if (vpnOk) {
-    const va = d.vpnAddress;
-    const vcmds = !va ? [] : d.type === "windows" ? [["SSH", `ssh ${rm.sshUser || "<user>"}@${va}`], ["Remote desktop (Windows)", `mstsc /v:${va}`], ["RustDesk direct (IP)", va]]
-      : d.type === "linux" ? [["SSH", `ssh <user>@${va}`]] : [["ADB", `adb connect ${va}:5555`], ["Screen (scrcpy)", `scrcpy -s ${va}:5555`]];
-    $("dVpnState").innerHTML = !d.vpn ? `<span class="pill">OFF</span>` : d.vpnUp ? `<span class="pill ok">Connected</span>` : `<span class="pill warn">Connecting…</span>`;
-    $("dVpn").innerHTML = `<div class="row"><button class="btn primary" data-vpn="1">VPN ON</button><button class="btn" data-vpn="">VPN OFF</button>
-        <span class="meta">${va ? `Address <b>${esc(va)}</b>` : "The device joins the private network (WireGuard) and gets its own address."}</span></div>
-      ${vcmds.map(([t, c], i) => `<p class="meta" style="margin:10px 0 0">${esc(t)}</p>${copyBox("dVpnC" + i, c)}`).join("")}
-      ${d.vpn ? `<p class="meta" style="margin:12px 0 0">Your laptop / phone must be on the VPN too: <button type="button" class="btn ghost" data-vpnme>🔒 Connect my laptop / phone</button>${S.vpnMine ? " (already set up)" : ""}</p>` : ""}
-      ${d.type === "android-kiosk" && d.vpn && d.vpnUp == null ? `<p class="meta">Tablets need app 10.19 or newer for the VPN.</p>` : ""}`;
-  }
   if (d.type === "windows") $("dRemote").innerHTML = `
     <h4 style="margin:0 0 6px">Remote desktop (RustDesk)${rm.rustdeskId ? ` <span class="pill ok">Ready</span>` : rm.rustdesk ? ` <span class="pill warn">Installed, no ID yet</span>` : ` <span class="pill">Not set up</span>`}</h4>
     ${rm.rustdeskId ? `<div class="row"><span class="meta">ID</span></div>${copyBox("dRdId", rm.rustdeskId)}
@@ -1405,7 +1465,7 @@ VIEWS.device = async (id, first) => {
     api(`/api/devices/${d.id}/logs`).catch(e => "No logs yet. Click \"Request new logs\"; they arrive within a few seconds when the device is online."),
   ]);
   if (!location.hash.startsWith("#/device/")) return;
-  $("dChart").innerHTML = chart(hist.history);
+  healthChart($("dChart"), hist);
   $("dEvents").innerHTML = ev.events.slice(0, 100).map(eventRow).join("") || `<tr><td class="empty">Nothing yet</td></tr>`;
   const pre = $("dLogs"), atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 10;
   const text = (d.logsAt ? `Uploaded ${when(d.logsAt)}\n\n` : "") + logs; // a fixed time, so the text only changes with new logs
@@ -1421,25 +1481,123 @@ function gauge(name, v, warnAt, badAt, unit, sub) {
     <div class="l">${esc(name)}</div><div class="meta">${esc(sub || "")}</div></div>`;
 }
 
-// history rows: [time, battery, cpu, ram, disk, temp]
-function chart(h) {
-  if (!h || h.length < 2) return `<p class="empty">Collecting… a point is saved every 5 minutes.</p>`;
-  const W = 600, H = 160, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
-  const lines = [["Battery %", 1, css("--ok")], ["CPU %", 2, "#a855f7"], ["Memory %", 3, "#3b82f6"], ["Storage %", 4, css("--accent")]];
-  const x = t => 4 + (W - 8) * (t - t0) / Math.max(1, t1 - t0), y = v => H - 6 - (H - 12) * v / 100;
-  const paths = lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) =>
-    `<polyline fill="none" stroke="${c}" stroke-width="2" points="${h.filter(r => r[i] != null).map(r => x(r[0]).toFixed(1) + "," + y(r[i]).toFixed(1)).join(" ")}"/>`);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      ${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}" stroke-dasharray="3 4"/>
-        <text x="${W - 4}" y="${y(v) - 3}" text-anchor="end" font-size="10" fill="${css("--muted")}">${v}%</text>`).join("")}${paths.join("")}</svg>
-    <div class="legend">${lines.filter(([, i]) => h.some(r => r[i] != null)).map(([n, i, c]) => {
-        const last = [...h].reverse().find(r => r[i] != null)[i];
-        return `<span><i style="background:${c}"></i>${n.replace(" %", "")} <b>${Math.round(last)}%</b></span>`;
-      }).join("")}
-      <span>${new Date(t0).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} → now</span></div>`;
+// Health chart (Grafana style). Rows: [time, battery, cpu, ram, disk, temp]; the server keeps 24 h of 5-minute points
+// and a month of hourly averages, so week / month use the hourly ones plus the latest 5-minute points.
+const HEALTH_SERIES = [["CPU", 2, "#fade2a", "%"], ["Memory", 3, "#5794f2", "%"], ["Battery", 1, "#73bf69", "%"], ["Storage", 4, "#ff9830", "%"], ["Temperature", 5, "#f2495c", "°C"]];
+const HEALTH_RANGES = [["24h", "Last 24 h"], ["today", "Today"], ["week", "This week"], ["month", "This month"]];
+let healthRange = "24h", healthOnly = null; // healthOnly: the one series picked in the legend, or all
+try { healthRange = localStorage.getItem("healthRange") || "24h"; } catch {}
+function healthChart(el, hist) {
+  $("dRange").innerHTML = HEALTH_RANGES.map(([k, t]) => `<button class="btn ${k === healthRange ? "primary" : "ghost"}" data-r="${k}">${t}</button>`).join("");
+  $("dRange").onclick = e => {
+    const r = e.target.closest("[data-r]")?.dataset.r;
+    if (!r) return;
+    healthRange = r;
+    try { localStorage.setItem("healthRange", r); } catch {}
+    el.dataset.key = "";
+    healthChart(el, hist);
+  };
+  const now = Date.now(), day = new Date(); day.setHours(0, 0, 0, 0);
+  const t0 = { "24h": now - 864e5, today: +day, week: +day - ((day.getDay() + 6) % 7) * 864e5, month: +new Date(day.getFullYear(), day.getMonth(), 1) }[healthRange];
+  const fine = (hist.history || []).filter(r => r[0] >= t0), hourly = (hist.hourly || []).filter(r => r[0] >= t0);
+  const coarse = healthRange === "week" || healthRange === "month";
+  const after = hourly.length ? hourly[hourly.length - 1][0] + 36e5 : 0;
+  const h = coarse ? [...hourly, ...fine.filter(r => r[0] >= after)] : fine;
+  // The device page redraws every few seconds: keep the chart (and a hover in progress) unless something changed.
+  const key = [healthRange, healthOnly, h.length, h[h.length - 1]?.[0], el.clientWidth].join();
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  if (h.length < 2) return el.innerHTML = `<p class="empty" style="flex:1">${coarse && !hourly.length ? "Hourly history starts now: this view fills up over the coming hours and days."
+    : "Collecting… a point is saved every 5 minutes."}</p>`;
+  const all = HEALTH_SERIES.filter(([, i]) => h.some(r => r[i] != null));
+  const series = all.filter(([n]) => !healthOnly || n === healthOnly).length ? all.filter(([n]) => !healthOnly || n === healthOnly) : all;
+  const wide = el.clientWidth > 760, W = Math.max(300, el.clientWidth - 28 - (wide ? 258 : 0)), H = 230;
+  // X: from the first recorded point (not midnight / Monday), so a short history fills the width.
+  // Y: 0-100 for all series; one picked series gets a range fitted to its values.
+  const L = 38, R = 8, T = 10, B = 24, ts = h[0][0], t1 = now;
+  let lo = 0, hi = 100;
+  if (series.length === 1) {
+    const v = h.map(r => r[series[0][1]]).filter(x => x != null), mn = Math.min(...v), mx = Math.max(...v), pad = Math.max(2, (mx - mn) * 0.15);
+    lo = Math.max(0, Math.floor(mn - pad)); hi = Math.ceil(mx + pad);
+    if (series[0][3] === "%") hi = Math.min(100, hi);
+  }
+  const x = t => L + (W - L - R) * (t - ts) / Math.max(1, t1 - ts), y = v => T + (H - T - B) * (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo));
+  // a gap longer than 3 points means the device was off: break the line there
+  const gapMs = (coarse ? 36e5 : 3e5) * 3;
+  const segs = i => {
+    const out = [];
+    let cur = [];
+    for (const r of h) {
+      if (r[i] == null) continue;
+      if (cur.length && r[0] - cur[cur.length - 1][0] > gapMs) { out.push(cur); cur = []; }
+      cur.push(r);
+    }
+    if (cur.length) out.push(cur);
+    return out;
+  };
+  const f = n => n.toFixed(1);
+  const paths = series.map(([n, i, c], k) => segs(i).map(sg => {
+    const line = sg.map((r, j) => (j ? "L" : "M") + f(x(r[0])) + "," + f(y(r[i]))).join("");
+    const area = line + `L${f(x(sg[sg.length - 1][0]))},${H - B}L${f(x(sg[0][0]))},${H - B}Z`;
+    return `<path d="${area}" fill="url(#hg${k})" stroke="none"/><path class="ln" d="${line}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round"/>`;
+  }).join("")).join("");
+  // time axis: a step that leaves ~90 px between labels, on whole hours / local midnights
+  const span = t1 - ts, steps = [0.25, 0.5, 1, 2, 3, 6, 12, 24, 48, 72, 168].map(s => s * 36e5);
+  const step = steps.find(s => (W - L - R) * s / span >= 90) || steps[steps.length - 1];
+  const ticks = [];
+  const inc = Math.min(step, 36e5);
+  for (let t = Math.ceil(ts / inc) * inc; t <= t1; t += inc) {
+    const dt = new Date(t);
+    if (step <= 36e5 || (step < 864e5 ? dt.getMinutes() === 0 && dt.getHours() % (step / 36e5) === 0
+      : dt.getHours() === 0 && dt.getMinutes() === 0 && Math.round((t - t0) / 864e5) % (step / 864e5) === 0)) ticks.push(t);
+  }
+  const lab = t => step < 864e5 ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : new Date(t).toLocaleDateString([], healthRange === "month" ? { day: "numeric", month: "short" } : { weekday: "short", day: "numeric" });
+  const stats = all.map(([n, i, c, u]) => {
+    const v = h.map(r => r[i]).filter(x => x != null);
+    return [n, c, u, v.reduce((a, b) => a + b, 0) / v.length, Math.max(...v), v[v.length - 1]];
+  });
+  const r1 = v => Math.round(v * 10) / 10;
+  el.innerHTML = `<div class="plot"><svg viewBox="0 0 ${W} ${H}" height="${H}">
+      <defs>${series.map(([, , c], k) => `<linearGradient id="hg${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".32"/><stop offset="1" stop-color="${c}" stop-opacity=".02"/></linearGradient>`).join("")}</defs>
+      ${[0, 1, 2, 3, 4].map(k => lo + (hi - lo) * k / 4).map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--line")}"/><text class="ax" x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${hi - lo < 20 ? r1(v) : Math.round(v)}${series.length === 1 ? series[0][3] : ""}</text>`).join("")}
+      ${ticks.map(t => `<line x1="${f(x(t))}" x2="${f(x(t))}" y1="${T}" y2="${H - B}" stroke="${css("--line")}" stroke-dasharray="2 4"/><text class="ax" x="${f(x(t))}" y="${H - 7}" text-anchor="${x(t) > W - R - 30 ? "end" : x(t) < L + 30 ? "start" : "middle"}">${lab(t)}</text>`).join("")}
+      ${paths}<g class="hover" visibility="hidden"><line y1="${T}" y2="${H - B}" stroke="${css("--muted")}" stroke-dasharray="3 3"/>${series.map(([, , c]) => `<circle r="3.5" fill="${c}" stroke="${css("--card")}" stroke-width="1.5"/>`).join("")}</g>
+      <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip" hidden></div></div>
+    <table class="hlegend"><tr><th title="Click a row to show only that one">Name</th><th>Mean</th><th>Max</th><th>Last</th></tr>
+      ${stats.map(([n, c, u, mean, max, last]) => `<tr data-s="${n}" class="${series.length === 1 && series[0][0] !== n ? "off" : ""}"><td><i style="background:${c}"></i>${n}</td><td>${r1(mean)}${u}</td><td>${r1(max)}${u}</td><td><b>${r1(last)}${u}</b></td></tr>`).join("")}</table>`;
+  el.querySelector(".hlegend").onclick = e => {
+    const n = e.target.closest("[data-s]")?.dataset.s;
+    if (!n) return;
+    healthOnly = healthOnly === n ? null : n;
+    el.dataset.key = "";
+    healthChart(el, hist);
+  };
+  // hover: nearest point in time, values of every series at it
+  const svg = el.querySelector("svg"), g = svg.querySelector(".hover"), tip = el.querySelector(".tip");
+  svg.onpointermove = e => {
+    const b = svg.getBoundingClientRect(), px = (e.clientX - b.left) * W / b.width;
+    if (px < L || px > W - R) return svg.onpointerleave();
+    const t = ts + (px - L) / (W - L - R) * (t1 - ts);
+    const r = h.reduce((a, c) => Math.abs(c[0] - t) < Math.abs(a[0] - t) ? c : a);
+    const X = x(r[0]);
+    g.setAttribute("visibility", "visible");
+    g.querySelector("line").setAttribute("x1", X); g.querySelector("line").setAttribute("x2", X);
+    series.forEach(([, i], k) => { const ci = g.querySelectorAll("circle")[k]; ci.setAttribute("cx", X); ci.setAttribute("cy", r[i] == null ? -10 : y(r[i])); });
+    tip.innerHTML = `<b>${new Date(r[0]).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</b>${coarse && hourly.includes(r) ? " · hourly average" : ""}<br>`
+      + series.map(([n, i, c, u]) => `<i style="background:${c}"></i>${n} <b>${r[i] == null ? "–" : r1(r[i]) + u}</b>`).join("<br>");
+    tip.hidden = false;
+    const left = X * b.width / W;
+    tip.style.left = (left > b.width / 2 ? left - tip.offsetWidth - 12 : left + 12) + "px";
+  };
+  svg.onpointerleave = () => { g.setAttribute("visibility", "hidden"); tip.hidden = true; };
 }
 
 const siteOf = name => S.sites.find(x => x.name === name) || { name };
+// A site's logo, or a building icon when it has none.
+const BUILDING = `<svg viewBox="0 0 24 24" width="55%" height="55%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>`;
+const siteLogo = (site, big) => site.logo ? `<img class="site-logo${big ? " big" : ""}" src="${esc(site.logo)}" alt="">`
+  : `<span class="site-logo${big ? " big" : ""}" aria-hidden="true">${BUILDING}</span>`;
 VIEWS.sites = () => {
   $("view").innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Sites</h2>
       <button class="btn primary" data-s="add">+ Add site</button></div>
@@ -1450,7 +1608,7 @@ VIEWS.sites = () => {
         const href = g ? "#/site/" + encodeURIComponent(g) : "#/devices";
         return `<div class="card site-card">
           <a href="${href}" data-open="${esc(g)}" class="site-head">
-            <div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No location yet" : "Devices not in any site"))}</div></div>
+            <div class="row" style="gap:12px;align-items:center;flex-wrap:nowrap">${siteLogo(site)}<div><div class="name">${esc(groupName(g))}</div><div class="meta">${esc(site.address || (g ? "No location yet" : "Devices not in any site"))}</div></div></div>
             <span class="pill ${status[0]}">${status[1]}</span></a>
           <a href="${href}" data-open="${esc(g)}" class="site-health"><span class="meta">Fleet health</span>
             ${health == null ? "" : `<span class="meter ${health < 50 ? "bad" : health < 90 ? "warn" : ""}"><span class="bar"><b style="width:${health}%"></b></span></span>`}
@@ -1482,7 +1640,7 @@ VIEWS.site = async (name, first) => {
   if (first) {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
-      <div class="row" style="margin-bottom:4px"><h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
+      <div class="row" style="margin-bottom:4px;gap:12px">${siteLogo(site, true)}<h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
         ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
@@ -1544,6 +1702,9 @@ function siteForm(site) {
     <label class="meta">Site name</label><input id="sName" value="${esc(site?.name || "")}" placeholder="e.g. Tampines Hub" required autofocus>
     <label class="meta">Location</label><input id="sAddr" value="${esc(site?.address || "")}" placeholder="optional">
     <label class="meta">Contact</label><input id="sContact" value="${esc(site?.contact || "")}" placeholder="optional: person / phone">
+    <label class="meta">Logo</label><div class="row" style="gap:10px"><span id="sLogoPrev">${siteLogo(site || { name: "?" }, true)}</span>
+      <label class="btn" style="cursor:pointer">Upload…<input type="file" id="sLogo" accept="image/*" hidden></label>
+      <button class="btn ghost" type="button" id="sLogoDel" ${site?.logo ? "" : "hidden"}>Remove</button></div>
     <label class="meta">Coordinates</label><div class="row"><input id="sLat" style="width:110px" placeholder="latitude" value="${esc(site?.lat ?? "")}">
       <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div></div>
     <div id="sFound" class="chips" style="margin-top:8px"></div>
@@ -1551,9 +1712,29 @@ function siteForm(site) {
     site ? "Save" : "Add site", () => {
       const name = $("sName").value.trim();
       if (!name) return toast("Site name is required", true);
-      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name }),
+      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name, logo }),
         site ? "Site saved" : `Site "${name}" added`);
     });
+  // Logo: shrunk to fit 128 x 128 here, so the server only stores a few KB. undefined = unchanged, "" = removed.
+  let logo;
+  $("sLogo").onchange = () => {
+    const f = $("sLogo").files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 128 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      logo = c.toDataURL("image/webp", 0.9);
+      if (!logo.startsWith("data:image/webp")) logo = c.toDataURL("image/png"); // Safari can't make WebP
+      URL.revokeObjectURL(img.src);
+      $("sLogoPrev").innerHTML = siteLogo({ logo }, true);
+      $("sLogoDel").hidden = false;
+    };
+    img.onerror = () => toast("That file isn't an image", true);
+    img.src = URL.createObjectURL(f);
+  };
+  $("sLogoDel").onclick = () => { logo = ""; $("sLogoPrev").innerHTML = siteLogo({}, true); $("sLogoDel").hidden = true; };
   $("sFind").onclick = () => geoSearch($("sAddr").value, $("sFound"), r => { $("sLat").value = r.lat; $("sLng").value = r.lng; if (!$("sAddr").value.trim()) $("sAddr").value = r.address; });
 }
 // OneMap address search through the server; shows the matches as chips and calls pick(result).
@@ -1895,44 +2076,189 @@ VIEWS.activity = async (arg, first) => {
     || `<tr><td class="empty">Nothing yet</td></tr>`;
 };
 
+// Bug Finder: crashes and freezes of every app on every device, newest first.
+const BUG_KINDS = { crash: ["Crash", "bad"], anr: ["Freeze (not responding)", "warn"], hang: ["Freeze (not responding)", "warn"],
+  native: ["Native crash", "bad"], system: ["System crash", "bad"] };
+let bugFilter = { q: "", site: "", kind: "", app: "" }, bugShown = [];
+// One .txt for the given reports: a header (time, site, device, Device ID, app, problem) then the full log of each.
+const bugFile = (list, name) => {
+  const text = list.map(b => `==== ${new Date(b.at).toLocaleString()} · ${(BUG_KINDS[b.kind] || BUG_KINDS.crash)[0]} · ${b.app}\n`
+    + `Site: ${groupName(dev(b.deviceId)?.group ?? b.site)}\nDevice: ${dev(b.deviceId) ? label(dev(b.deviceId)) : b.deviceName} (Device ID ${b.code || "–"}, ${b.deviceId})\n`
+    + `Problem: ${b.summary}\n\n${b.text}\n`).join("\n");
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type: "text/plain" })), download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+VIEWS.bugs = async (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `<div class="row" style="justify-content:space-between"><h2>Bug Finder</h2>
+        <span><button class="btn" id="bugDl">⬇ Download logs</button>
+        ${me().admin ? `<button class="btn ghost" id="bugClear">Clear all</button>` : ""}</span></div>
+      <p class="lead">Collects application crash and freeze reports across all devices, including site details, device information, and complete error logs.</p>
+      <div class="stats" id="bugStats"></div><div id="bugWarn"></div>
+      <div class="card"><div class="toolbar"><input type="search" id="bugQ" placeholder="Search app, device, Device ID, problem…" value="${esc(bugFilter.q)}">
+        <select id="bugSite"></select><select id="bugKind"></select><select id="bugApp"></select></div>
+        <div class="table-wrap"><table><thead><tr><th>Time</th><th>Site</th><th>Device</th><th>App</th><th>Problem</th></tr></thead>
+        <tbody id="bugRows"></tbody></table></div></div>`;
+    const set = () => { bugFilter = { q: $("bugQ").value, site: $("bugSite").value, kind: $("bugKind").value, app: $("bugApp").value }; VIEWS.bugs(); };
+    $("bugQ").oninput = $("bugSite").onchange = $("bugKind").onchange = $("bugApp").onchange = set;
+    // Downloads what the filters show (all of it, not only the first 500 rows).
+    $("bugDl").onclick = () => bugShown.length ? bugFile(bugShown, `bug-finder-${new Date().toISOString().slice(0, 10)}.txt`) : toast("No logs to download", true);
+    $("bugRows").onclick = e => {
+      const tr = e.target.closest("tr[data-bug]");
+      if (tr && !e.target.closest("a")) location.hash = "#/bug/" + tr.dataset.bug;
+    };
+    if ($("bugClear")) $("bugClear").onclick = () => confirm("Delete every bug report?") && act(() => api("/api/bugs/delete", { all: true }), "Cleared").then(() => VIEWS.bugs());
+  }
+  const r = await api("/api/bugs").catch(() => ({ bugs: [] }));
+  if (!$("bugRows")) return;
+  const all = r.bugs, day = all.filter(b => now() - b.at < 86400000);
+  const top = Object.entries(day.reduce((m, b) => (m[b.app] = (m[b.app] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
+  $("bugStats").innerHTML = `<div class="stat"><div class="n">${day.length}</div><div class="l">Problems, last 24 h</div></div>
+    <div class="stat"><div class="n">${day.filter(b => !["anr", "hang"].includes(b.kind)).length}</div><div class="l">Crashes, last 24 h</div></div>
+    <div class="stat"><div class="n">${day.filter(b => ["anr", "hang"].includes(b.kind)).length}</div><div class="l">Freezes, last 24 h</div></div>
+    <div class="stat"><div class="n">${new Set(day.map(b => b.deviceId)).size}</div><div class="l">Devices affected</div></div>
+    ${top ? `<div class="stat"><div class="l">Most problems today</div><div class="name">${esc(top[0])} (${top[1]})</div></div>` : ""}`;
+  // Android only lets us read other apps' crash logs once READ_LOGS is granted (see README).
+  const blind = S.devices.filter(d => d.bugAccess === false);
+  $("bugWarn").innerHTML = blind.length ? `<div class="card"><h3>⚠ ${blind.length} device${blind.length > 1 ? "s" : ""} only report our own app's crashes</h3>
+    <p class="meta">${blind.map(d => esc(label(d)) + (d.code ? ` (${d.code})` : "")).join(", ")}. Android needs log access once:
+    connect the tablet by USB and run <code>adb shell pm grant com.greenbotz.kiosk android.permission.READ_LOGS</code>, <code>adb shell pm grant com.greenbotz.kiosk android.permission.READ_DROPBOX_DATA</code> and
+    <code>adb shell appops set com.greenbotz.kiosk GET_USAGE_STATS allow</code> (rooted Telpo terminals do this themselves).</p></div>` : "";
+  const opts = (id, first, vals, name) => { const el = $(id), v = el.value; el.innerHTML = options([["", first], ...vals.map(x => [x, name ? name(x) : x])], v); };
+  opts("bugSite", "All sites", [...new Set(all.map(b => b.site))].sort(), groupName);
+  opts("bugKind", "All problems", ["crash", "anr", "native", "system"], k => BUG_KINDS[k][0]);
+  opts("bugApp", "All apps", [...new Set(all.map(b => b.app))].sort());
+  const f = bugFilter, q = f.q.toLowerCase();
+  const list = all.filter(b => (!f.site || b.site === f.site) && (!f.app || b.app === f.app)
+    && (!f.kind || b.kind === f.kind || (f.kind === "anr" && b.kind === "hang"))
+    && (!q || [b.app, b.deviceName, b.code, b.summary, b.site, dev(b.deviceId) && label(dev(b.deviceId))].join(" ").toLowerCase().includes(q)));
+  bugShown = list;
+  $("bugRows").innerHTML = list.slice(0, 500).map(b => {
+    const d = dev(b.deviceId), [kt, kc] = BUG_KINDS[b.kind] || BUG_KINDS.crash;
+    return `<tr class="click" data-bug="${b.id}"><td class="meta" style="white-space:nowrap">${new Date(b.at).toLocaleString()}</td><td>${esc(groupName(d ? d.group : b.site))}</td>
+      <td>${d ? `<a href="#/device/${encodeURIComponent(b.deviceId)}">${esc(label(d))}</a>` : esc(b.deviceName)}<div class="meta">ID ${esc(b.code || "–")} · ${esc(b.deviceId)}</div></td>
+      <td><b>${esc(b.app)}</b></td>
+      <td class="wrap"><span class="pill ${kc}"><i></i>${kt}</span> ${esc(b.summary)}</td></tr>`;
+  }).join("") || `<tr><td class="empty" colspan="5">No crashes or freezes 🎉</td></tr>`;
+};
+// One report: who, where, what, and the full log.
+VIEWS.bug = async (id, first) => {
+  if (!first) return; // nothing live to redraw
+  const b = (await api("/api/bugs").catch(() => ({ bugs: [] }))).bugs.find(x => x.id === id);
+  if (!b) { $("view").innerHTML = `<p><a href="#/bugs">← Bug Finder</a></p><p class="empty">This report no longer exists.</p>`; return; }
+  const d = dev(b.deviceId), [kt, kc] = BUG_KINDS[b.kind] || BUG_KINDS.crash;
+  $("view").innerHTML = `<p><a href="#/bugs">← Bug Finder</a></p>
+    <div class="row" style="justify-content:space-between"><h2>${esc(b.app)}</h2><button class="btn" id="bugOneDl">⬇ Download log</button></div>
+    <div class="card"><table><tbody>
+      <tr><th>Problem</th><td><span class="pill ${kc}"><i></i>${kt}</span> ${esc(b.summary)}</td></tr>
+      <tr><th>Time</th><td>${new Date(b.at).toLocaleString()}</td></tr>
+      <tr><th>Site</th><td>${esc(groupName(d ? d.group : b.site))}</td></tr>
+      <tr><th>Device</th><td>${d ? `<a href="#/device/${encodeURIComponent(b.deviceId)}">${esc(label(d))}</a>` : esc(b.deviceName)}${d?.model ? ` · ${esc(d.model)}` : ""}</td></tr>
+      <tr><th>Device ID</th><td>${esc(b.code || "–")} <span class="meta">· ${esc(b.deviceId)}</span></td></tr>
+    </tbody></table></div>
+    <div class="card"><h3>Full log</h3><pre class="log">${esc(b.text)}</pre></div>`;
+  $("bugOneDl").onclick = () => bugFile([b], `${b.code || b.deviceId}-${b.app}-${new Date(b.at).toISOString().slice(0, 19).replace(/:/g, "")}.txt`);
+};
+
 // Honest status of every feature on the roadmap.
-const FEATURES = [
-  ["App pinning (kiosk mode)", "done", "Lock tablets to chosen apps, or pin one app full screen; manual override: 6 taps top-right + PIN"],
-  ["Device lock / unlock", "done", "Unlock for 2 minutes, lock to kiosk, lock screen"],
-  ["Online / offline status", "done", "Live, devices check in every 10 s"],
-  ["Remote reboot", "done", "Android (device owner), Windows, Linux, IoT"],
-  ["Multi-app support (VMS, kiosk apps)", "done", "Choose allowed apps per tablet; push apps from Apps & files"],
-  ["OTA app update", "done", "Upload an .apk, install silently on many devices"],
-  ["Device registration (token)", "done", "Tokens put devices in a site and mode"],
-  ["Device registration (QR)", "done", "Android Enterprise QR on a factory-reset device"],
-  ["Device health (battery, memory, storage)", "done", "Plus temperature and Wi-Fi signal; 24-hour chart. Android doesn't let apps read CPU load (Windows agent does)"],
-  ["Basic logs", "done", "Activity log for every device and the whole portal"],
-  ["Remote logs & debug", "done", "Get logs pulls the app log and last crash from a device"],
-  ["Alerts (battery, offline, crash)", "done", "Raised and cleared automatically; alarm sound in the portal when a device goes offline"],
-  ["4-digit Device IDs", "done", "Create in the portal, type on the device to link; shown on the device's home screen"],
-  ["Offline alerts", "done", "Red banner + alarm sound in the portal; WhatsApp alert, hourly reminder and back-online message"],
-  ["Device grouping (sites)", "done", "Add sites, put devices in them, control a whole site"],
-  ["Bulk control", "done", "Tick devices or pick a site, send any command"],
-  ["Scheduled tasks", "done", "Command at a time on chosen days"],
-  ["Command automation", "partial", "Scheduled tasks; rules like \"if offline then…\" not yet"],
-  ["File transfer", "partial", "Portal → device; device → portal not yet"],
-  ["Offline mode (local network)", "done", "Runs fully on this PC's network, no internet needed"],
-  ["Windows / Linux support", "done", "agents/agent.ps1 and agents/agent.sh"],
-  ["Mobile admin app", "partial", "Portal works on phones and can be added to the home screen"],
-  ["Performance monitoring", "partial", "CPU load, RAM, storage and temperature gauges on each device's page; per-app usage not yet"],
-  ["Rooted & non-rooted support", "partial", "Works without root (device owner); root-only extras not yet"],
-  ["Remote control (VNC screen control)", "next", "Next phase. Android asks for consent each session unless the app is system-signed (Telpo) or the device is rooted"],
-  ["Screen recording", "next", "Comes with remote control"],
-  ["Remote ADB", "next", "Needs the secure tunnel"],
-  ["Secure tunnel access", "next", "Needed for cloud / remote sites"],
-  ["Device model & relay profiles", "done", "Model picked on the tablet or in the portal; F8, F10B and F10 relay profiles verified, others need testing (Relay setup…)"],
-  ["Technical team & maintenance tickets", "done", "Automatic tickets for offline devices, technicians near the site, team tablets, portal-only closing"],
-  ["Max, AI assistant", "done", "Text and voice; answers from live data, proposes actions you confirm. Needs a Claude API key on the server"],
-  ["AI monitoring", "later", "After enough health history is collected"],
-];
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", features: "Features", team: "Technical Team & tickets", assistant: "Max (AI assistant)" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder" };
+// ---------------- Configuration (admins): maintenance mode, Max, WhatsApp alerts, relay per device type ----------------
+const cfgMaint = () => {
+  const on = S.devices.filter(d => d.maintenance);
+  return `<b>${on.length}</b> of ${S.devices.length} device${S.devices.length === 1 ? "" : "s"} showing the maintenance screen
+    ${on.length ? `<div class="chips" style="margin-top:6px">${on.map(d => `<a class="chip" href="#/device/${encodeURIComponent(d.id)}">${esc(label(d))} <span class="code">${esc(d.code || "")}</span></a>`).join("")}</div>` : ""}`;
+};
+const cfgWa = () => S.whatsapp?.length ? S.whatsapp.map(w => `<span class="chip">💬 ${esc(w.name || "")} ${esc(w.phone || "")}</span>`).join("") : `<span class="meta">No numbers yet.</span>`;
+VIEWS.config = (arg, first) => {
+  if (!first) { if ($("cfgMaint")) { $("cfgMaint").innerHTML = cfgMaint(); $("cfgWa").innerHTML = cfgWa(); } return; }
+  const targets = [["all", "All devices"], ...groups().filter(Boolean).map(g => ["site:" + g, "Site: " + g]), ["site:", "Devices not in any site"]];
+  const sel = (f, list, v) => `<select data-f="${f}">${list.map(x => `<option ${String(x) === String(v) ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>`;
+  const relayRow = m => {
+    const p = S.relayProfiles?.[m] || { relay: "unknown" }, edited = (S.relayEdited || []).includes(m);
+    return `<tr data-m="${esc(m)}"><td><b>${esc(m)}</b>${edited ? ` <span class="pill warn">changed</span>` : ""}</td>
+      <td>${sel("relay", ["yes", "no", "unknown"], p.relay)}</td>
+      <td>${sel("iface", S.relayIfaces || [], p.iface)}</td><td>${sel("on", [0, 1], p.on ?? 0)}</td><td>${sel("off", [0, 1], p.off ?? 1)}</td>
+      <td><input type="checkbox" data-f="root" ${p.root ? "checked" : ""}></td><td><input type="checkbox" data-f="readable" ${p.readable ? "checked" : ""}></td>
+      <td><input type="number" data-f="pulse" min="1" max="600" value="${esc(p.pulse || 5)}" style="width:64px"></td>
+      <td><input type="checkbox" data-f="maintLink" ${p.maintLink !== false ? "checked" : ""}></td>
+      <td><div class="row"><button class="btn" data-save>Save</button>${edited ? `<button class="btn ghost" data-reset>Built-in</button>` : ""}</div></td></tr>`;
+  };
+  $("view").innerHTML = `<h2>Configuration</h2><p class="lead">Settings for the whole portal. Only administrators see this page.</p>
+    <div class="card"><h3>🛠 Maintenance mode</h3><div class="pad">
+      <p id="cfgMaint" style="margin-top:0">${cfgMaint()}</p>
+      <div class="row"><select id="cfgTarget">${options(targets, "all")}</select>
+        <button class="btn primary" id="cfgMaintOn">Turn on</button><button class="btn" id="cfgMaintOff">Turn off</button></div>
+      <p class="meta">Devices show a full-screen maintenance image until it is turned off. On devices with a door relay, the relay follows it (see the table below).</p>
+      <h4 style="margin:18px 0 8px">Maintenance screen image</h4>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        ${S.maintImage ? `<img class="shot" src="/api/config/maintenance-image?t=${S.maintImage}" alt="Maintenance image" style="max-height:220px;margin:0">`
+          : `<div class="shot-msg" style="padding:16px;border:1px dashed var(--line);border-radius:14px;min-width:200px"><div style="font-size:34px">🛠</div><b>Built-in image</b><p class="meta">"System Maintenance"</p></div>`}
+        <div><label class="btn" style="cursor:pointer">Upload image…<input type="file" id="cfgImg" accept="image/*" hidden></label>
+          ${S.maintImage ? `<button class="btn ghost" id="cfgImgReset">Use built-in image</button>` : ""}
+          <p class="meta" style="max-width:360px">Shown full screen on every device in maintenance. Portrait works best on tablets. Devices pick it up on their next check-in (needs the latest tablet app).</p></div></div>
+    </div></div>
+    <div class="card"><h3>⚡ Door relay per device type</h3>
+      <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
+      <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
+        <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
+    <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
+      <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
+        <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
+        <div class="card"><h3>Max, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
+      <div class="pad"><p class="meta" style="margin-top:0">Max answers from live portal data with each person's own access, and only proposes actions for them to confirm.
+        Accounts need the "Max" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Max reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Max runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
+        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Max is on</label>
+          <span class="meta">Model</span><input id="maxModel" value="${esc(S.assistant?.model || "")}" style="width:190px">
+          <span class="meta">Questions per person per day</span><input id="maxDaily" type="number" min="1" max="5000" value="${esc(S.assistant?.dailyLimit || 200)}" style="width:90px">
+          <button class="btn primary" id="maxSave">Save</button></div></div></div>`;
+  const target = () => { const v = $("cfgTarget").value; return v === "all" ? { all: true } : { group: v.slice(5) }; };
+  const count = t => t.all ? S.devices.length : S.devices.filter(d => (d.group || "") === t.group).length;
+  $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
+  $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
+  $("cfgWaEdit").onclick = () => whatsappForm();
+  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
+  // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
+  $("cfgImg").onchange = () => {
+    const f = $("cfgImg").files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1920 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext("2d");
+      g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height); // transparent PNGs get a black background
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      c.toBlob(b => act(async () => {
+        const r = await fetch("/api/config/maintenance-image", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: b });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+      }, "Maintenance image saved").then(() => VIEWS.config(null, true)), "image/jpeg", 0.85);
+    };
+    img.onerror = () => toast("That file isn't an image", true);
+    img.src = URL.createObjectURL(f);
+  };
+  if ($("cfgImgReset")) $("cfgImgReset").onclick = () => act(async () => {
+    const r = await fetch("/api/config/maintenance-image?reset=1", { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+  }, "Built-in maintenance image restored").then(() => VIEWS.config(null, true));
+  // Relay rows: the detail fields only matter when the model has a relay.
+  const sync = tr => tr.querySelectorAll("[data-f]:not([data-f=relay])").forEach(x => (x.disabled = tr.querySelector("[data-f=relay]").value !== "yes"));
+  $("cfgRelay").querySelectorAll("tr").forEach(sync);
+  $("cfgRelay").onchange = e => sync(e.target.closest("tr"));
+  $("cfgRelay").onclick = e => {
+    const tr = e.target.closest("tr"), m = tr?.dataset.m;
+    if (!m) return;
+    const v = f => tr.querySelector(`[data-f=${f}]`);
+    if (e.target.closest("[data-reset]")) return act(() => api("/api/config/relay", { model: m, reset: true }), `${m}: built-in relay profile restored`).then(() => VIEWS.config(null, true));
+    if (!e.target.closest("[data-save]")) return;
+    act(() => api("/api/config/relay", { model: m, relay: v("relay").value, iface: v("iface").value, on: v("on").value, off: v("off").value,
+      root: v("root").checked, readable: v("readable").checked, pulse: v("pulse").value, maintLink: v("maintLink").checked }), `${m} relay profile saved`).then(() => VIEWS.config(null, true));
+  };
+};
+
 VIEWS.users = (arg, first) => {
   if (!first && document.activeElement?.closest("#view input")) return; // don't redraw under someone typing in the Max settings
   const users = S.users || [];
@@ -1951,15 +2277,7 @@ VIEWS.users = (arg, first) => {
         <td class="meta">${x.lastLogin ? ago(x.lastLogin) : "never"}</td>
         <td><div class="row"><button class="btn" data-u="edit" data-name="${esc(x.username)}">Edit</button>
           <button class="btn ghost danger" data-u="del" data-name="${esc(x.username)}">Delete</button></div></td></tr>`).join("")}
-      </tbody></table></div></div>
-    <div class="card"><h3>Max, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
-      <div class="pad"><p class="meta" style="margin-top:0">Max answers from live portal data with each person's own access, and only proposes actions for them to confirm.
-        Accounts need the "Max" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Max reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Max runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
-        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Max is on</label>
-          <span class="meta">Model</span><input id="maxModel" value="${esc(S.assistant?.model || "")}" style="width:190px">
-          <span class="meta">Questions per person per day</span><input id="maxDaily" type="number" min="1" max="5000" value="${esc(S.assistant?.dailyLimit || 200)}" style="width:90px">
-          <button class="btn primary" id="maxSave">Save</button></div></div></div>`;
-  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
+      </tbody></table></div></div>`;
   $("view").onclick = e => {
     const b = e.target.closest("[data-u]");
     if (!b) return;
@@ -2007,14 +2325,6 @@ function userForm(x) {
   $("dlg").querySelector(".ugrid").onchange = sync;
   sync();
 }
-
-VIEWS.features = () => {
-  const P = { done: ["ok", "Done"], partial: ["warn", "Partly"], next: ["neutral", "Next phase"], later: ["neutral", "Later"] };
-  const n = k => FEATURES.filter(f => f[1] === k).length;
-  $("view").innerHTML = `<h2>Features</h2><p class="lead">${n("done")} done · ${n("partial")} partly done · ${n("next") + n("later")} to come.</p>
-    <div class="card feat"><table><tbody>${FEATURES.map(([f, s, note]) => `<tr><td><div class="name">${esc(f)}</div><div class="meta">${esc(note)}</div></td>
-      <td><span class="pill ${P[s][0]}">${P[s][1]}</span></td></tr>`).join("")}</tbody></table></div>`;
-};
 
 // ---------------- Technical Team: members, their tablets and maintenance tickets ----------------
 const TEAM_TABS = [["dashboard", "Dashboard"], ["members", "Team members"], ["devices", "Team devices"], ["tickets", "Tickets"], ["assign", "Assignment"],
@@ -3066,7 +3376,6 @@ const TOUR = {
   enroll: "Enroll devices makes a QR code to set up new tablets after a factory reset.",
   announcements: "Announcements show a full screen message on the tablets until someone taps Acknowledge.",
   activity: "The Activity log lists everything that happened, who did it and when.",
-  features: "Features shows the status of every planned feature of this portal.",
   users: "Users and access: create portal logins and choose what each person can see and do.",
 };
 window.dispatchEvent(new Event("maxbot-ready"));

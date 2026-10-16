@@ -1,5 +1,5 @@
 {
-  "name": "Interlock Device Portal",
+  "name": "Interlock Device Remote Management",
   "short_name": "Devices",
   "start_url": "/",
   "display": "standalone",

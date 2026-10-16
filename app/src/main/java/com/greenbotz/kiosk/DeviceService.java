@@ -27,6 +27,7 @@ import android.media.RingtoneManager;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.BatteryManager;
+import android.os.DropBoxManager;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
@@ -68,10 +69,12 @@ public class DeviceService extends Service {
     static final String PREF_TOKEN = "token";
     static final String PREF_CODE = "code";
     static final String PREF_MAINTENANCE = "maintenance";
+    static final String PREF_MAINT_IMG = "maint_img"; // version (portal time) of files/maintenance.jpg; 0 = built-in image
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
     static volatile boolean maintenanceShowing;
-    private static final String PREF_EVENTS = "events", PREF_CRASH = "crash";
+    private static final String PREF_EVENTS = "events", PREF_CRASH = "crash", PREF_BUGS_SINCE = "bugs_since";
+    private static boolean triedLogGrant;
     private static boolean crashHandlerSet;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -197,6 +200,54 @@ public class DeviceService extends Service {
         });
     }
 
+    // Bug Finder: crashes and freezes of every app, from Android's DropBox. Needs READ_LOGS and the usage-stats app-op
+    // (adb once, see setup-tablet.bat; rooted terminals grant them through su). Returns the per-tag "read up to" times,
+    // saved only after the server has the report.
+    private static final String[][] BUG_TAGS = {{"data_app_crash", "crash"}, {"system_app_crash", "crash"}, {"data_app_anr", "anr"},
+            {"system_app_anr", "anr"}, {"data_app_native_crash", "native"}, {"system_server_crash", "system"}, {"system_server_anr", "system"}};
+    private static final java.util.regex.Pattern BUG_APP = java.util.regex.Pattern.compile("^(?:Process|Package): *(\\S+)", java.util.regex.Pattern.MULTILINE);
+    private JSONObject putBugs(JSONObject d, SharedPreferences prefs) throws Exception {
+        JSONObject since = new JSONObject(prefs.getString(PREF_BUGS_SINCE, "{}"));
+        if (!triedLogGrant && checkSelfPermission("android.permission.READ_LOGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            triedLogGrant = true;
+            try {
+                Process p = new ProcessBuilder("su", "0", "sh", "-c", "pm grant " + getPackageName() + " android.permission.READ_LOGS; pm grant " + getPackageName()
+                        + " android.permission.READ_DROPBOX_DATA; appops set "
+                        + getPackageName() + " GET_USAGE_STATS allow").redirectErrorStream(true).start();
+                if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) p.destroy();
+            } catch (Exception ignored) { // no root: needs the adb grant
+            }
+        }
+        JSONArray out = new JSONArray();
+        try {
+            DropBoxManager db = getSystemService(DropBoxManager.class);
+            long dayAgo = System.currentTimeMillis() - 86400000L; // first run: the last day
+            for (String[] t : BUG_TAGS) {
+                long at = since.optLong(t[0], dayAgo);
+                // ponytail: 5 per tag per check-in, the rest follow on the next ones (every 10 s)
+                for (int n = 0; n < 5; n++) {
+                    DropBoxManager.Entry e = db.getNextEntry(t[0], at);
+                    if (e == null) break;
+                    at = e.getTimeMillis();
+                    String text = e.getText(8000);
+                    e.close();
+                    if (text == null) continue;
+                    java.util.regex.Matcher m = BUG_APP.matcher(text);
+                    String app = m.find() ? m.group(1) : t[0].startsWith("system_server") ? "android (system)" : "unknown";
+                    if (app.equals(getPackageName())) continue; // our own crashes come from catchCrashes()
+                    out.put(new JSONObject().put("kind", t[1]).put("app", app).put("at", at).put("text", text));
+                }
+                since.put(t[0], at);
+            }
+            d.put("bugAccess", true);
+        } catch (SecurityException e) {
+            Log.w(TAG, "no crash log access: " + e.getMessage());
+            d.put("bugAccess", false);
+        }
+        if (out.length() > 0) d.put("bugs", out);
+        return since;
+    }
+
     // Device owner can grant its own permissions, so no prompt appears on the tablet.
     private void grantLocation() {
         DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
@@ -269,6 +320,7 @@ public class DeviceService extends Service {
             d.put("events", new JSONArray(events));
             d.put("crash", crash);
             putHealth(d);
+            JSONObject bugsSince = putBugs(d, prefs);
             boolean monitor = KioskActivity.monitorOnly(this);
             d.put("type", !monitor ? "android-kiosk" : isTelpo() ? "telpo" : "android");
             d.put("mode", monitor ? "monitor" : "kiosk");
@@ -311,6 +363,7 @@ public class DeviceService extends Service {
             }
             JSONObject reply = post(serverUrl(this) + "/api/report", d);
             clearSent(events, crash);
+            prefs.edit().putString(PREF_BUGS_SINCE, bugsSince.toString()).apply();
             clearAcks(acks);
             setServerOk(prefs, true);
             if (d.has("launcherApps")) sentApps = apps.toString();
@@ -324,6 +377,12 @@ public class DeviceService extends Service {
                 prefs.edit().putBoolean(PREF_MAINTENANCE, maint).commit();
                 // Door follows maintenance on the change only, so manual relay commands win until the next change.
                 if (reply.optBoolean("relayLink", true) && relayState() != null) handler.post(() -> setRelay(maint, 0));
+            }
+            // The maintenance image set on the portal's Configuration page: fetched once per change.
+            long img = reply.optLong("maintImage", 0);
+            if (img != prefs.getLong(PREF_MAINT_IMG, 0) && !fetchingMaintImage) {
+                fetchingMaintImage = true;
+                new Thread(() -> fetchMaintImage(img)).start();
             }
             // Keep the maintenance screen up (also covers reboots and an app coming to the front).
             if (maint && !maintenanceShowing && !KioskActivity.monitorOnly(this)) {
@@ -574,7 +633,7 @@ public class DeviceService extends Service {
 
     // CPU load %: real use since the last check-in from /proc/stat where the system allows it (Android 7 and many
     // terminals, e.g. Telpo F8), otherwise an estimate from each core's clock speed (newer Android blocks /proc/stat).
-    private long prevBusy = -1, prevTotal;
+    private long prevBusy = -1, prevTotal, prevIdle = -1, prevIdleAt;
     private String cpuSource = "";
     // Chip name (e.g. rk3399, mt6789); Build.HARDWARE is often a generic board name on older Android.
     private static String boardPlatform() {
@@ -613,6 +672,30 @@ public class DeviceService extends Service {
             if (!first && dTotal > 0) return (int) Math.round(100.0 * dBusy / dTotal);
             return (int) Math.round(100.0 * busy / total); // first sample: average since boot
         } catch (Exception ignored) {
+        }
+        // Android 8+ hides /proc/stat from apps (Samsung). The per-core idle times are still readable and give the real
+        // load; the clock-speed guess below read 90%+ on an idle tablet, since clocks jump to max at every small task.
+        long idle = 0, now = android.os.SystemClock.elapsedRealtimeNanos() / 1000;
+        int cores = 0;
+        for (int i = 0; new java.io.File("/sys/devices/system/cpu/cpu" + i).exists(); i++) {
+            boolean counted = false;
+            for (int s = 0; ; s++) {
+                try (java.io.BufferedReader t = new java.io.BufferedReader(new java.io.FileReader("/sys/devices/system/cpu/cpu" + i + "/cpuidle/state" + s + "/time"))) {
+                    idle += Long.parseLong(t.readLine().trim()); // microseconds in this idle state
+                    counted = true;
+                } catch (Exception e) {
+                    break;
+                }
+            }
+            if (counted) cores++;
+        }
+        if (cores > 0) {
+            Integer load = null;
+            if (prevIdle >= 0 && now > prevIdleAt) load = (int) Math.round(100 - 100.0 * (idle - prevIdle) / ((double) (now - prevIdleAt) * cores));
+            prevIdle = idle;
+            prevIdleAt = now;
+            cpuSource = "Measured (idle time)";
+            return load == null ? null : Math.max(0, Math.min(100, load)); // first sample: nothing to compare yet
         }
         long cur = 0, max = 0;
         for (int i = 0; i < Runtime.getRuntime().availableProcessors(); i++) {
@@ -759,6 +842,7 @@ public class DeviceService extends Service {
         }
         // Slow jobs run on their own thread so check-ins keep going.
         if (type.equals("screenshot")) screenshot();
+        if (type.equals("live")) startLive();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
@@ -1067,6 +1151,178 @@ public class DeviceService extends Service {
             }
         } catch (Exception e) {
             Log.w(TAG, "screenshot upload failed", e);
+        }
+    }
+
+    // ---- live remote control: frames up, the portal's taps come back in each reply, until nobody watches ----
+    private volatile boolean live;
+
+    private void startLive() {
+        if (live) return;
+        if (ScreenshotService.instance == null) {
+            event(this, "Remote control needs the screenshot service (run setup-tablet.bat once)");
+            return;
+        }
+        live = true;
+        new Thread(this::liveLoop, "live").start();
+    }
+
+    private volatile int liveW, liveH;
+
+    // Pictures: as often as Android allows screenshots (once a second on 11-13, three times on 14+). Rooted devices
+    // (Telpo) use screencap instead: ~0.2 s a picture, so about 4 a second.
+    private void liveLoop() {
+        long until = System.currentTimeMillis() + 30 * 60 * 1000; // a forgotten window can't stream forever
+        long gap = Build.VERSION.SDK_INT >= 34 ? 340 : 1010, last = 0;
+        int fails = 0;
+        Boolean root = null; // found out on the first picture
+        new Thread(this::liveInputs, "live-in").start();
+        try {
+            while (live && System.currentTimeMillis() < until) {
+                ScreenshotService a = ScreenshotService.instance;
+                if (a == null) break;
+                long wait = last + (root == Boolean.TRUE ? 120 : gap) - System.currentTimeMillis();
+                if (wait > 0) Thread.sleep(wait);
+                last = System.currentTimeMillis();
+                android.graphics.Bitmap[] got = new android.graphics.Bitmap[1];
+                if (root != Boolean.FALSE) {
+                    got[0] = rootCapture();
+                    if (root == null) root = got[0] != null;
+                }
+                if (root == Boolean.FALSE && Build.VERSION.SDK_INT < 30) {
+                    event(this, "Remote control needs Android 11+ or a rooted device");
+                    break;
+                }
+                if (root == Boolean.FALSE) {
+                    java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+                    a.capture(b -> { got[0] = b; done.countDown(); }, err -> done.countDown());
+                    done.await(3, java.util.concurrent.TimeUnit.SECONDS);
+                }
+                if (got[0] == null) continue;
+                int w = got[0].getWidth(), h = got[0].getHeight();
+                float k = Math.min(1f, 720f / Math.max(w, h)); // small pictures keep it quick on slow Wi-Fi
+                android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(got[0], Math.round(w * k), Math.round(h * k), true);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, out);
+                if (small != got[0]) small.recycle();
+                got[0].recycle();
+                liveW = w;
+                liveH = h;
+                try {
+                    if (liveCall("/api/live?w=" + w + "&h=" + h, out.toByteArray()).optBoolean("stop")) break;
+                    fails = 0;
+                } catch (Exception e) {
+                    if (++fails >= 5) throw e; // a Wi-Fi blip shouldn't end the session
+                    Thread.sleep(1000);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "live remote control stopped", e);
+        } finally {
+            live = false;
+        }
+    }
+
+    // The screen through `su 0 screencap` (raw: a 16-byte header w, h, format, dataspace, then RGBA pixels).
+    // null when the device isn't rooted or anything looks off.
+    private static android.graphics.Bitmap rootCapture() {
+        Process p = null;
+        try {
+            p = new ProcessBuilder("su", "0", "screencap").start();
+            java.io.DataInputStream in = new java.io.DataInputStream(new java.io.BufferedInputStream(p.getInputStream(), 1 << 16));
+            byte[] head = new byte[16];
+            in.readFully(head);
+            java.nio.ByteBuffer hb = java.nio.ByteBuffer.wrap(head).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            int w = hb.getInt(), h = hb.getInt(), format = hb.getInt();
+            if (format != 1 || w <= 0 || h <= 0 || (long) w * h > 16_000_000) return null; // 1 = RGBA_8888
+            byte[] px = new byte[w * h * 4];
+            in.readFully(px);
+            android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+            b.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(px));
+            return b;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (p != null) p.destroy();
+        }
+    }
+
+    // Taps and keys: a long-poll the server answers the moment one is sent from the portal.
+    private void liveInputs() {
+        int fails = 0;
+        while (live) {
+            try {
+                JSONObject r = liveCall("/api/live/input", null);
+                fails = 0;
+                if (r.optBoolean("stop")) break;
+                JSONArray in = r.optJSONArray("inputs");
+                ScreenshotService a = ScreenshotService.instance;
+                for (int i = 0; in != null && a != null && liveW > 0 && i < in.length(); i++) {
+                    JSONObject o = in.getJSONObject(i);
+                    a.input(o.optString("a"), (float) o.optDouble("x") * liveW, (float) o.optDouble("y") * liveH,
+                            (float) o.optDouble("x2") * liveW, (float) o.optDouble("y2") * liveH);
+                    if (i + 1 < in.length()) Thread.sleep(100);
+                }
+            } catch (Exception e) {
+                if (++fails >= 5) break;
+                try { Thread.sleep(1000); } catch (InterruptedException x) { break; }
+            }
+        }
+        live = false;
+    }
+
+    private JSONObject liveCall(String path, byte[] jpeg) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + path).openConnection();
+        try {
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(25000);
+            c.setRequestProperty("X-Device-Key", key(this));
+            c.setRequestProperty("X-Device-Id", deviceId());
+            if (jpeg != null) {
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "image/jpeg");
+                try (OutputStream o = c.getOutputStream()) {
+                    o.write(jpeg);
+                }
+            }
+            return readReply(c);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private volatile boolean fetchingMaintImage;
+
+    private void fetchMaintImage(long version) {
+        try {
+            java.io.File f = new java.io.File(getFilesDir(), "maintenance.jpg");
+            if (version == 0) {
+                f.delete();
+            } else {
+                java.io.File tmp = new java.io.File(getFilesDir(), "maintenance.tmp");
+                HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/maintenance.jpg").openConnection();
+                try {
+                    c.setConnectTimeout(10000);
+                    c.setReadTimeout(30000);
+                    c.setRequestProperty("X-Device-Key", key(this));
+                    c.setRequestProperty("X-Device-Id", deviceId());
+                    if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+                    try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(tmp)) {
+                        byte[] buf = new byte[16384];
+                        for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                    }
+                } finally {
+                    c.disconnect();
+                }
+                f.delete();
+                if (!tmp.renameTo(f)) throw new Exception("could not save the image");
+            }
+            getSharedPreferences("kiosk", MODE_PRIVATE).edit().putLong(PREF_MAINT_IMG, version).commit();
+        } catch (Exception e) {
+            Log.w(TAG, "maintenance image download failed", e);
+        } finally {
+            fetchingMaintImage = false;
         }
     }
 

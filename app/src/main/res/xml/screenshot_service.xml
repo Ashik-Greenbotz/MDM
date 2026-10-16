@@ -5,4 +5,5 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRetrieveWindowContent="false"
     android:canTakeScreenshot="true"
+    android:canPerformGestures="true"
     android:description="@string/screenshot_service_description" />

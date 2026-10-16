@@ -29,22 +29,33 @@ const LOW_BATTERY = 20;
 // Clearing below amber, not red, so a value hovering at the limit doesn't open a new alert (and WhatsApp) every minute.
 const HEALTH_ALERTS = [["cpu", "CPU load", 90, 70, "%"], ["ram", "RAM usage", 95, 80, "%"], ["disk", "Storage (ROM) usage", 95, 80, "%"], ["temp", "Temperature", 75, 60, "°C"]];
 const HISTORY_EVERY_MS = 5 * 60 * 1000, HISTORY_KEEP = 288; // 24 h of 5-minute samples
+const HOURLY_KEEP = 31 * 24; // and a month of hourly averages (week / month views)
 // Devices take the server's time zone (fixes terminals shipped on UTC). Override with TIME_ZONE=Asia/Singapore etc.
 // Remote SSH: tablets hold a reverse tunnel to this sshd (the "tunnel" container). Off when no password is set.
 const TUNNEL_HOST = process.env.TUNNEL_HOST || "", TUNNEL_PORT = Number(process.env.TUNNEL_PORT || 2222);
 const TUNNEL_USER = process.env.TUNNEL_USER || "tunnel", TUNNEL_PASSWORD = process.env.TUNNEL_PASSWORD || "";
 const sshPort = d => 20000 + Number(d.code); // Device IDs are 1000-9999, so 21000-29999
-// WireGuard VPN: one hub (this server's wireguard/hub.conf, applied by WG_SYNC), every device and admin laptop a peer.
-// Addresses in 10.66.0.0/16: hub 10.66.255.1, device = 10.66.<ID / 256>.<ID % 256>, admins 10.66.255.2-254. Off when WG_ENDPOINT is empty.
-const WG_ENDPOINT = process.env.WG_ENDPOINT || "", WG_SYNC = process.env.WG_SYNC || "", WG_PORT = Number(process.env.WG_PORT || 51820);
-const vpnAddr = d => `10.66.${Number(d.code) >> 8}.${Number(d.code) & 255}`;
 const TIME_ZONE = process.env.TIME_ZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
 // A Date whose local fields show the wall clock in TIME_ZONE (cloud servers run on UTC).
 const zoned = () => new Date(new Date().toLocaleString("en-US", { timeZone: TIME_ZONE }));
 const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
-const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "install", "file", "logs"];
+const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "live", "install", "file", "logs"];
+// Live remote control (Android): kept in memory only. Pictures (device -> portal) and taps (portal -> device) are
+// long-polled, so each goes through the moment it exists. The device stops once nobody has watched for LIVE_IDLE_MS.
+const LIVE = {}, LIVE_IDLE_MS = 20000; // id -> { jpeg, at, w, h, seen, inputs, wait: { device: [], viewers: [] } }
+const liveNew = () => ({ inputs: [], seen: Date.now(), wait: { device: [], viewers: [] } });
+// Resolves when liveWake(L, who) runs, after ms, or when the client hangs up.
+function liveWait(L, who, ms, res) {
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(t); L.wait[who] = L.wait[who].filter(f => f !== done); resolve(); };
+    const t = setTimeout(done, ms);
+    L.wait[who].push(done);
+    res.on("close", done);
+  });
+}
+const liveWake = (L, who) => L.wait[who].slice().forEach(f => f());
 const COMMANDS = {
   "android-kiosk": ["unlock", "lock", "singleapp", "apps", "relay", ...ANDROID],
   android: ANDROID,
@@ -73,7 +84,9 @@ const RELAY_PROFILES = {
   "Telpo VCP": { relay: "unknown" }, Akuvox: { relay: "unknown" }, Others: { relay: "unknown" },
 };
 // The model's profile with this device's verified overrides (d.relayCfg) on top. No model set: "unknown".
-const relayProfile = d => ({ ...(RELAY_PROFILES[d.deviceModel] || { relay: "unknown" }), ...(d.relayCfg || {}) });
+// A model's profile: the built-in one, with the admin's changes from the Configuration page on top.
+const modelProfile = m => ({ ...(RELAY_PROFILES[m] || { relay: "unknown" }), ...(portal.relayProfiles?.[m] || {}) });
+const relayProfile = d => ({ ...modelProfile(d.deviceModel), ...(d.relayCfg || {}) });
 const label = d => d.name || d.deviceName || d.id.slice(0, 8);
 const rid = () => crypto.randomBytes(8).toString("hex");
 
@@ -105,7 +118,7 @@ if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs"]) fs.mkdi
 
 let devices = {};
 const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], announcements: [], whatsapp: [], waOutbox: [], waHistory: [], kioskApp: null,
-  technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {} };
+  technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {}, relayProfiles: {}, maintImage: null };
 // Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
 // ("Add device", kept in portal.pending) and type it on the device to link it.
 const usedCodes = () => new Set([...Object.values(devices).map(d => d.code), ...portal.pending.map(x => x.code)]);
@@ -124,7 +137,8 @@ async function flush() {
   if (!dirty) return;
   dirty = false;
   try {
-    await Promise.all([store.write("devices.json", JSON.stringify(devices)), store.write("portal.json", JSON.stringify(portal))]);
+    await Promise.all([store.write("devices.json", JSON.stringify(devices)), store.write("portal.json", JSON.stringify(portal)),
+      store.write("bugs.json", JSON.stringify(bugs))]);
   } catch (e) {
     dirty = true;
     console.error("save failed:", e.message);
@@ -145,7 +159,7 @@ const same = (a, b) => {
 // ---- portal accounts ----
 // The ADMIN_USER / ADMIN_PASSWORD account is always a full admin (can't be locked out). More accounts live in portal.users:
 // { username, name, hash, admin, sites: ["*"] | [site names], modules: [MODULES...], readOnly, disabled, createdAt }
-const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "features", "team", "assistant"];
+const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs"];
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
@@ -282,7 +296,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "vpnUp"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
@@ -292,6 +306,10 @@ function queue(list, cmd, by) {
     if (!COMMANDS[typeOf(d)].includes(cmd.type)) continue;
     (d.queue ||= []).push({ ...cmd, id: rid(), at: Date.now() });
     if (cmd.type === "remote") d.remotePass = cmd.password;
+    if (cmd.type === "live") { // a new session starts clean; one still streaming carries on
+      const L = LIVE[d.id];
+      if (L && Date.now() - (L.at || 0) < 5000) L.seen = Date.now(); else LIVE[d.id] = liveNew();
+    }
     if (d.queue.length > 20) d.queue.shift();
     log(d.id, "command", `${cmd.type}${cmd.name ? " " + cmd.name : ""} queued${by ? " by " + by : ""}`);
     n++;
@@ -300,50 +318,6 @@ function queue(list, cmd, by) {
   return n;
 }
 
-// WireGuard key pair (X25519, base64 like "wg genkey"), from Node's crypto: no wg tool needed on the server.
-function wgKeys() {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync("x25519");
-  const raw = (k, part) => Buffer.from(k.export({ format: "jwk" })[part], "base64url").toString("base64");
-  return { priv: raw(privateKey, "d"), pub: raw(publicKey, "x") };
-}
-const vpnHub = () => (portal.vpnHub ||= wgKeys());
-// Writes the hub's config (full for "installtunnelservice", stripped for "wg syncconf") and applies it with WG_SYNC.
-function writeVpnHub() {
-  if (!WG_ENDPOINT) return;
-  const peers = [
-    ...Object.values(devices).filter(d => d.vpn && d.vpnKey && d.code).map(d => [`${label(d)} (${d.code})`, d.vpnKey.pub, vpnAddr(d)]),
-    ...(portal.vpnAdmins || []).map(a => [`admin ${a.username}`, a.pub, a.address]),
-  ].map(([n, pub, ip]) => `\n[Peer]\n# ${n.replace(/[\r\n]/g, " ")}\nPublicKey = ${pub}\nAllowedIPs = ${ip}/32\n`).join("");
-  const iface = `[Interface]\nPrivateKey = ${vpnHub().priv}\nListenPort = ${WG_PORT}\n`;
-  const dir = path.join(DATA_DIR, "wireguard");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "mdm-hub.conf"), iface + "Address = 10.66.255.1/16\n" + peers);
-  fs.writeFileSync(path.join(dir, "mdm-hub-sync.conf"), iface + peers);
-  if (WG_SYNC) require("node:child_process").exec(WG_SYNC.replace("{file}", path.join(dir, "mdm-hub-sync.conf")), (e, out, err) => { if (e) console.log("WG_SYNC failed:", (err || e.message).trim()); });
-}
-// VPN on/off per device (tablets, Windows, Linux). The key pair is made once and kept.
-function setVpn(d, on, by) {
-  if (!["android-kiosk", "windows", "linux"].includes(typeOf(d)) || !d.code || !!d.vpn === on) return;
-  d.vpn = on;
-  if (on && !d.vpnKey) d.vpnKey = wgKeys();
-  log(d.id, "vpn", `VPN ${on ? "on, " + vpnAddr(d) : "off"} (by ${by})`);
-  dirty = true;
-  writeVpnHub();
-}
-// An admin's own laptop / phone on the VPN: one peer per portal login, made once. Returns its WireGuard config text.
-function vpnAdminConf(username) {
-  const list = (portal.vpnAdmins ||= []);
-  let a = list.find(x => x.username === username);
-  if (!a) {
-    const used = new Set(list.map(x => x.address));
-    let n = 2; while (used.has(`10.66.255.${n}`) && n < 254) n++;
-    a = { username, address: `10.66.255.${n}`, ...wgKeys(), at: Date.now() };
-    list.push(a);
-    dirty = true;
-    writeVpnHub();
-  }
-  return `[Interface]\n# ${username} on the device portal VPN\nPrivateKey = ${a.priv}\nAddress = ${a.address}/32\n\n[Peer]\nPublicKey = ${vpnHub().pub}\nEndpoint = ${WG_ENDPOINT}\nAllowedIPs = 10.66.0.0/16\nPersistentKeepalive = 25\n`;
-}
 
 // Remote SSH on/off. The login password is made once per device and kept.
 function setSsh(d, on, by) {
@@ -1244,10 +1218,31 @@ function kioskApk() {
   const app = portal.apps.find(a => a.id === portal.kioskApp) || portal.apps.find(a => /kiosk/i.test(a.label));
   return app ? { url: `/download/app/${app.id}.apk`, checksum: app.checksum, label: app.label } : null;
 }
+// ---- Bug Finder: crashes and freezes of every app on every device (Android DropBox, Windows event log, our own crash) ----
+// ponytail: newest BUGS_KEEP kept in bugs.json, no per-site retention.
+let bugs = [];
+const BUGS_KEEP = 3000, BUG_KINDS = ["crash", "anr", "native", "system", "hang"];
+// The line that says what went wrong: an exception class starting a line (not a header like "Crash-Handler: ...Exception..."),
+// else "ANR in ...", the signal, else the first line.
+const bugSummary = t => { const ls = t.split("\n").map(l => l.trim());
+  return (ls.find(l => /^[\w.$]+(Exception|Error)\b/.test(l)) || ls.find(l => /^ANR in|^Subject:|^Reason:|signal \d+|Abort message|Faulting|stopped working/i.test(l))
+    || ls.find(Boolean) || "").slice(0, 300); };
+function addBug(d, b) {
+  if (!b || typeof b !== "object") return;
+  const text = String(b.text || "").slice(0, 8000), app = String(b.app || "").slice(0, 200) || "unknown";
+  const kind = BUG_KINDS.includes(b.kind) ? b.kind : "crash", at = Number(b.at) > 0 && Number(b.at) <= Date.now() + 86400000 ? Number(b.at) : Date.now();
+  if (bugs.some(x => x.deviceId === d.id && x.at === at && x.app === app && x.kind === kind)) return; // re-sent after a lost reply
+  bugs.push({ id: rid(), deviceId: d.id, code: d.code || null, deviceName: label(d), site: d.group || "", kind, app, at, summary: bugSummary(text), text, seenAt: Date.now() });
+  if (bugs.length > BUGS_KEEP) bugs.splice(0, bugs.length - BUGS_KEEP);
+}
 // Loads the saved data. The office PC also adds the built kiosk APK on first run.
 const ready = (async () => {
   devices = JSON.parse((await store.read("devices.json")) || "{}");
   Object.assign(portal, JSON.parse((await store.read("portal.json")) || "{}"));
+  bugs = JSON.parse((await store.read("bugs.json")) || "[]");
+  // The WireGuard VPN was removed (remote control replaces it): forget its keys and peers.
+  if (portal.vpnHub || portal.vpnAdmins) { delete portal.vpnHub; delete portal.vpnAdmins; dirty = true; }
+  for (const d of Object.values(devices)) if ("vpn" in d || "vpnKey" in d || "vpnUp" in d) { delete d.vpn; delete d.vpnKey; delete d.vpnUp; dirty = true; }
   for (const d of Object.values(devices)) if (!d.code) { d.code = newCode(); dirty = true; }
   const built = path.join(__dirname, "..", "Kiosk app phase2.apk");
   if (CLOUD || portal.apps.length || !fs.existsSync(built)) return;
@@ -1310,15 +1305,26 @@ async function handler(req, res) {
         const a = portal.announcements.find(x => x.id === id);
         if (a && a.deviceIds.includes(d.id) && !a.acks[d.id]) { a.acks[d.id] = Date.now(); log(d.id, "announcement", `${label(d)} acknowledged "${a.text.slice(0, 60) || "image"}"`); }
       }
+      for (const b of Array.isArray(body.bugs) ? body.bugs.slice(0, 30) : []) addBug(d, b);
       if (typeof body.crash === "string" && body.crash) {
+        addBug(d, { kind: "crash", app: d.type === "windows" ? "device agent" : "com.greenbotz.kiosk", text: body.crash });
         portal.alerts.push({ id: rid(), deviceId: d.id, kind: "crash", text: `App crashed on ${label(d)}`, detail: body.crash.slice(0, 4000), at: Date.now() });
         waQueue("crash", d, portal.alerts[portal.alerts.length - 1]);
         log(d.id, "alert", `App crashed on ${label(d)}: ${body.crash.split("\n")[0].slice(0, 200)}`);
       }
       if (!d.historyAt || Date.now() - d.historyAt >= HISTORY_EVERY_MS) {
         d.historyAt = Date.now();
+        const prev = d.history?.[d.history.length - 1], hour = t => Math.floor(t / 36e5) * 36e5;
         (d.history ||= []).push([d.historyAt, ...HEALTH.map(k => d[k] ?? null)]);
         if (d.history.length > HISTORY_KEEP) d.history.shift();
+        if (prev && hour(prev[0]) !== hour(d.historyAt)) { // an hour ended: keep its average for the week / month views
+          const rows = d.history.filter(r => hour(r[0]) === hour(prev[0]));
+          (d.historyH ||= []).push([hour(prev[0]), ...HEALTH.map((k, i) => {
+            const v = rows.map(r => r[i + 1]).filter(x => x != null);
+            return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null;
+          })]);
+          if (d.historyH.length > HOURLY_KEEP) d.historyH.shift();
+        }
       }
       delete d.command; // old single-command format
       const command = d.queue?.shift() || null;
@@ -1340,9 +1346,7 @@ async function handler(req, res) {
       const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null } : null;
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
-      const vpn = d.vpn && d.vpnKey && WG_ENDPOINT ? { on: true, address: vpnAddr(d) + "/32", privateKey: d.vpnKey.priv, hubPublicKey: vpnHub().pub,
-        endpoint: WG_ENDPOINT, allowed: "10.66.0.0/16", keepalive: 25 } : { on: false };
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, announcement, ssh, vpn, agentUpdate,
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: portal.maintImage?.at || 0, announcement, ssh, agentUpdate,
         config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
@@ -1413,6 +1417,33 @@ async function handler(req, res) {
       }
       dirty = true;
       return send(res, 200, { ok: true });
+    }
+    // The maintenance screen image set on the Configuration page (devices fetch it when maintImage changes).
+    if (req.method === "GET" && p === "/api/maintenance.jpg") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const img = portal.maintImage && await store.read("uploads/maintenance.jpg");
+      return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no custom image" });
+    }
+    // Live remote control, device side: POST a picture; GET /input waits up to 15 s for the next taps.
+    if (p === "/api/live" || p === "/api/live/input") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const id = String(req.headers["x-device-id"] || ""), L = LIVE[id];
+      const over = () => !devices[id] || !L || LIVE[id] !== L || Date.now() - L.seen > LIVE_IDLE_MS;
+      if (over()) return send(res, 200, { stop: true });
+      if (req.method === "POST") {
+        const jpeg = await readBody(req, 4 * 1024 * 1024);
+        if (jpeg.length > 3 && jpeg[0] === 0xff && jpeg[1] === 0xd8) {
+          Object.assign(L, { jpeg, at: Date.now(), w: Number(url.searchParams.get("w")) || 0, h: Number(url.searchParams.get("h")) || 0 });
+          liveWake(L, "viewers");
+        }
+        return send(res, 200, { ok: true });
+      }
+      if (!L.inputs.length) await liveWait(L, "device", 15000, res);
+      if (res.destroyed) return; // gone: keep the taps for its next request
+      if (over()) return send(res, 200, { stop: true });
+      const inputs = L.inputs;
+      L.inputs = [];
+      return send(res, 200, { inputs });
     }
     // Technical team tablet (device key + X-Device-Id of a tech device assigned to a technician). It acts as that technician:
     // only their tickets, only the "tech" status moves (never closing), notes, photos and their availability.
@@ -1523,7 +1554,7 @@ async function handler(req, res) {
     if (!u) return send(res, 401, { error: "login required" });
     const deny = (error = "Your account doesn't have access to this") => send(res, 403, { error });
     if (req.method === "POST" && u.readOnly) return deny("This account is view-only");
-    const raw = p === "/api/upload" || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
+    const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
     const body = req.method === "POST" && !raw ? await readJson(req) : {};
     const ok = extra => { dirty = true; send(res, 200, { ok: true, ...extra }); };
     const mine = list => list.filter(d => sees(u, d));
@@ -1540,13 +1571,11 @@ async function handler(req, res) {
       return send(res, 200, {
         now: Date.now(), commands: COMMANDS,
         me: { ...publicUser(u), allSites: all, modules: u.admin ? MODULES : u.modules || [] },
-        devices: mine(Object.values(devices)).map(({ history, token, queue: q, remotePass, vpnKey, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null,
-          vpnAddress: d.vpn && d.code ? vpnAddr(d) : null,
+        devices: mine(Object.values(devices)).map(({ history, historyH, token, queue: q, remotePass, ...d }) => ({ ...d, type: typeOf(d), pending: q?.[0]?.type || null,
           remotePass: u.admin ? remotePass : undefined, // RustDesk password: admins only
           sshLan: d.remote?.ssh && d.localIp ? `ssh ${d.remote.sshUser || "user"}@${d.localIp}` : null,
           relayProfile: relayProfile(d), techName: techOf(d)?.name || null,
           sshCmd: d.code && `ssh -J ${TUNNEL_USER}@${TUNNEL_HOST || String(req.headers.host || "").replace(/:\d+$/, "")}:${TUNNEL_PORT} -p ${sshPort(d)} ${typeOf(d) === "windows" ? d.remote?.sshUser || "user" : "kiosk"}@localhost` })),
-        vpnReady: !!WG_ENDPOINT, vpnMine: !!(portal.vpnAdmins || []).find(x => x.username === u.username), // VPN: admins put their own laptop / phone on it
         sshReady: !!TUNNEL_PASSWORD, sshTunnelPass: can(u, "devices") ? TUNNEL_PASSWORD : undefined,
         alerts: portal.alerts.filter(a => (!a.resolvedAt || Date.now() - a.resolvedAt < 7 * 86400000) && sees(u, devices[a.deviceId])),
         tasks: can(u, "tasks") ? portal.tasks.filter(t => all || siteOk(u, t.target?.group)) : [],
@@ -1559,7 +1588,8 @@ async function handler(req, res) {
         whatsapp: u.admin ? portal.whatsapp : undefined,
         agentKey: u.admin ? AGENT_KEY || null : undefined, // shown in "Add device" for Windows / Linux / IoT
         lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
-        models: MODELS, relayProfiles: RELAY_PROFILES, relayIfaces: RELAY_IFACES,
+        models: MODELS, relayProfiles: Object.fromEntries(MODELS.map(m => [m, modelProfile(m)])), relayEdited: Object.keys(portal.relayProfiles || {}),
+        relayIfaces: RELAY_IFACES, maintImage: portal.maintImage?.at || 0,
         categories: CATEGORIES, priorities: PRIORITIES, statuses: STATUS, flow: FLOW,
         technicians: can(u, "team", "devices") ? portal.technicians.map(({ apikey, ...t }) => ({ ...t, hasKey: !!apikey, ...techState(t) })) : [],
         ticketCounts: can(u, "team") ? ticketCounts(myTickets()) : null,
@@ -1568,11 +1598,90 @@ async function handler(req, res) {
         assistant: { on: assistantOn(), configured: !!ASSISTANT_KEY, allowed: can(u, "assistant"), ...(u.admin ? { model: assistantModel(), enabled: portal.assistant.enabled !== false, dailyLimit: Number(portal.assistant.dailyLimit) || 200 } : {}) },
       });
     }
+    if (req.method === "GET" && p === "/api/bugs") {
+      if (!can(u, "bugs")) return deny();
+      const dev = url.searchParams.get("device");
+      const list = bugs.filter(b => (!dev || b.deviceId === dev) && (devices[b.deviceId] ? sees(u, devices[b.deviceId]) : allSites(u)));
+      return send(res, 200, { bugs: list.slice(-1000).reverse() });
+    }
+    if (req.method === "POST" && p === "/api/bugs/delete") {
+      if (!u.admin) return deny();
+      const ids = new Set(Array.isArray(body.ids) ? body.ids : []);
+      bugs = body.all ? [] : bugs.filter(b => !ids.has(b.id));
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
     if (req.method === "GET" && p === "/api/events") {
       const dev = url.searchParams.get("device");
       // events without a device (sites, uploads...) and those of removed devices: all-sites accounts only
       const list = portal.events.filter(e => (!dev || e.deviceId === dev) && (allSites(u) || sees(u, devices[e.deviceId])));
       return send(res, 200, { events: list.slice(-1000).reverse() });
+    }
+    // ---- Configuration page (admins only) ----
+    if (p === "/api/config/maintenance-image") {
+      if (req.method === "GET") {
+        const img = portal.maintImage && await store.read("uploads/maintenance.jpg");
+        return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no custom image" });
+      }
+      if (!u.admin) return deny("Only admins can change the maintenance image");
+      if (url.searchParams.get("reset")) portal.maintImage = null;
+      else {
+        const img = await readBody(req, 8 * 1024 * 1024);
+        if (img.length < 4 || img[0] !== 0xff || img[1] !== 0xd8) return send(res, 400, { error: "send a JPEG image" });
+        await store.write("uploads/maintenance.jpg", img);
+        portal.maintImage = { at: Date.now(), size: img.length };
+      }
+      log(null, "maintenance", `Maintenance screen image ${portal.maintImage ? "changed" : "reset to the built-in one"} by ${by}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && p === "/api/config/relay") {
+      // Relay profile for a whole device model; devices with their own verified setup (relayCfg) keep it on top.
+      if (!u.admin) return deny("Only admins can change relay profiles");
+      const model = String(body.model || "");
+      if (!MODELS.includes(model)) return send(res, 400, { error: "pick a model" });
+      if (body.reset) delete portal.relayProfiles[model];
+      else {
+        const relay = String(body.relay || "");
+        if (!["yes", "no", "unknown"].includes(relay)) return send(res, 400, { error: "relay must be yes, no or unknown" });
+        if (relay !== "yes") portal.relayProfiles[model] = { relay };
+        else {
+          const iface = String(body.iface || ""), on = String(body.on), off = String(body.off);
+          if (!RELAY_IFACES.includes(iface)) return send(res, 400, { error: "pick one of the known relay files" });
+          if (!["0", "1"].includes(on) || !["0", "1"].includes(off) || on === off) return send(res, 400, { error: "ON and OFF must be 0 and 1 (one each)" });
+          portal.relayProfiles[model] = { relay, iface, on, off, root: !!body.root, readable: !!body.readable,
+            pulse: Math.min(600, Math.max(1, Math.round(Number(body.pulse) || 5))), maintLink: body.maintLink !== false };
+        }
+      }
+      log(null, "relay", `Relay profile for ${model} ${body.reset ? "reset to the built-in one" : "changed"} by ${by}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
+    // Live remote control, portal side: live.jpg?after=<time> waits up to 10 s for a newer picture (watching keeps the
+    // session alive); POST sends a tap / swipe / key to the device straight away.
+    m = /^\/api\/devices\/([\w-]+)\/live(\.jpg)?$/.exec(p);
+    if (m) {
+      const d = devices[m[1]], L = LIVE[m[1]];
+      if (!can(u, "devices") || !d || !sees(u, d)) return deny();
+      if (!L) return send(res, 404, { error: "no live session, open remote control again" });
+      L.seen = Date.now();
+      if (req.method === "GET" && m[2]) {
+        const after = Number(url.searchParams.get("after")) || 0;
+        if (!(L.at > after)) await liveWait(L, "viewers", 10000, res);
+        if (res.destroyed) return;
+        L.seen = Date.now();
+        res.setHeader("X-Frame-At", String(L.at || 0));
+        res.setHeader("X-Now", String(Date.now()));
+        return L.at > after ? send(res, 200, L.jpeg, "image/jpeg") : send(res, 204, "", "image/jpeg");
+      }
+      if (req.method === "POST") {
+        const n = v => Math.min(1, Math.max(0, Number(v) || 0)), a = String(body.a || "");
+        if (!["tap", "swipe", "back", "home", "recents"].includes(a)) return send(res, 400, { error: "unknown action" });
+        L.inputs.push(a === "tap" ? { a, x: n(body.x), y: n(body.y) } : a === "swipe" ? { a, x: n(body.x), y: n(body.y), x2: n(body.x2), y2: n(body.y2) } : { a });
+        if (L.inputs.length > 20) L.inputs.shift();
+        liveWake(L, "device");
+        return send(res, 200, { ok: true });
+      }
     }
     m = /^\/api\/devices\/([\w-]+)\/screenshot\.jpg$/.exec(p);
     if (req.method === "GET" && m) {
@@ -1585,7 +1694,7 @@ async function handler(req, res) {
       const d = devices[m[1]];
       if (!d) return send(res, 404, { error: "no such device" });
       if (!can(u, "devices") || !sees(u, d)) return deny();
-      if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [] });
+      if (m[2] === "history") return send(res, 200, { fields: HEALTH, history: d.history || [], hourly: d.historyH || [] });
       const logs = await store.read(`logs/${d.id}.txt`);
       return logs ? send(res, 200, logs, "text/plain; charset=utf-8") : send(res, 404, { error: "no logs yet" });
     }
@@ -1620,7 +1729,7 @@ async function handler(req, res) {
       portal.pending = portal.pending.filter(x => x.code !== body.code || !siteOk(u, x.group));
       return ok();
     }
-    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|ssh|vpn|delete|config|relaycfg)$/.exec(p);
+    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|ssh|delete|config|relaycfg)$/.exec(p);
     if (req.method === "POST" && m) {
       const d = devices[m[1]];
       if (!d || !sees(u, d)) return send(res, 404, { error: "no such device" });
@@ -1665,10 +1774,6 @@ async function handler(req, res) {
         log(d.id, "relay", `Relay follows maintenance mode: ${d.relayLink ? "yes" : "no"} (by ${by})`);
       } else if (m[2] === "ssh") {
         setSsh(d, !!body.on, by);
-      } else if (m[2] === "vpn") {
-        if (!u.admin) return deny("Only admins can turn the VPN on or off");
-        if (!WG_ENDPOINT) return send(res, 400, { error: "The VPN isn't set up on this server (WG_ENDPOINT)" });
-        setVpn(d, !!body.on, by);
       } else if (m[2] === "name") {
         d.name = String(body.name || "").slice(0, 80).trim();
       } else if (m[2] === "group") {
@@ -1689,11 +1794,6 @@ async function handler(req, res) {
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");
-        return ok({ count: list.length });
-      }
-      if (body.action === "vpn") {
-        if (!u.admin) return deny("Only admins can turn the VPN on or off");
-        for (const d of list) setVpn(d, !!body.on, by + " (bulk)");
         return ok({ count: list.length });
       }
       if (body.action === "group") {
@@ -1763,6 +1863,13 @@ async function handler(req, res) {
       const at = point(body.lat, body.lng);
       if (!at && (num(body.lat) !== null || num(body.lng) !== null)) return send(res, 400, { error: "Latitude -90..90 and longitude -180..180, or leave both empty" });
       Object.assign(fields, { lat: at?.lat ?? null, lng: at?.lng ?? null });
+      // logo: a small image the portal already shrank to 128 px; "" removes it, left out keeps it.
+      // ponytail: stored inline in portal.json and sent with every state refresh; fine for tens of sites
+      if (body.logo === "") fields.logo = null;
+      else if (body.logo !== undefined) {
+        if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(String(body.logo)) || body.logo.length > 150000) return send(res, 400, { error: "logo must be a small PNG / JPEG / WebP image" });
+        fields.logo = body.logo;
+      }
       if (body.oldName) {
         // Rename / edit: move devices and tasks along with it.
         const old = portal.sites.find(x => x.name === body.oldName);
@@ -1899,13 +2006,6 @@ async function handler(req, res) {
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
       return ok();
-    }
-    // The signed-in admin's own laptop / phone on the VPN: its WireGuard config (file or QR for the WireGuard app).
-    if (req.method === "POST" && p === "/api/vpn/me") {
-      if (!u.admin) return deny("Only admins can join the VPN");
-      if (!WG_ENDPOINT) return send(res, 400, { error: "The VPN isn't set up on this server (WG_ENDPOINT)" });
-      const conf = vpnAdminConf(u.username);
-      return ok({ conf, address: (portal.vpnAdmins || []).find(x => x.username === u.username)?.address });
     }
     // ---------------- Max (assistant module) ----------------
     if (req.method === "POST" && p === "/api/assistant") {
@@ -2078,8 +2178,6 @@ if (require.main === module) {
     setInterval(tick, 1000); // tick itself waits 5 s between runs
     http.createServer(handler).listen(PORT, () => {
       console.log(`Device portal running. Open http://localhost:${PORT}  (login: ${ADMIN_USER})`);
-      writeVpnHub(); // VPN hub config from the saved peers (only when WG_ENDPOINT is set)
-      if (WG_ENDPOINT) console.log(`VPN hub: ${WG_ENDPOINT}, config in ${path.join(DATA_DIR, "wireguard")}`);
       if (!process.env.ADMIN_PASSWORD) console.log("WARNING: default admin password in use, set ADMIN_PASSWORD");
       if (!process.env.DEVICE_KEY) console.log("WARNING: default device key in use, set DEVICE_KEY (and server_key in the app)");
     });
