@@ -903,7 +903,7 @@ VIEWS.devices = (arg, first) => {
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
       <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
-      <td><button class="btn ghost" data-unpend="${esc(x.code)}">Cancel</button></td></tr>`).join(""));
+      <td><button class="btn danger" data-unpend="${esc(x.code)}" title="Remove this waiting Device ID">🗑 Remove</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
   $("all").checked = list.length > 0 && list.every(d => picked.has(d.id));
@@ -1010,7 +1010,7 @@ function addDevice() {
 
 function rowClick(e) {
   const un = e.target.closest("[data-unpend]");
-  if (un) { if (confirm(`Cancel Device ID ${un.dataset.unpend}?`)) act(() => api("/api/devices/pending/delete", { code: un.dataset.unpend }), "Cancelled"); return; }
+  if (un) { if (confirm(`Remove the waiting Device ID ${un.dataset.unpend}? A tablet can no longer link with it.`)) act(() => api("/api/devices/pending/delete", { code: un.dataset.unpend }), `Device ID ${un.dataset.unpend} removed`); return; }
   const tr = e.target.closest("tr[data-id]");
   if (!tr) return;
   const d = dev(tr.dataset.id);
