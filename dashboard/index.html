@@ -1320,7 +1320,7 @@ VIEWS.device = async (id, first) => {
       <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
         <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
         <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
-      <div class="card" id="dUpdCard" hidden><div class="pad row"><span id="dUpdText"></span><span class="grow" style="flex:1"></span><button class="btn" id="dUpdBtn">⬆ Update to latest version</button></div></div>
+      <div class="card" id="dUpdCard" hidden><div class="pad row"><span id="dUpdText"></span><span class="grow" style="flex:1"></span><button class="btn primary" id="dUpdBtn">⬆ Update to latest version</button></div></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
       <div class="card"><h3>Health<span class="grow"></span><span class="tabs hr" id="dRange"></span></h3><div id="dChart" class="hchart"></div></div>
@@ -1397,13 +1397,9 @@ VIEWS.device = async (id, first) => {
   const rp = d.relayProfile || { relay: "unknown" }, ri = d.relayInfo || {};
   $("dModelBtn").hidden = d.type !== "android-kiosk";
   const upd = d.type === "android-kiosk" && latestKioskApp(), uv = upd && verOf(upd.label);
-  $("dUpdCard").hidden = !upd;
-  if (upd) {
-    const old = !uv || !d.appVersion || cmpVer(d.appVersion, uv) < 0;
-    $("dUpdText").innerHTML = `App version <b>${esc(d.appVersion || "unknown")}</b> · latest on the portal: <b>${esc(upd.label)}</b> `
-      + (old ? `<span class="pill warn">Update available</span>` : `<span class="pill ok">Up to date</span>`);
-    $("dUpdBtn").className = "btn" + (old ? " primary" : "");
-  }
+  // Only when an update is waiting; up to date shows just the App version row in Details.
+  $("dUpdCard").hidden = !(upd && (!uv || !d.appVersion || cmpVer(d.appVersion, uv) < 0));
+  if (upd) $("dUpdText").innerHTML = `App version <b>${esc(d.appVersion || "unknown")}</b> · latest on the portal: <b>${esc(upd.label)}</b> <span class="pill warn">Update available</span>`;
   $("dRelayCard").hidden = !(S.commands[d.type] || []).includes("relay") || (rp.relay === "no" && d.relay == null);
   // confirmed = the tablet read the relay file back; otherwise it is the last value written (F10 can't be read)
   const confirmed = ri.readable ?? rp.readable;
