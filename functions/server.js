@@ -478,7 +478,9 @@ async function callmebot(phone, apikey, text) {
     { signal: AbortSignal.timeout(20000) });
   const body = (await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   // CallMeBot answers 200 with an error text for a wrong key or number
-  if (!res.ok || /error|invalid|not (been )?(activated|registered)|wrong/i.test(body)) throw new Error(`HTTP ${res.status} ${body.slice(0, 150)}`);
+  // ...and 200 "You have 0 messages left ... subscribe ... Message not sent" when the free allowance is used up.
+  // The reply starts by echoing our text, so keep its end (the reason) for the activity log.
+  if (!res.ok || /error|invalid|not (been )?(activated|registered)|wrong|not sent|messages left|subscribe/i.test(body)) throw new Error(`HTTP ${res.status} ${body.slice(-160)}`);
 }
 let waBusy = false;
 // More than WA_BATCH messages due for one number at once (a site outage, 500 devices down): one summary message instead
