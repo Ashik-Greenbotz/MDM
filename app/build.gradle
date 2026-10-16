@@ -14,8 +14,8 @@ android {
         applicationId "com.greenbotz.kiosk"
         minSdk 28
         targetSdk 35
-        versionCode 36
-        versionName "10.19"
+        versionCode 37
+        versionName "10.20"
         resValue "string", "server_key", localProps.getProperty("server.key", "change-me-device-key")
         // Local/debug servers (setup screen "Debug"): local.properties server.key.debug = DEVICE_KEY in functions/.env
         resValue "string", "server_key_debug", localProps.getProperty("server.key.debug", "change-me-device-key")

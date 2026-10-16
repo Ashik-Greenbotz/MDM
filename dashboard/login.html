@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Device Portal · Sign in</title>
+<title>Device Remote Management · Sign in</title>
 <style>
   :root {
     --bg: #eceffa; --bg-grad: linear-gradient(135deg, #e6eeff 0%, #f1e8ff 50%, #ffeadb 100%); --edge: rgba(255,255,255,.75);
@@ -66,6 +66,11 @@
   button#btn:hover::after { transform: translateX(100%); transition: transform .8s var(--ease); }
   button#btn:active { transform: scale(.98); }
   button#btn:disabled { cursor: default; }
+  /* "catch me" state after a wrong password: the button floats free and runs from the pointer (see dodge()) */
+  .card.tease #btn { position: fixed; left: 0; top: 0; width: 230px; margin: 0; z-index: 30;
+    background: linear-gradient(135deg, var(--bad), #ff6b6e); box-shadow: 0 12px 34px rgba(229,56,59,.45);
+    transition: left .18s var(--ease), top .18s var(--ease), background .3s, box-shadow .3s; }
+  .card.tease #btn:hover { transform: none; }
   button#btn .dot { display: none; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff;
     border-radius: 50%; animation: spin .8s linear infinite; }
   button#btn:disabled .dot { display: inline-block; }
@@ -89,14 +94,14 @@
 <button class="theme" id="theme" type="button" aria-label="Change theme"></button>
 <form class="card" id="form">
   <div class="logo-wrap"><img class="logo" src="/logo.png" alt="Interlock Group"></div>
-  <h1>Device Portal</h1>
+  <h1>Device Remote Management</h1>
   <p class="sub">Sign in to manage your tablets</p>
   <label for="user">Username</label>
   <input id="user" autocomplete="username" required autofocus>
   <label for="password">Password</label>
   <input id="password" type="password" autocomplete="current-password" required>
   <div class="err" id="err" role="alert"></div>
-  <button id="btn"><span class="dot"></span>Sign in</button>
+  <button id="btn"><span class="dot"></span><span id="lbl">Sign in</span></button>
 </form>
 <footer class="copy">2026 © Interlock Security Systems · Developed by Ashik</footer>
 <script>
@@ -114,17 +119,58 @@ function themeBtn(b, after) {
   show();
 }
 themeBtn(document.getElementById("theme"));
-const card = document.getElementById("form");
+const card = document.getElementById("form"), btn = document.getElementById("btn"), lbl = document.getElementById("lbl");
 const shake = () => { card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake"); };
+// After a wrong password the button runs from the pointer and dares you to press Enter instead. Keyboard submit still
+// works (Enter), so it stays usable; reduced-motion users just get the new label, no chase.
+const pw = document.getElementById("password"), user = document.getElementById("user");
+const chase = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+const NEAR = 95; // how close the pointer may get before the button bolts
+let teasing = false;
+// Leap to a random spot on the page, kept on-screen and away from the pointer (px,py) so it doesn't jump under it.
+function dodge(px, py) {
+  const pad = 14, w = btn.offsetWidth, h = btn.offsetHeight;
+  let x, y, tries = 0;
+  do {
+    x = pad + Math.random() * Math.max(0, innerWidth - w - pad * 2);
+    y = pad + Math.random() * Math.max(0, innerHeight - h - pad * 2);
+  } while (++tries < 12 && px != null && Math.hypot(x + w / 2 - px, y + h / 2 - py) < 260);
+  btn.style.left = Math.round(x) + "px"; btn.style.top = Math.round(y) + "px";
+}
+// The button stays visible, floating free, and the game runs until the right password gets in (press Enter to submit).
+function tease() {
+  lbl.textContent = "Enter the correct password";
+  if (!chase || teasing) return;
+  teasing = true;
+  const r = btn.getBoundingClientRect(); // start where it already is, then it will flee the pointer
+  card.classList.add("tease");
+  btn.style.left = Math.round(r.left) + "px"; btn.style.top = Math.round(r.top) + "px";
+}
+// Flee whenever the pointer comes within NEAR px of the floating button (distance to its nearest edge).
+addEventListener("pointermove", e => {
+  if (!teasing) return;
+  const r = btn.getBoundingClientRect();
+  const dx = e.clientX - Math.max(r.left, Math.min(e.clientX, r.right));
+  const dy = e.clientY - Math.max(r.top, Math.min(e.clientY, r.bottom));
+  if (Math.hypot(dx, dy) < NEAR) dodge(e.clientX, e.clientY);
+});
+btn.addEventListener("pointerdown", e => { if (teasing) { e.preventDefault(); dodge(e.clientX, e.clientY); } });
+addEventListener("resize", () => teasing && dodge());
+// Validate as they type: the moment the fields look ready again, nudge them to press Enter.
+const sayReady = () => { if (teasing) lbl.textContent = user.value.trim() && pw.value ? "Looks good — press Enter" : "Enter the correct password"; };
+pw.addEventListener("input", sayReady);
+user.addEventListener("input", sayReady);
 document.getElementById("form").onsubmit = async e => {
   e.preventDefault();
-  const btn = document.getElementById("btn"), err = document.getElementById("err");
+  const err = document.getElementById("err");
+  if (!user.value.trim() || !pw.value) { err.textContent = "Enter your username and password"; shake(); return; }
   btn.disabled = true; err.textContent = "";
   try {
     const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: document.getElementById("user").value.trim(), password: document.getElementById("password").value }) });
+      body: JSON.stringify({ user: user.value.trim(), password: pw.value }) });
     if (r.ok) { location.href = "/"; return; }
     err.textContent = (await r.json().catch(() => ({}))).error || "Sign-in failed";
+    tease();
   } catch { err.textContent = "Cannot reach the server"; }
   shake();
   btn.disabled = false;

@@ -23,6 +23,10 @@ adb shell settings put secure enabled_accessibility_services com.greenbotz.kiosk
 adb shell settings put secure accessibility_enabled 1
 rem Portal screenshots on Android 9/10: allow screen capture without the "Start now" prompt.
 adb shell appops set com.greenbotz.kiosk PROJECT_MEDIA allow
+rem Bug Finder: lets the app read every app's crash / freeze reports.
+adb shell pm grant com.greenbotz.kiosk android.permission.READ_LOGS
+adb shell pm grant com.greenbotz.kiosk android.permission.READ_DROPBOX_DATA
+adb shell appops set com.greenbotz.kiosk GET_USAGE_STATS allow
 adb shell am start -n com.greenbotz.kiosk/.KioskActivity --es mode %MODE%
 echo.
 echo Done. On the tablet, finish setup: Production or Debug, Device ID, allowed apps.

@@ -8,7 +8,7 @@ param(
   [string]$Key = "change-me-device-key",
   [int]$EverySeconds = 10
 )
-$Version = 16  # 16: WireGuard VPN (tunnel service mdm-vpn), temperature from ACPI thermal zones
+$Version = 18  # 18: WireGuard VPN removed (its tunnel is uninstalled); 17: Bug Finder; 16: ACPI temperature
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 # Stable id per machine (Windows install GUID).
@@ -89,42 +89,10 @@ function Get-RemoteInfo {
   $script:remoteAt = Get-Date
   return $script:remoteInfo
 }
-# ---- WireGuard VPN: the portal sends { on, address, privateKey, hubPublicKey, endpoint, allowed, keepalive } ----
-# Runs as the WireGuard tunnel service "mdm-vpn" (starts with Windows). Only 10.66.0.0/16 goes through it.
-$wgDir = Join-Path $env:ProgramFiles "WireGuard"
-$vpnConf = Join-Path $dir "mdm-vpn.conf"
-function Update-Vpn($vpn) {
-  $svc = Get-Service 'WireGuardTunnel$mdm-vpn' -ErrorAction SilentlyContinue
-  if (-not ($vpn -and $vpn.on)) {
-    if ($svc) { & "$wgDir\wireguard.exe" /uninstalltunnelservice mdm-vpn | Out-Null; Remove-Item $vpnConf -ErrorAction SilentlyContinue }
-    return
-  }
-  if (-not (Test-Path "$wgDir\wireguard.exe")) {
-    if (-not (Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object CommandLine -match 'vpn-setup')) {
-      Start-RemoteJob "vpn-setup" @'
-'Downloading WireGuard'
-[Net.ServicePointManager]::SecurityProtocol = 'Tls12'
-$msi = (Invoke-WebRequest -UseBasicParsing https://download.wireguard.com/windows-client/).Content | Select-String -Pattern 'wireguard-amd64-[\d.]+\.msi' -AllMatches |
-  ForEach-Object { $_.Matches.Value } | Sort-Object { [version]($_ -replace '^wireguard-amd64-|\.msi$') } | Select-Object -Last 1
-Invoke-WebRequest -UseBasicParsing "https://download.wireguard.com/windows-client/$msi" -OutFile "$env:TEMP\$msi"
-'Installing WireGuard ' + $msi
-$p = Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\$msi`" /qn DO_NOT_LAUNCH=1" -PassThru; $null = $p.Handle; $p.WaitForExit()
-'msiexec exit ' + $p.ExitCode
-'@
-    }
-    return
-  }
-  $text = "[Interface]`r`nPrivateKey = $($vpn.privateKey)`r`nAddress = $($vpn.address)`r`n`r`n[Peer]`r`nPublicKey = $($vpn.hubPublicKey)`r`nEndpoint = $($vpn.endpoint)`r`nAllowedIPs = $($vpn.allowed)`r`nPersistentKeepalive = $($vpn.keepalive)`r`n"
-  if ($svc -and $svc.Status -eq "Running" -and (Get-Content $vpnConf -Raw -ErrorAction SilentlyContinue) -eq $text) { return }
-  Set-Content -Path $vpnConf -Value $text -Encoding ASCII -NoNewline
-  if ($svc) { & "$wgDir\wireguard.exe" /uninstalltunnelservice mdm-vpn | Out-Null; Start-Sleep 3 }
-  & "$wgDir\wireguard.exe" /installtunnelservice $vpnConf | Out-Null
-}
-# Up = the hub answered within the last 3 minutes (WireGuard handshakes every 2 minutes while traffic / keepalives flow).
-function Get-VpnUp {
-  if (-not (Get-Service 'WireGuardTunnel$mdm-vpn' -ErrorAction SilentlyContinue)) { return $false }
-  $hs = "$(& "$wgDir\wg.exe" show mdm-vpn latest-handshakes 2>$null)" -split "\s+" | Select-Object -Last 1
-  return [bool]($hs -match '^\d+$' -and [int64]$hs -gt 0 -and ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64]$hs) -lt 180)
+# The portal's WireGuard VPN was removed in v18: take down the tunnel an older agent set up.
+if (Get-Service 'WireGuardTunnel$mdm-vpn' -ErrorAction SilentlyContinue) {
+  try { & (Join-Path $env:ProgramFiles "WireGuard\wireguard.exe") /uninstalltunnelservice mdm-vpn | Out-Null } catch { }
+  Remove-Item (Join-Path $dir "mdm-vpn.conf") -ErrorAction SilentlyContinue
 }
 
 # Long jobs (Windows feature install, RustDesk download) run on their own; their progress goes to remote.log.
@@ -291,6 +259,15 @@ Start-Sleep 3
   }
 }
 
+# Bug Finder: app crashes (Application Error 1000) and freezes (Application Hang 1002) since the last check-in; the last day at start.
+$bugsSince = (Get-Date).AddDays(-1)
+function Get-Bugs {
+  $ev = Get-WinEvent -FilterHashtable @{ LogName = "Application"; Id = 1000, 1002; StartTime = $bugsSince } -MaxEvents 30 -ErrorAction SilentlyContinue
+  @($ev | Where-Object { $_.ProviderName -in "Application Error", "Application Hang" } | ForEach-Object {
+    @{ kind = $(if ($_.Id -eq 1002) { "hang" } else { "crash" }); app = "$($_.Properties[0].Value)"; text = "$($_.Message)"
+       at = [long]([DateTimeOffset]$_.TimeCreated).ToUnixTimeMilliseconds() } })
+}
+
 while ($true) {
   try {
     $os = Get-CimInstance Win32_OperatingSystem
@@ -327,9 +304,11 @@ while ($true) {
     # temperature: the hottest ACPI thermal zone (tenths of a kelvin), readable without admin rights
     $tz = Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction SilentlyContinue | Where-Object HighPrecisionTemperature -gt 2732 | Measure-Object HighPrecisionTemperature -Maximum
     if ($tz.Count) { $body.temp = [math]::Round($tz.Maximum / 10 - 273.15, 1); $body.info["Temperature sensor"] = "ACPI thermal zone" }
-    try { $body.vpnUp = Get-VpnUp } catch { }
+    $bugsAt = Get-Date
+    try { $body.bugs = Get-Bugs } catch { }
     $reply = Invoke-RestMethod -DisableKeepAlive -Method Post -Uri "$Server/api/report" -Headers @{ "X-Device-Key" = $Key } `
       -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 3)))
+    $bugsSince = $bugsAt
     if ($reply.agentUpdate) {
       # newer agent on the server: replace this file, start the new one with the same settings, and stop this one
       Invoke-WebRequest -DisableKeepAlive -Uri "$Server/download/agent.ps1" -Headers $headers -OutFile "$PSCommandPath.new" -UseBasicParsing
@@ -338,7 +317,6 @@ while ($true) {
       exit 0
     }
     try { Update-Tunnel $reply.ssh } catch { Write-Warning "tunnel: $_" }
-    try { Update-Vpn $reply.vpn } catch { Write-Warning "vpn: $_" }
     if ($reply.command) {
       try { Invoke-Command2 $reply.command }
       catch { try { Send-Result $reply.command $false "$_" } catch { } }

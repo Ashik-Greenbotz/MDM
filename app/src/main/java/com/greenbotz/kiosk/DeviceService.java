@@ -27,6 +27,7 @@ import android.media.RingtoneManager;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.BatteryManager;
+import android.os.DropBoxManager;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
@@ -72,7 +73,8 @@ public class DeviceService extends Service {
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
     static volatile boolean maintenanceShowing;
-    private static final String PREF_EVENTS = "events", PREF_CRASH = "crash";
+    private static final String PREF_EVENTS = "events", PREF_CRASH = "crash", PREF_BUGS_SINCE = "bugs_since";
+    private static boolean triedLogGrant;
     private static boolean crashHandlerSet;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -198,6 +200,54 @@ public class DeviceService extends Service {
         });
     }
 
+    // Bug Finder: crashes and freezes of every app, from Android's DropBox. Needs READ_LOGS and the usage-stats app-op
+    // (adb once, see setup-tablet.bat; rooted terminals grant them through su). Returns the per-tag "read up to" times,
+    // saved only after the server has the report.
+    private static final String[][] BUG_TAGS = {{"data_app_crash", "crash"}, {"system_app_crash", "crash"}, {"data_app_anr", "anr"},
+            {"system_app_anr", "anr"}, {"data_app_native_crash", "native"}, {"system_server_crash", "system"}, {"system_server_anr", "system"}};
+    private static final java.util.regex.Pattern BUG_APP = java.util.regex.Pattern.compile("^(?:Process|Package): *(\\S+)", java.util.regex.Pattern.MULTILINE);
+    private JSONObject putBugs(JSONObject d, SharedPreferences prefs) throws Exception {
+        JSONObject since = new JSONObject(prefs.getString(PREF_BUGS_SINCE, "{}"));
+        if (!triedLogGrant && checkSelfPermission("android.permission.READ_LOGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            triedLogGrant = true;
+            try {
+                Process p = new ProcessBuilder("su", "0", "sh", "-c", "pm grant " + getPackageName() + " android.permission.READ_LOGS; pm grant " + getPackageName()
+                        + " android.permission.READ_DROPBOX_DATA; appops set "
+                        + getPackageName() + " GET_USAGE_STATS allow").redirectErrorStream(true).start();
+                if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) p.destroy();
+            } catch (Exception ignored) { // no root: needs the adb grant
+            }
+        }
+        JSONArray out = new JSONArray();
+        try {
+            DropBoxManager db = getSystemService(DropBoxManager.class);
+            long dayAgo = System.currentTimeMillis() - 86400000L; // first run: the last day
+            for (String[] t : BUG_TAGS) {
+                long at = since.optLong(t[0], dayAgo);
+                // ponytail: 5 per tag per check-in, the rest follow on the next ones (every 10 s)
+                for (int n = 0; n < 5; n++) {
+                    DropBoxManager.Entry e = db.getNextEntry(t[0], at);
+                    if (e == null) break;
+                    at = e.getTimeMillis();
+                    String text = e.getText(8000);
+                    e.close();
+                    if (text == null) continue;
+                    java.util.regex.Matcher m = BUG_APP.matcher(text);
+                    String app = m.find() ? m.group(1) : t[0].startsWith("system_server") ? "android (system)" : "unknown";
+                    if (app.equals(getPackageName())) continue; // our own crashes come from catchCrashes()
+                    out.put(new JSONObject().put("kind", t[1]).put("app", app).put("at", at).put("text", text));
+                }
+                since.put(t[0], at);
+            }
+            d.put("bugAccess", true);
+        } catch (SecurityException e) {
+            Log.w(TAG, "no crash log access: " + e.getMessage());
+            d.put("bugAccess", false);
+        }
+        if (out.length() > 0) d.put("bugs", out);
+        return since;
+    }
+
     // Device owner can grant its own permissions, so no prompt appears on the tablet.
     private void grantLocation() {
         DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
@@ -270,6 +320,7 @@ public class DeviceService extends Service {
             d.put("events", new JSONArray(events));
             d.put("crash", crash);
             putHealth(d);
+            JSONObject bugsSince = putBugs(d, prefs);
             boolean monitor = KioskActivity.monitorOnly(this);
             d.put("type", !monitor ? "android-kiosk" : isTelpo() ? "telpo" : "android");
             d.put("mode", monitor ? "monitor" : "kiosk");
@@ -312,6 +363,7 @@ public class DeviceService extends Service {
             }
             JSONObject reply = post(serverUrl(this) + "/api/report", d);
             clearSent(events, crash);
+            prefs.edit().putString(PREF_BUGS_SINCE, bugsSince.toString()).apply();
             clearAcks(acks);
             setServerOk(prefs, true);
             if (d.has("launcherApps")) sentApps = apps.toString();

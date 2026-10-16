@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Device Portal</title>
+<title>Device Remote Management</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#e6eeff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -416,7 +416,7 @@
 <header>
   <img src="/logo.png" alt="">
   <div>
-    <h1>Device Portal</h1>
+    <h1>Device Remote Management</h1>
     <div class="sub">Interlock Group · every device across all sites</div>
   </div>
   <div class="grow"></div>
@@ -425,7 +425,6 @@
   <button class="btn icon" id="soundBtn" title="Alarm sound when a device goes offline"></button>
   <button class="btn" id="mapBtn" title="Live location of all devices"><span class="mapico"></span>Map</button>
   <a class="btn bell" href="#/alerts" title="Open alerts"><span class="bellico"></span><b id="bellN" hidden></b></a>
-  <button class="btn" id="vpnBtn" title="Connect my laptop / phone to the devices' VPN" hidden>🔒 VPN</button>
   <span class="who" id="who"></span><button class="btn" id="logout" title="Sign out"><span class="outico"></span><span class="t">Sign out</span></button>
 </header>
 <div class="layout">
@@ -475,16 +474,17 @@ const ICONS = {"activity":"<path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36
 Object.assign(ICONS, { settings: "<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
   wrench: "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
   mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
+  bug: "<path d=\"m8 2 1.88 1.88\"/><path d=\"M14.12 3.88 16 2\"/><path d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/><path d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/><path d=\"M12 20v-9\"/><path d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/><path d=\"M6 13H2\"/><path d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/><path d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/><path d=\"M22 13h-4\"/><path d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>",
   send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
-  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["team", "wrench", "Technical Team"],
+  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["bugs", "bug", "Bug Finder"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
   ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team", bug: "bugs" }[page] || page);
 
 let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {}, technicians: [], models: [], statuses: {}, flow: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
@@ -563,7 +563,6 @@ async function refresh() {
   $("bellN").hidden = !n;
   $("bellN").textContent = n;
   $("who").innerHTML = S.me ? `${ico("user-round")}<span class="t">${esc(S.me.name || S.me.username)}</span>${S.me.readOnly ? `<span class="pill neutral">View only</span>` : ""}` : "";
-  $("vpnBtn").hidden = !(S.vpnReady && S.me?.admin);
   $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}` : "";
   renderNav();
   renderAlarm();
@@ -654,7 +653,7 @@ function renderNav() {
   const cur = (location.hash.slice(2) || "overview").split("/")[0];
   const counts = { devices: S.devices.length, sites: groups().filter(Boolean).length, alerts: openAlerts().length, tasks: S.tasks.length,
     team: S.ticketCounts ? S.ticketCounts.new + S.ticketCounts.resolved : 0 };
-  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") ? "on" : ""}">
+  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") || (cur === "bug" && k === "bugs") ? "on" : ""}">
     ${ico(icon)}<span class="t">${t}</span>${counts[k] ? `<span class="c ${k === "alerts" ? "bad" : ""}">${counts[k]}</span>` : ""}</a>`).join("");
 }
 
@@ -970,28 +969,6 @@ function rowClick(e) {
   location.hash = "#/device/" + encodeURIComponent(d.id);
 }
 
-// The signed-in admin's own WireGuard config (same every time): download, QR for the phone app, or copy.
-async function vpnMe() {
-  try {
-    const r = await api("/api/vpn/me", {});
-    const qr = qrcode(0, "M");
-    qr.addData(r.conf);
-    qr.make();
-    const url = URL.createObjectURL(new Blob([r.conf], { type: "text/plain" }));
-    dialog(`<h2>Connect my laptop / phone</h2>
-      <p class="meta">Your VPN address: <b>${esc(r.address || "–")}</b>. Keep this file private: it is your key to the VPN.</p>
-      <ol class="meta" style="padding-left:18px;line-height:1.6">
-        <li>Install WireGuard (<a href="https://www.wireguard.com/install/" target="_blank" rel="noopener">wireguard.com/install</a>).</li>
-        <li>Laptop: <b>Import tunnel(s) from file</b> → the downloaded <b>mdm-vpn.conf</b>. Phone: <b>+</b> → <b>Scan from QR code</b>.</li>
-        <li><b>Activate</b> it, then use the VPN commands on the device pages.</li></ol>
-      <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap"><div class="qr" style="width:210px;background:#fff;padding:6px;border-radius:10px">${qr.createSvgTag({ cellSize: 3, margin: 2, scalable: true })}</div>
-        <div style="flex:1;min-width:220px"><a class="btn primary" href="${url}" download="mdm-vpn.conf">⬇ Download mdm-vpn.conf</a>
-          <pre class="log" id="vpnConf" style="margin-top:8px;max-height:200px;white-space:pre-wrap;word-break:break-all">${esc(r.conf)}</pre>
-          <button type="button" class="btn ghost" id="vpnCopy">Copy</button></div></div>`);
-    $("vpnCopy").onclick = () => navigator.clipboard.writeText(r.conf).then(() => toast("Copied"));
-  } catch (e) { toast("VPN: " + e.message, true); }
-}
-$("vpnBtn").onclick = vpnMe;
 
 function renderBulk() {
   if (document.activeElement?.closest("#bulk")) return; // the user is choosing a command: don't rebuild it under them
@@ -1002,7 +979,6 @@ function renderBulk() {
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
     ${S.sshReady ? `<button class="btn" data-bssh="1">SSH on</button><button class="btn" data-bssh="">SSH off</button>` : ""}
-    ${S.vpnReady && me().admin ? `<button class="btn" data-bvpn="1">VPN on</button><button class="btn" data-bvpn="">VPN off</button>` : ""}
     <button class="btn danger" id="bDel">Remove</button>
     <button class="btn ghost" id="bClear">Clear selection</button></div>`;
   $("bCmd").onchange = e => { if (e.target.value) command(sel, e.target.value); e.target.value = ""; };
@@ -1012,8 +988,6 @@ function renderBulk() {
   $("bClear").onclick = () => { picked.clear(); route(true); };
   for (const b of $("bulk").querySelectorAll("[data-bssh]")) b.onclick = () =>
     act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "ssh", on: !!b.dataset.bssh }), `Remote SSH ${b.dataset.bssh ? "on" : "off"}`);
-  for (const b of $("bulk").querySelectorAll("[data-bvpn]")) b.onclick = () =>
-    act(() => api("/api/bulk", { target: { ids: sel.map(d => d.id) }, action: "vpn", on: !!b.dataset.bvpn }), `VPN ${b.dataset.bvpn ? "on" : "off"}`);
 }
 
 function deviceMenu(btn, d) {
@@ -1365,7 +1339,6 @@ VIEWS.device = async (id, first) => {
             <div class="row" style="margin-top:6px"><span class="meta">1. Tunnel password:</span><code id="dSshTun" style="user-select:all"></code><button class="btn ghost" data-copy="dSshTun">Copy</button></div>
             <div class="row" style="margin-top:6px"><span class="meta">2. Tablet login password:</span><code id="dSshPass" style="user-select:all"></code><button class="btn ghost" data-copy="dSshPass">Copy</button></div></div></div></div>
       <div class="card" id="dRemoteCard" hidden><h3>Remote access</h3><div class="pad" id="dRemote"></div></div>
-      <div class="card" id="dVpnCard" hidden><h3>VPN<span class="grow"></span><span id="dVpnState"></span></h3><div class="pad" id="dVpn"></div></div>
       <div class="card" id="dAppsCard" hidden><h3>Allowed apps<span class="grow"></span><span class="meta" id="dAppsNote"></span><button class="btn primary" id="dAppsSave">Save</button></h3>
         <div class="pad"><p class="meta" style="margin-top:0">Ticked apps show on the kiosk home screen and may run. Changes made on the tablet's admin menu show here too.</p><div class="row" id="dApps"></div></div></div>
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
@@ -1379,9 +1352,6 @@ VIEWS.device = async (id, first) => {
       if (r && !confirm(`${r === "off" ? "Relay OFF (lock the door)" : r === "on" ? "Relay ON (door stays open until Relay OFF)" : `Pulse ${$("dPulse").value} s (opens the door)`} on ${label(dev(id))}?\n\nThis switches the real door relay.`)) return;
       if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
         { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
-      const vb = e.target.closest("[data-vpn]");
-      if (vb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/vpn`, { on: !!vb.dataset.vpn }), `VPN ${vb.dataset.vpn ? "on" : "off"}`);
-      if (e.target.closest("[data-vpnme]")) return vpnMe();
       const sb = e.target.closest("[data-ssh]");
       if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
       const cp = e.target.closest("[data-copy]");
@@ -1452,20 +1422,6 @@ VIEWS.device = async (id, first) => {
   $("dPill").innerHTML = statusPill(d) + " " + stateCell(d);
   const rm = d.remote || {}, copyBox = (cid, text) => `<div class="row" style="margin-top:6px"><code id="${cid}" style="user-select:all">${esc(text)}</code><button class="btn ghost" data-copy="${cid}">Copy</button></div>`;
   $("dRemoteCard").hidden = d.type !== "windows";
-  // VPN (WireGuard, admins): the device gets a private address; the commands below work from a laptop / phone on the VPN too
-  const vpnOk = S.vpnReady && me().admin && ["android-kiosk", "windows", "linux"].includes(d.type);
-  $("dVpnCard").hidden = !vpnOk;
-  if (vpnOk) {
-    const va = d.vpnAddress;
-    const vcmds = !va ? [] : d.type === "windows" ? [["SSH", `ssh ${rm.sshUser || "<user>"}@${va}`], ["Remote desktop (Windows)", `mstsc /v:${va}`], ["RustDesk direct (IP)", va]]
-      : d.type === "linux" ? [["SSH", `ssh <user>@${va}`]] : [["ADB", `adb connect ${va}:5555`], ["Screen (scrcpy)", `scrcpy -s ${va}:5555`]];
-    $("dVpnState").innerHTML = !d.vpn ? `<span class="pill">OFF</span>` : d.vpnUp ? `<span class="pill ok">Connected</span>` : `<span class="pill warn">Connecting…</span>`;
-    $("dVpn").innerHTML = `<div class="row"><button class="btn primary" data-vpn="1">VPN ON</button><button class="btn" data-vpn="">VPN OFF</button>
-        <span class="meta">${va ? `Address <b>${esc(va)}</b>` : "The device joins the private network (WireGuard) and gets its own address."}</span></div>
-      ${vcmds.map(([t, c], i) => `<p class="meta" style="margin:10px 0 0">${esc(t)}</p>${copyBox("dVpnC" + i, c)}`).join("")}
-      ${d.vpn ? `<p class="meta" style="margin:12px 0 0">Your laptop / phone must be on the VPN too: <button type="button" class="btn ghost" data-vpnme>🔒 Connect my laptop / phone</button>${S.vpnMine ? " (already set up)" : ""}</p>` : ""}
-      ${d.type === "android-kiosk" && d.vpn && d.vpnUp == null ? `<p class="meta">Tablets need app 10.19 or newer for the VPN.</p>` : ""}`;
-  }
   if (d.type === "windows") $("dRemote").innerHTML = `
     <h4 style="margin:0 0 6px">Remote desktop (RustDesk)${rm.rustdeskId ? ` <span class="pill ok">Ready</span>` : rm.rustdesk ? ` <span class="pill warn">Installed, no ID yet</span>` : ` <span class="pill">Not set up</span>`}</h4>
     ${rm.rustdeskId ? `<div class="row"><span class="meta">ID</span></div>${copyBox("dRdId", rm.rustdeskId)}
@@ -2120,10 +2076,95 @@ VIEWS.activity = async (arg, first) => {
     || `<tr><td class="empty">Nothing yet</td></tr>`;
 };
 
+// Bug Finder: crashes and freezes of every app on every device, newest first.
+const BUG_KINDS = { crash: ["Crash", "bad"], anr: ["Freeze (not responding)", "warn"], hang: ["Freeze (not responding)", "warn"],
+  native: ["Native crash", "bad"], system: ["System crash", "bad"] };
+let bugFilter = { q: "", site: "", kind: "", app: "" }, bugShown = [];
+// One .txt for the given reports: a header (time, site, device, Device ID, app, problem) then the full log of each.
+const bugFile = (list, name) => {
+  const text = list.map(b => `==== ${new Date(b.at).toLocaleString()} · ${(BUG_KINDS[b.kind] || BUG_KINDS.crash)[0]} · ${b.app}\n`
+    + `Site: ${groupName(dev(b.deviceId)?.group ?? b.site)}\nDevice: ${dev(b.deviceId) ? label(dev(b.deviceId)) : b.deviceName} (Device ID ${b.code || "–"}, ${b.deviceId})\n`
+    + `Problem: ${b.summary}\n\n${b.text}\n`).join("\n");
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type: "text/plain" })), download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+VIEWS.bugs = async (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `<div class="row" style="justify-content:space-between"><h2>Bug Finder</h2>
+        <span><button class="btn" id="bugDl">⬇ Download logs</button>
+        ${me().admin ? `<button class="btn ghost" id="bugClear">Clear all</button>` : ""}</span></div>
+      <p class="lead">Collects application crash and freeze reports across all devices, including site details, device information, and complete error logs.</p>
+      <div class="stats" id="bugStats"></div><div id="bugWarn"></div>
+      <div class="card"><div class="toolbar"><input type="search" id="bugQ" placeholder="Search app, device, Device ID, problem…" value="${esc(bugFilter.q)}">
+        <select id="bugSite"></select><select id="bugKind"></select><select id="bugApp"></select></div>
+        <div class="table-wrap"><table><thead><tr><th>Time</th><th>Site</th><th>Device</th><th>App</th><th>Problem</th></tr></thead>
+        <tbody id="bugRows"></tbody></table></div></div>`;
+    const set = () => { bugFilter = { q: $("bugQ").value, site: $("bugSite").value, kind: $("bugKind").value, app: $("bugApp").value }; VIEWS.bugs(); };
+    $("bugQ").oninput = $("bugSite").onchange = $("bugKind").onchange = $("bugApp").onchange = set;
+    // Downloads what the filters show (all of it, not only the first 500 rows).
+    $("bugDl").onclick = () => bugShown.length ? bugFile(bugShown, `bug-finder-${new Date().toISOString().slice(0, 10)}.txt`) : toast("No logs to download", true);
+    $("bugRows").onclick = e => {
+      const tr = e.target.closest("tr[data-bug]");
+      if (tr && !e.target.closest("a")) location.hash = "#/bug/" + tr.dataset.bug;
+    };
+    if ($("bugClear")) $("bugClear").onclick = () => confirm("Delete every bug report?") && act(() => api("/api/bugs/delete", { all: true }), "Cleared").then(() => VIEWS.bugs());
+  }
+  const r = await api("/api/bugs").catch(() => ({ bugs: [] }));
+  if (!$("bugRows")) return;
+  const all = r.bugs, day = all.filter(b => now() - b.at < 86400000);
+  const top = Object.entries(day.reduce((m, b) => (m[b.app] = (m[b.app] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
+  $("bugStats").innerHTML = `<div class="stat"><div class="n">${day.length}</div><div class="l">Problems, last 24 h</div></div>
+    <div class="stat"><div class="n">${day.filter(b => !["anr", "hang"].includes(b.kind)).length}</div><div class="l">Crashes, last 24 h</div></div>
+    <div class="stat"><div class="n">${day.filter(b => ["anr", "hang"].includes(b.kind)).length}</div><div class="l">Freezes, last 24 h</div></div>
+    <div class="stat"><div class="n">${new Set(day.map(b => b.deviceId)).size}</div><div class="l">Devices affected</div></div>
+    ${top ? `<div class="stat"><div class="l">Most problems today</div><div class="name">${esc(top[0])} (${top[1]})</div></div>` : ""}`;
+  // Android only lets us read other apps' crash logs once READ_LOGS is granted (see README).
+  const blind = S.devices.filter(d => d.bugAccess === false);
+  $("bugWarn").innerHTML = blind.length ? `<div class="card"><h3>⚠ ${blind.length} device${blind.length > 1 ? "s" : ""} only report our own app's crashes</h3>
+    <p class="meta">${blind.map(d => esc(label(d)) + (d.code ? ` (${d.code})` : "")).join(", ")}. Android needs log access once:
+    connect the tablet by USB and run <code>adb shell pm grant com.greenbotz.kiosk android.permission.READ_LOGS</code>, <code>adb shell pm grant com.greenbotz.kiosk android.permission.READ_DROPBOX_DATA</code> and
+    <code>adb shell appops set com.greenbotz.kiosk GET_USAGE_STATS allow</code> (rooted Telpo terminals do this themselves).</p></div>` : "";
+  const opts = (id, first, vals, name) => { const el = $(id), v = el.value; el.innerHTML = options([["", first], ...vals.map(x => [x, name ? name(x) : x])], v); };
+  opts("bugSite", "All sites", [...new Set(all.map(b => b.site))].sort(), groupName);
+  opts("bugKind", "All problems", ["crash", "anr", "native", "system"], k => BUG_KINDS[k][0]);
+  opts("bugApp", "All apps", [...new Set(all.map(b => b.app))].sort());
+  const f = bugFilter, q = f.q.toLowerCase();
+  const list = all.filter(b => (!f.site || b.site === f.site) && (!f.app || b.app === f.app)
+    && (!f.kind || b.kind === f.kind || (f.kind === "anr" && b.kind === "hang"))
+    && (!q || [b.app, b.deviceName, b.code, b.summary, b.site, dev(b.deviceId) && label(dev(b.deviceId))].join(" ").toLowerCase().includes(q)));
+  bugShown = list;
+  $("bugRows").innerHTML = list.slice(0, 500).map(b => {
+    const d = dev(b.deviceId), [kt, kc] = BUG_KINDS[b.kind] || BUG_KINDS.crash;
+    return `<tr class="click" data-bug="${b.id}"><td class="meta" style="white-space:nowrap">${new Date(b.at).toLocaleString()}</td><td>${esc(groupName(d ? d.group : b.site))}</td>
+      <td>${d ? `<a href="#/device/${encodeURIComponent(b.deviceId)}">${esc(label(d))}</a>` : esc(b.deviceName)}<div class="meta">ID ${esc(b.code || "–")} · ${esc(b.deviceId)}</div></td>
+      <td><b>${esc(b.app)}</b></td>
+      <td class="wrap"><span class="pill ${kc}"><i></i>${kt}</span> ${esc(b.summary)}</td></tr>`;
+  }).join("") || `<tr><td class="empty" colspan="5">No crashes or freezes 🎉</td></tr>`;
+};
+// One report: who, where, what, and the full log.
+VIEWS.bug = async (id, first) => {
+  if (!first) return; // nothing live to redraw
+  const b = (await api("/api/bugs").catch(() => ({ bugs: [] }))).bugs.find(x => x.id === id);
+  if (!b) { $("view").innerHTML = `<p><a href="#/bugs">← Bug Finder</a></p><p class="empty">This report no longer exists.</p>`; return; }
+  const d = dev(b.deviceId), [kt, kc] = BUG_KINDS[b.kind] || BUG_KINDS.crash;
+  $("view").innerHTML = `<p><a href="#/bugs">← Bug Finder</a></p>
+    <div class="row" style="justify-content:space-between"><h2>${esc(b.app)}</h2><button class="btn" id="bugOneDl">⬇ Download log</button></div>
+    <div class="card"><table><tbody>
+      <tr><th>Problem</th><td><span class="pill ${kc}"><i></i>${kt}</span> ${esc(b.summary)}</td></tr>
+      <tr><th>Time</th><td>${new Date(b.at).toLocaleString()}</td></tr>
+      <tr><th>Site</th><td>${esc(groupName(d ? d.group : b.site))}</td></tr>
+      <tr><th>Device</th><td>${d ? `<a href="#/device/${encodeURIComponent(b.deviceId)}">${esc(label(d))}</a>` : esc(b.deviceName)}${d?.model ? ` · ${esc(d.model)}` : ""}</td></tr>
+      <tr><th>Device ID</th><td>${esc(b.code || "–")} <span class="meta">· ${esc(b.deviceId)}</span></td></tr>
+    </tbody></table></div>
+    <div class="card"><h3>Full log</h3><pre class="log">${esc(b.text)}</pre></div>`;
+  $("bugOneDl").onclick = () => bugFile([b], `${b.code || b.deviceId}-${b.app}-${new Date(b.at).toISOString().slice(0, 19).replace(/:/g, "")}.txt`);
+};
+
 // Honest status of every feature on the roadmap.
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder" };
 // ---------------- Configuration (admins): maintenance mode, Max, WhatsApp alerts, relay per device type ----------------
 const cfgMaint = () => {
   const on = S.devices.filter(d => d.maintenance);
