@@ -52,6 +52,44 @@ services:
       USER_PASSWORD: ${TUNNEL_PASSWORD:-}
       DOCKER_MODS: linuxserver/mods:openssh-server-ssh-tunnel
 
+  # MQTT broker for Barrier Control. Starts only with "mqtt" in COMPOSE_PROFILES (e.g. COMPOSE_PROFILES=ssh,mqtt).
+  # Barrier controllers connect over TLS: mqtts://<domain>:8883 with MQTT_USER / MQTT_PASSWORD (open TCP 8883 in the VM firewall).
+  # The portal connects inside Docker: MQTT_URL=mqtt://mqtt:1883 (port 1883 is not published).
+  # TLS uses the certificate Caddy already has for MQTT_DOMAIN, copied from Caddy's volume at start.
+  # ponytail: one shared login; per-site accounts + ACLs if controllers must not see each other's topics.
+  # ponytail: the certificate is re-read only when this container restarts (every deploy); restart it if no deploy for ~60 days.
+  mqtt:
+    profiles: [mqtt]
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "8883:8883"
+    environment:
+      MQTT_USER: ${MQTT_USER:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_DOMAIN: ${MQTT_DOMAIN:-mdm.gbotz.site}
+    volumes:
+      - caddy-data:/caddy:ro
+    depends_on:
+      - caddy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        [ -n "$$MQTT_USER" ] && [ -n "$$MQTT_PASSWORD" ] || { echo "Set MQTT_USER and MQTT_PASSWORD in .env"; exit 1; }
+        crt=$$(find /caddy/caddy/certificates -path "*/$$MQTT_DOMAIN/$$MQTT_DOMAIN.crt" 2>/dev/null | head -1)
+        [ -n "$$crt" ] || { echo "No certificate for $$MQTT_DOMAIN yet (Caddy gets it on its first start); retrying"; sleep 30; exit 1; }
+        d=/mosquitto/run
+        mkdir -p $$d
+        cp "$$crt" $$d/cert.pem
+        cp "$${crt%.crt}.key" $$d/key.pem
+        mosquitto_passwd -c -b $$d/pw "$$MQTT_USER" "$$MQTT_PASSWORD"
+        printf 'per_listener_settings false\nallow_anonymous false\npassword_file %s/pw\npersistence false\nlistener 1883\nlistener 8883\ncertfile %s/cert.pem\nkeyfile %s/key.pem\n' $$d $$d $$d > $$d/mosquitto.conf
+        chown -R mosquitto:mosquitto $$d
+        chmod 600 $$d/pw $$d/key.pem
+        exec mosquitto -c $$d/mosquitto.conf
+
 volumes:
   portal-data:
   caddy-data:
