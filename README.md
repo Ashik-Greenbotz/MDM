@@ -251,7 +251,7 @@ Android only installs an app update signed with the **same key** as the app alre
 ### Built apps (not in git, they contain device keys)
 | Path | What |
 |---|---|
-| `final apk/mdmkiosk app.apk` | Latest app 10.18. One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. Also upload it on the portal's Apps & files and click **Use for QR**, so Add device links to it. |
+| `final apk/mdmkiosk app.apk` (= `final apk/Kiosk.apk`) | Latest app **10.23**, signed with the production key (`7478efb4...`). One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. `OLD 10.18 wrong key - do not use.apk` is signed with another PC's key: tablets that get it can't take portal updates. |
 | `Cloud APK/Kiosk app v10.18.apk` | Same build, 10.18. `Kiosk app v10.12.apk` is the previous one. |
 | `Kiosk app cloud.apk`, `Kiosk app local.apk`, `Kiosk app phase2.apk` | Older builds. |
 
