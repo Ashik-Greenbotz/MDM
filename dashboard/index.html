@@ -317,6 +317,33 @@
   #view.enter .cols > *:nth-child(2) { animation-delay: .1s; }
   #view.enter .donut circle + circle { animation: ring 1.2s var(--ease) both .2s; }
   @keyframes ring { from { stroke-dasharray: 0 999; } }
+  /* table rows slide in one after another when a page opens */
+  #view.enter tbody tr { animation: rise .45s var(--ease) both; }
+  #view.enter tbody tr:nth-child(2) { animation-delay: .03s; } #view.enter tbody tr:nth-child(3) { animation-delay: .06s; }
+  #view.enter tbody tr:nth-child(4) { animation-delay: .09s; } #view.enter tbody tr:nth-child(5) { animation-delay: .12s; }
+  #view.enter tbody tr:nth-child(6) { animation-delay: .15s; } #view.enter tbody tr:nth-child(7) { animation-delay: .18s; }
+  #view.enter tbody tr:nth-child(8) { animation-delay: .21s; } #view.enter tbody tr:nth-child(n+9) { animation-delay: .24s; }
+  /* a stat number changed on the live refresh: it counts to the new value and the card glows once */
+  .stat.bump { animation: bump .9s var(--ease); }
+  @keyframes bump { 30% { transform: translateY(-3px) scale(1.03); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-hi); border-color: var(--accent); } }
+  /* Barrier Control */
+  .pill .rec { display: inline-block; animation: blink 1.4s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .cam-box.loading { background: linear-gradient(100deg, #0b0f17 30%, #1a2230 50%, #0b0f17 70%) 0 0 / 300% 100%; animation: shimmer 1.6s linear infinite; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .btn.gate-btn { position: relative; overflow: hidden; }
+  .btn.gate-btn.sending::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.45) 50%, transparent 70%);
+    animation: sweep 1s linear infinite; }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .gate.done-ok { animation: okGlow 1.4s var(--ease); }
+  @keyframes okGlow { 25% { box-shadow: 0 0 0 4px rgba(52,211,153,.55), 0 0 40px rgba(52,211,153,.45); border-color: var(--ok); } }
+  .gate.done-bad { animation: shake .45s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }
+  .gate-state .pill.pop { animation: pop .45s var(--ease); }
+  /* anyone who asked their system for less motion gets (almost) none */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  }
   .theme-btn { min-width: 38px; }
   .ico { width: 18px; height: 18px; flex: none; stroke-width: 1.8; }
   header .btn { display: inline-flex; align-items: center; gap: 6px; } header .btn .ico { width: 16px; height: 16px; }
@@ -680,6 +707,7 @@ function route(live) {
   if (!live || fresh) { renderNav(); $("view").innerHTML = ""; }
   fn(arg ? decodeURIComponent(arg) : undefined, !live || fresh);
   if (!live || fresh) enter();
+  bumpStats(!live || fresh);
   if (!live || fresh) {
     let shown = [];
     try { shown = JSON.parse(sessionStorage.getItem("maxTips") || "[]"); } catch {}
@@ -702,6 +730,22 @@ function enter() {
     if (!(end > 0)) continue;
     const t0 = performance.now();
     const step = t => { const p = Math.min(1, (t - t0) / 700); n.textContent = Math.round(end * (1 - (1 - p) ** 3)); if (p < 1 && n.isConnected) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+}
+// A stat number that changes on the live refresh counts from its old value to the new one, and its card glows once.
+const statWas = new Map();
+function bumpStats(fresh) {
+  const calmUI = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  for (const card of document.querySelectorAll("#view .stat")) {
+    const n = card.querySelector(".n"), v = Number(n?.textContent), key = location.hash + "|" + (card.querySelector(".l")?.textContent || "");
+    if (!n || n.textContent === "" || isNaN(v)) continue;
+    const old = statWas.get(key);
+    statWas.set(key, v);
+    if (fresh || old == null || old === v || calmUI) continue;
+    card.classList.remove("bump"); void card.offsetWidth; card.classList.add("bump");
+    const t0 = performance.now();
+    const step = t => { const p = Math.min(1, (t - t0) / 600); n.textContent = Math.round(old + (v - old) * (1 - (1 - p) ** 3)); if (p < 1 && n.isConnected) requestAnimationFrame(step); };
     requestAnimationFrame(step);
   }
 }
@@ -2207,7 +2251,7 @@ const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites
 // ---------------- Barrier control (Remote Command Centre): two live cameras and the open buttons of one site ----------------
 // The server holds the MQTT broker login and the camera addresses; the page only sees names, states and results.
 const GATES = [["visitor", "Visitor Barrier"], ["resident", "Resident Barrier"]];
-const gateBusy = {};
+const gateBusy = {}, gateSeen = {};
 setInterval(() => document.querySelectorAll("img[data-snap]").forEach(i => { if (i.complete) i.src = i.dataset.snap + "&t=" + Date.now(); }), 1000); // snapshot cameras
 VIEWS.barrier = async (name, first) => {
   if (first) {
@@ -2216,7 +2260,7 @@ VIEWS.barrier = async (name, first) => {
       <div class="row" style="margin-bottom:14px;gap:12px"><h2 style="margin:0">🚧 Barrier Control</h2><span class="meta">${esc(name)}</span><span id="bMqtt"></span>
         <span class="grow" style="flex:1"></span>${me().admin ? `<button class="btn" id="bSetup">⚙ Setup…</button>` : ""}</div>
       <div class="cams">${[0, 1].map(i => `<div class="card" style="margin:0"><h3><span id="bCamName${i}">${i ? "Resident" : "Visitor"} barrier camera</span><span class="grow"></span><span id="bCamTag${i}"></span></h3>
-        <div class="cam-box" id="bCam${i}">Loading…</div></div>`).join("")}</div>
+        <div class="cam-box loading" id="bCam${i}"></div></div>`).join("")}</div>
       <div class="gates" style="margin:18px 0">${GATES.map(([k, l]) => `<div class="card gate" style="margin:0">
         <button class="btn primary gate-btn" data-gate="${k}"><span id="bLabel-${k}">${l}</span><small>Open barrier</small></button>
         <div class="gate-state" id="bState-${k}"></div><div class="meta" id="bRes-${k}"></div></div>`).join("")}</div>
@@ -2236,11 +2280,12 @@ VIEWS.barrier = async (name, first) => {
     : st.mqtt.connected ? `<span class="pill ok">● MQTT connected</span>` : `<span class="pill bad">MQTT offline${st.mqtt.error ? ": " + esc(st.mqtt.error) : ""}</span>`;
   st.cams.forEach((c, i) => {
     $("bCamName" + i).textContent = c.name;
-    $("bCamTag" + i).innerHTML = c.set ? `<span class="pill bad">● LIVE</span>` : "";
+    $("bCamTag" + i).innerHTML = c.set ? `<span class="pill bad"><span class="rec">●</span> LIVE</span>` : "";
     const src = c.set ? (c.mode === "iframe" ? c.url : `/api/barrier/cam?site=${encodeURIComponent(name)}&i=${i}&v=${c.v}`) : "";
     const box = $("bCam" + i);
     if (box.dataset.src === src + c.mode) return; // keep the stream running across refreshes
     box.dataset.src = src + c.mode;
+    box.classList.remove("loading");
     box.innerHTML = !c.set ? `<span>No camera set up${me().admin ? " (⚙ Setup…)" : ""}</span>`
       : c.mode === "iframe" ? `<iframe src="${esc(src)}" allow="autoplay; fullscreen" title="${esc(c.name)}"></iframe>`
       : `<img alt="${esc(c.name)}" src="${esc(src)}"${c.mode === "snapshot" ? ` data-snap="${esc(src)}"` : ""} onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'Camera not reachable'}))">`;
@@ -2250,7 +2295,9 @@ VIEWS.barrier = async (name, first) => {
     const btn = document.querySelector(`[data-gate="${g.key}"]`);
     btn.disabled = !!gateBusy[g.key] || !g.set || !st.mqtt.connected;
     btn.title = !g.set ? "Not set up yet" : !st.mqtt.connected ? "MQTT broker offline" : "";
-    $("bState-" + g.key).innerHTML = g.state ? `Barrier state: <span class="pill ${/open/i.test(g.state) ? "ok" : /close/i.test(g.state) ? "" : "warn"}">${esc(g.state)}</span> <span class="meta">${ago(g.stateAt)}</span>`
+    const popped = gateSeen[g.key] !== undefined && gateSeen[g.key] !== g.state; // the barrier just changed state
+    gateSeen[g.key] = g.state;
+    $("bState-" + g.key).innerHTML = g.state ? `Barrier state: <span class="pill ${/open/i.test(g.state) ? "ok" : /close/i.test(g.state) ? "" : "warn"}${popped ? " pop" : ""}">${esc(g.state)}</span> <span class="meta">${ago(g.stateAt)}</span>`
       : g.set ? `<span class="meta">${g.stateTopic ? "No state from the controller yet" : "No state feedback set up"}</span>` : `<span class="meta">Not set up yet</span>`;
   }
   $("bLog").innerHTML = st.log.map(x => `<tr><td>${new Date(x.at).toLocaleString()}</td><td>${esc(x.user)}</td><td>${esc(x.barrier)}</td><td><code>${esc(x.command)}</code></td>
@@ -2261,12 +2308,17 @@ async function openGate(site, key) {
   if (gateBusy[key] || !confirm(`Open the ${label} at ${site}?`)) return;
   gateBusy[key] = true;
   const btn = document.querySelector(`[data-gate="${key}"]`), res = $("bRes-" + key);
-  btn.disabled = true; res.textContent = "Sending command…";
+  const card = btn.closest(".gate");
+  card.classList.remove("done-ok", "done-bad");
+  btn.disabled = true; btn.classList.add("sending"); res.textContent = "Sending command…";
+  let mood = "done-bad"; // confirmed: green glow; failed: shake; sent / no reply: nothing
   try {
     const r = await api("/api/barrier/open", { site, gate: key });
     res.innerHTML = `<span class="pill ${r.ok ? "ok" : r.ok === false ? "bad" : "warn"}">${esc(r.result)}</span>`;
+    mood = r.ok ? "done-ok" : r.ok === false ? "done-bad" : "";
   } catch (e) { res.innerHTML = `<span class="pill bad">${esc(e.message)}</span>`; }
   gateBusy[key] = false;
+  btn.classList.remove("sending"); void card.offsetWidth; if (mood) card.classList.add(mood);
   VIEWS.barrier(site, false);
 }
 async function barrierSetup(site) {
