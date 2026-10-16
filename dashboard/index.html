@@ -342,7 +342,17 @@
   #maxBot canvas:active { cursor: grabbing; }
   /* asleep: dimmed in his corner with a floating 💤 */
   #maxBot.asleep canvas { filter: grayscale(.5) brightness(.85) drop-shadow(0 10px 18px rgba(0,0,0,.25)); opacity: .75; }
-  #maxBot.asleep::after { content: "💤"; position: absolute; right: 16%; top: 2%; font-size: 26px; pointer-events: none; animation: zzz 2.4s ease-in-out infinite; }
+  /* his bed: frame + mattress + pillow behind him, blanket in front; he lies down on it (see "lie" in the frame loop) */
+  #maxBot canvas { position: relative; }
+  #maxBot .max-bed, #maxBot .max-blanket { display: none; position: absolute; pointer-events: none; }
+  #maxBot.asleep .max-bed, #maxBot.asleep .max-blanket { display: block; }
+  #maxBot .max-bed { left: 8%; right: 8%; bottom: 10%; height: 13%; border-radius: 4px; background: linear-gradient(#f4f6fa 0 55%, #9a6a43 55%); box-shadow: 0 6px 10px rgba(0,0,0,.18); }
+  #maxBot .max-bed::before, #maxBot .max-bed::after { content: ""; position: absolute; bottom: -18%; width: 7%; background: #8a5a35; border-radius: 6px 6px 2px 2px; }
+  #maxBot .max-bed::before { left: -5%; height: 260%; } /* headboard */
+  #maxBot .max-bed::after { right: -5%; height: 170%; } /* footboard */
+  #maxBot .max-bed i { position: absolute; left: 4%; bottom: 50%; width: 24%; height: 60%; background: #fff; border-radius: 40%; box-shadow: inset 0 -2px 3px rgba(0,0,0,.12); } /* pillow */
+  #maxBot .max-blanket { left: 40%; right: 9%; bottom: 17%; height: 15%; border-radius: 40% 6px 4px 4px; background: repeating-linear-gradient(90deg, #f7931e 0 10px, #f9a948 10px 20px); opacity: .95; box-shadow: 0 2px 4px rgba(0,0,0,.15); }
+  #maxBot.asleep::after { content: "💤"; position: absolute; left: 10%; top: 12%; z-index: 1; font-size: 26px; pointer-events: none; animation: zzz 2.4s ease-in-out infinite; }
   @keyframes zzz { 0%, 100% { transform: translateY(0); opacity: .6; } 50% { transform: translateY(-8px); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { #maxBot.asleep::after { animation: none; } }
   .max-bubble { position: absolute; bottom: 92%; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(280px, 70vw); padding: 9px 13px;
@@ -2523,6 +2533,8 @@ const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 function maxListen() {
   if (!Rec) return toast("Voice input isn't supported in this browser; type instead (Chrome or Edge support it)", true);
+  if (!window.isSecureContext) return toast("The microphone needs https (or localhost). On a plain http://IP address the browser blocks it", true);
+  if (useWhisper) return whisperListen();
   if (rec) return rec.stop();
   rec = new Rec();
   rec.lang = navigator.language || "en-SG";
@@ -2534,11 +2546,56 @@ function maxListen() {
     for (const r of e.results) (r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript));
     $("maxIn").value = final || interim; // shows what was heard while speaking
   };
-  rec.onerror = e => e.error === "no-speech" && talking ? (talking = false) : e.error === "aborted" ? null : toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
+  rec.onerror = e => ["network", "service-not-allowed", "language-not-supported"].includes(e.error)
+    ? (rec.onend = null, rec = null, useWhisper = true, whisperListen()) // the browser's speech service is unavailable here
+    : e.error === "no-speech" && talking ? (talking = false) : e.error === "aborted" ? null : toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
     : e.error === "no-speech" ? "Didn't hear anything" : "Voice input stopped: " + e.error, e.error !== "no-speech");
   rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); if (final.trim()) { $("maxIn").value = ""; maxAsk(final); } else talking = false; };
   $("maxMic").classList.add("rec");
   try { rec.start(); } catch (e) { rec = null; $("maxMic").classList.remove("rec"); toast("Couldn't start the microphone: " + e.message, true); }
+}
+// Fallback when the browser has no working speech service (Firefox, Brave, some Edge, blocked networks): record the mic
+// and transcribe in the browser with Whisper. The model (~40 MB) downloads once per laptop, then comes from the cache.
+let useWhisper = !Rec, asr = null, recStop = null;
+async function whisperListen() {
+  if (recStop) return recStop();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { talking = false; return toast("Microphone blocked: allow it in the browser's site settings", true); }
+  if (!asr) {
+    toast("Loading voice recognition (first time only)…");
+    asr = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2")
+      .then(t => t.pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en"));
+  }
+  const mr = new MediaRecorder(stream), chunks = [], ctx = new AudioContext(), an = ctx.createAnalyser();
+  const buf = new Uint8Array(an.fftSize), t0 = Date.now();
+  ctx.createMediaStreamSource(stream).connect(an);
+  let heard = false, quietSince = t0;
+  // Stops by itself after 1.5 s of quiet once speech was heard, 8 s of nothing, or 15 s total; a click on the mic stops too.
+  const tick = setInterval(() => {
+    an.getByteTimeDomainData(buf);
+    if (buf.some(v => Math.abs(v - 128) > 12)) { heard = true; quietSince = Date.now(); } // ponytail: fixed loudness threshold, tune 12 for noisy rooms
+    const now = Date.now();
+    if ((heard && now - quietSince > 1500) || (!heard && now - t0 > 8000) || now - t0 > 15000) recStop?.();
+  }, 100);
+  recStop = () => { recStop = null; clearInterval(tick); mr.stop(); stream.getTracks().forEach(t => t.stop()); ctx.close(); };
+  mr.ondataavailable = e => chunks.push(e.data);
+  mr.onstop = async () => {
+    $("maxMic").classList.remove("rec");
+    if (!heard || $("maxPanel").hidden) { talking = false; return; } // nothing said, or the chat was closed
+    $("maxIn").value = "…";
+    try {
+      const ac = new AudioContext({ sampleRate: 16000 }); // Whisper wants 16 kHz mono
+      const audio = (await ac.decodeAudioData(await new Blob(chunks).arrayBuffer())).getChannelData(0);
+      ac.close();
+      const text = (await (await asr)(audio)).text.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim(); // drops [BLANK_AUDIO], (music)
+      $("maxIn").value = "";
+      if (text) maxAsk(text); else talking = false;
+    } catch (e) { $("maxIn").value = ""; talking = false; asr = null; toast("Voice input failed: " + e.message, true); }
+  };
+  bot("listen");
+  $("maxMic").classList.add("rec");
+  mr.start();
 }
 // Max's voice. maxSay: a chat answer, interrupts whatever he was saying. maxVoice: anything shown in his bubble (tips,
 // pointing, alerts, the tour), queued after what he is saying; skipped if he just said the same words.
@@ -2568,7 +2625,7 @@ function maxVoice(text) {
 // he listens again after each one, until nothing is heard, something is typed, or the chat is closed.
 
 function maxHello() {
-  if (!Rec) return; // no voice input in this browser: the chat box is enough
+  if (!Rec && !window.MediaRecorder) return; // no voice input in this browser: the chat box is enough
   if (rec) { rec.onend = rec.onerror = null; rec.abort(); rec = null; $("maxMic").classList.remove("rec"); } // its end must not stop talk mode
   talking = true;
   const first = (S.me?.name || "").split(" ")[0];
@@ -2585,7 +2642,7 @@ function maxSpeakBtn() {
 function maxOpen(open) {
   $("maxPanel").hidden = !open;
   $("maxBtn").hidden = open || !S.assistant?.allowed;
-  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; window.speechSynthesis?.cancel(); rec?.stop(); }
+  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; window.speechSynthesis?.cancel(); rec?.stop(); recStop?.(); }
   bot("dock");
 }
 $("maxBtn").onclick = () => { maxOpen(true); maxHello(); };
@@ -2667,7 +2724,7 @@ try { sleeping = localStorage.getItem("maxSleep") === "on"; } catch {}
 // ---- stage: a small transparent canvas that travels over the page (cheaper than a full-screen one) ----
 const el = document.createElement("div");
 el.id = "maxBot";
-el.innerHTML = `<div class="max-bubble" hidden></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Max, the assistant: click to talk, drag to move"></canvas>`;
+el.innerHTML = `<div class="max-bubble" hidden></div><div class="max-bed"><i></i></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Max, the assistant: click to talk, drag to move"></canvas><div class="max-blanket"></div>`;
 const canvas = el.querySelector("canvas"), bubble = el.querySelector(".max-bubble");
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); } catch { throw new Error("no WebGL, keeping the flat Max"); }
@@ -2712,6 +2769,10 @@ model.traverse(o => {
 });
 holder.add(model);
 scene.add(holder);
+// Lying on his bed: turned onto his side (head on the pillow, left), body centred over the mattress.
+const body = new THREE.Box3().setFromObject(model), BED_Y = -0.08; // ponytail: mattress height in scene units, matched to .max-bed by eye
+const LIE = { x: (body.min.y + body.max.y) / 2, y: BED_Y + (body.max.x - body.min.x) / 2 };
+let lie = 0;
 const mixer = new THREE.AnimationMixer(model), clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
 document.body.append(el);
 document.getElementById("maxBtn").classList.add("gone"); // the 3D Max replaces the flat button
@@ -2890,8 +2951,12 @@ function frame(now) {
       play("Arrive_Brake", { once: true, fade: 0.2 });
       f.after?.(); // may start pointing / landing right away
     }
-  } else turn += (holderFace * 0.7 - turn) * 0.08;
+  } else turn += ((lie > 0.01 ? 0 : holderFace * 0.7) - turn) * 0.08;
   holder.rotation.y = turn;
+  lie += ((el.classList.contains("asleep") ? 1 : 0) - lie) * (calm ? 1 : 0.06);
+  if (!flight) holder.rotation.z = lie * Math.PI / 2;
+  holder.position.set(lie * LIE.x, lie * LIE.y, 0);
+  holder.scale.setScalar(1 - lie * 0.15);
   mixer.update(dt);
   renderer.render(scene, camera);
 }
