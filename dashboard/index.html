@@ -229,6 +229,12 @@
   dialog h2 { margin: 0 0 14px; font-size: 20px; letter-spacing: -.02em; }
   dialog .foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   #shotDlg { width: min(760px, calc(100vw - 24px)); }
+  /* remote control: as big as the window allows */
+  #shotDlg.live { width: min(1400px, calc(100vw - 24px)); max-height: calc(100vh - 16px); padding: 14px 18px; }
+  #shotDlg.live[open] { display: flex; flex-direction: column; }
+  #shotDlg.live h2 { margin: 0 0 8px; }
+  #shotDlg.live img.shot { max-width: none; max-height: none; } /* sized by fit() in liveView */
+  #shotDlg.live .foot { margin-top: 10px; }
   #shotDlg h2 .code { font-size: 13px; vertical-align: middle; }
   img.shot { display: block; max-width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; border-radius: 14px; border: 1px solid var(--line); background: #000;
     box-shadow: 0 20px 50px rgba(0,0,0,.3); animation: zoom .5s var(--ease); }
@@ -1136,7 +1142,8 @@ async function liveView(d) {
     <img class="shot" id="liveImg" alt="Live screen of ${esc(label(d))}" hidden draggable="false" style="cursor:pointer;touch-action:none;user-select:none">
     <div class="foot"><button class="btn" data-k="back">◀ Back</button><button class="btn" data-k="home">● Home</button><button class="btn" data-k="recents">▢ Recents</button>
       <span class="grow"></span><span class="meta" id="liveAt"></span><button class="btn" data-k="close">Close</button></div>`;
-  dl.onclose = () => { open = false; };
+  dl.classList.add("live");
+  dl.onclose = () => { open = false; dl.classList.remove("live"); };
   const send = b => api(base, b).catch(e => toast(e.message, true));
   dl.onclick = e => { const k = e.target.closest("[data-k]")?.dataset.k; if (k === "close") dl.close(); else if (k) send({ a: k }); };
   const img = $("liveImg"), at = e => { const r = img.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
@@ -1147,6 +1154,15 @@ async function liveView(d) {
     send(far ? { a: "swipe", x: down.x, y: down.y, x2: u.x, y2: u.y } : { a: "tap", ...down });
     down = null;
   };
+  // Scale the picture (up, too) to the largest size that fits the window, keeping its shape so clicks land right.
+  const fit = () => {
+    if (!img.naturalWidth) return;
+    const k = Math.min((dl.clientWidth - 40) / img.naturalWidth, (innerHeight - 150) / img.naturalHeight);
+    img.style.width = Math.floor(img.naturalWidth * k) + "px";
+    img.style.height = Math.floor(img.naturalHeight * k) + "px";
+  };
+  addEventListener("resize", fit);
+  dl.addEventListener("close", () => removeEventListener("resize", fit), { once: true });
   if (!dl.open) dl.showModal();
   try { await api(`/api/devices/${d.id}/command`, { type: "live" }); } catch (e) { toast(e.message, true); return dl.close(); }
   while (open) { // the next frame as soon as the last one has loaded
@@ -1156,6 +1172,7 @@ async function liveView(d) {
         last = f.at;
         await new Promise(r => { img.onload = img.onerror = r; img.src = `${base}.jpg?t=${f.at}`; });
         img.hidden = false;
+        fit();
         $("liveWait").hidden = true;
       }
       const lag = f.at ? Math.round((f.now - f.at) / 1000) : 0;
