@@ -11,6 +11,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set a strong ADMIN_PASSWORD in .env}
       DEVICE_KEY: ${DEVICE_KEY:?set a random DEVICE_KEY in .env}
       TIME_ZONE: ${TIME_ZONE:-Asia/Singapore}
+      AGENT_KEY: ${AGENT_KEY:-} # optional: empty = the server makes one and keeps it
       TUNNEL_PASSWORD: ${TUNNEL_PASSWORD:-}
       TUNNEL_HOST: ${TUNNEL_HOST:-}
       # Max, the AI assistant (optional)

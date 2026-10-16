@@ -678,7 +678,7 @@ function route(live) {
     const tip = pageTip(page || "overview");
     if (tip && !shown.includes(page || "overview") && $("maxPanel").hidden) {
       try { sessionStorage.setItem("maxTips", JSON.stringify([...shown, page || "overview"])); } catch {}
-      setTimeout(() => bot("tip", $("view").querySelector("h2"), tip), 1400);
+      if (!window.maxJustIn) setTimeout(() => bot("tip", $("view").querySelector("h2"), tip), 1400); // a sign-in gets the welcome instead
     }
   }
 }
@@ -1242,6 +1242,15 @@ async function command(list, type, extra = {}) {
     r => `${what} sent to ${r.count ?? 1} device${(r.count ?? 1) === 1 ? "" : "s"}`);
 }
 
+// Newest kiosk app on Apps & files: highest version in the label ("Kiosk app v10.20"), else the one used for QR enrollment.
+const verOf = s => (/\d+(\.\d+)*/.exec(s || "") || [])[0];
+const cmpVer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
+function latestKioskApp() {
+  const k = S.apps.filter(a => /kiosk/i.test(a.label) && verOf(a.label)).sort((a, b) => cmpVer(verOf(b.label), verOf(a.label)))[0];
+  return k || S.apps.find(a => a.id === S.kioskApp);
+}
+
 function pickUpload(kind, list, type) {
   const items = S[kind];
   if (!items.length) { toast(`Upload ${kind === "apps" ? "an app" : "a file"} first on the Apps & files page`, true); location.hash = "#/apps"; return; }
@@ -1311,6 +1320,7 @@ VIEWS.device = async (id, first) => {
       <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
         <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
         <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
+      <div class="card" id="dUpdCard" hidden><div class="pad row"><span id="dUpdText"></span><span class="grow" style="flex:1"></span><button class="btn primary" id="dUpdBtn">⬆ Update to latest version</button></div></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
       <div class="card"><h3>Health<span class="grow"></span><span class="tabs hr" id="dRange"></span></h3><div id="dChart" class="hchart"></div></div>
@@ -1360,6 +1370,10 @@ VIEWS.device = async (id, first) => {
       if (!b) return;
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
     };
+    $("dUpdBtn").onclick = () => {
+      const a = latestKioskApp();
+      if (a && confirm(`Install ${a.label} on ${label(dev(id))}? The app restarts by itself.`)) command([dev(id)], "install", { appId: a.id });
+    };
     $("dLogBtn").onclick = () => command([dev(id)], "logs");
     $("dLogDl").onclick = () => deviceAction(dev(id), "logs");
     const local = t => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -1382,6 +1396,10 @@ VIEWS.device = async (id, first) => {
   $("dAppsCard").hidden = !apps.length;
   const rp = d.relayProfile || { relay: "unknown" }, ri = d.relayInfo || {};
   $("dModelBtn").hidden = d.type !== "android-kiosk";
+  const upd = d.type === "android-kiosk" && latestKioskApp(), uv = upd && verOf(upd.label);
+  // Only when an update is waiting; up to date shows just the App version row in Details.
+  $("dUpdCard").hidden = !(upd && (!uv || !d.appVersion || cmpVer(d.appVersion, uv) < 0));
+  if (upd) $("dUpdText").innerHTML = `App version <b>${esc(d.appVersion || "unknown")}</b> · latest on the portal: <b>${esc(upd.label)}</b> <span class="pill warn">Update available</span>`;
   $("dRelayCard").hidden = !(S.commands[d.type] || []).includes("relay") || (rp.relay === "no" && d.relay == null);
   // confirmed = the tablet read the relay file back; otherwise it is the last value written (F10 can't be read)
   const confirmed = ri.readable ?? rp.readable;
@@ -1770,14 +1788,13 @@ VIEWS.alerts = () => {
       <td class="meta">${new Date(a.at).toLocaleString()}</td>
       <td>${a.resolvedAt ? `<span class="pill ok">Resolved</span>` : a.ackAt ? `<span class="pill neutral">Acknowledged</span>` : `<button class="btn" data-ack="${a.id}">Acknowledge</button>`}</td></tr>`;
   $("view").innerHTML = `<div class="row" style="justify-content:space-between"><h2>Alerts</h2>
-      ${me().admin ? `<button class="btn" id="waBtn">💬 WhatsApp alerts${S.whatsapp?.length ? ` (${S.whatsapp.length})` : ""}</button>` : ""}</div><p class="lead">Raised automatically: device offline for over 2 minutes (with an alarm sound), battery under ${LOW_BATTERY}%, or the app crashed.
+</div><p class="lead">Raised automatically: device offline for over 2 minutes (with an alarm sound), battery under ${LOW_BATTERY}%, or the app crashed.
     Offline and battery alerts clear themselves when the problem is fixed.</p>
     <div class="card"><h3>Open (${open.length})</h3><table><tbody>${open.map(row).join("") || `<tr><td class="empty">No open alerts 🎉</td></tr>`}</tbody></table></div>
     <div class="card"><h3>Resolved · last 7 days</h3><table><tbody>${done.map(row).join("") || `<tr><td class="empty">None</td></tr>`}</tbody></table></div>`;
   $("view").onclick = e => {
     const b = e.target.closest("[data-ack]");
     if (b) act(() => api(`/api/alerts/${b.dataset.ack}/ack`, {}), "Acknowledged");
-    if (e.target.closest("#waBtn")) whatsappForm();
   };
 };
 
@@ -2668,14 +2685,13 @@ function drawTicketMap(place, cands) {
 }
 
 // ---------------- map (opens from the header) ----------------
-// Map tiles: Esri satellite, OpenStreetMap streets and OneMap (Singapore's official map, free, no key).
+// Map tiles: OneMap (Singapore's official map, free, no key; the default) and Esri satellite.
 function baseLayers() {
   const sat = L.layerGroup([L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "Imagery &copy; Esri" }),
     L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 })]);
-  const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" });
   const onemap = L.tileLayer("https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png", { minZoom: 11, maxZoom: 19,
     attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:14px;width:14px"> OneMap &copy; Singapore Land Authority' });
-  return { default: sat, all: { Satellite: sat, Street: street, "OneMap (SG)": onemap } };
+  return { default: onemap, all: { "OneMap (SG)": onemap, Satellite: sat } };
 }
 let map, markers = {}, fitted = false;
 function drawMap() {
@@ -2685,26 +2701,35 @@ function drawMap() {
     b.default.addTo(map);
     L.control.layers(b.all).addTo(map);
   }
-  // Filters: site and a name / ID search. A device without its own GPS fix is drawn at its site's coordinates (hollow marker).
-  const site = $("mapSite").value, q = $("mapQ").value.trim().toLowerCase(), seen = new Set(), perSite = {};
-  let none = 0;
+  // Filters: site and a name / ID search. Every device is drawn. Without its own GPS fix (hollow marker) it goes to:
+  // its site's coordinates, else a device with GPS on the same network (same public IP, or same LAN /24), else Singapore (grey).
+  const site = $("mapSite").value, q = $("mapQ").value.trim().toLowerCase(), seen = new Set(), perPoint = {};
+  const net = d => pubIp(d) || (d.localIp || "").split(".").slice(0, 3).join(".");
+  const gpsNet = {};
+  for (const d of S.devices) if (d.lat != null && net(d)) gpsNet[net(d)] ||= d;
+  let guessed = 0;
   for (const d of S.devices) {
     if (site && (d.group || "") !== (site === "__none" ? "" : site)) continue;
     if (q && ![label(d), d.code, d.id].some(x => String(x || "").toLowerCase().includes(q))) continue;
-    const at = siteOf(d.group || ""), own = d.lat != null;
-    if (!own && at.lat == null) { none++; continue; }
+    const at = siteOf(d.group || ""), own = d.lat != null, mate = !own && at.lat == null && gpsNet[net(d)];
+    const base = own ? [d.lat, d.lng] : at.lat != null ? [at.lat, at.lng] : mate ? [mate.lat, mate.lng] : [1.3521, 103.8198];
+    const where = own ? `±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}`
+      : at.lat != null ? "Shown at the site's location (no GPS from this device)"
+      : mate ? `Shown next to ${esc(label(mate))} (same network; no GPS or site location)`
+      : "Location unknown: shown in the middle of Singapore. Give its site a location on the Sites page.";
+    if (!own && at.lat == null) guessed++;
     seen.add(d.id);
-    // ponytail: devices sharing a site's point get a small spiral offset so each one can be clicked
-    const k = own ? 0 : (perSite[d.group] = (perSite[d.group] || 0) + 1) - 1;
-    const ll = own ? [d.lat, d.lng] : [at.lat + 0.00006 * Math.sqrt(k) * Math.cos(k * 2.4), at.lng + 0.00006 * Math.sqrt(k) * Math.sin(k * 2.4)];
+    // ponytail: devices sharing a point get a small spiral offset so each one can be clicked
+    const key = own ? d.id : base.join(","), k = own ? 0 : (perPoint[key] = (perPoint[key] || 0) + 1) - (mate ? 0 : 1);
+    const ll = [base[0] + 0.00006 * Math.sqrt(k) * Math.cos(k * 2.4), base[1] + 0.00006 * Math.sqrt(k) * Math.sin(k * 2.4)];
     const popup = `<b>${esc(label(d))}</b>${d.code ? " · " + esc(d.code) : ""}<br>${esc(d.group || "No site")}<br>${isOnline(d) ? "Online" : "Offline"}${d.battery != null ? " · battery " + d.battery + "%" : ""}<br>
-      <span class="meta">${own ? `±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}` : "Shown at the site's location (no GPS from this device)"}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
+      <span class="meta">${where}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
     markers[d.id] ||= L.circleMarker(ll, { radius: 9, weight: 3 }).addTo(map);
-    const col = isOnline(d) ? "#22c55e" : "#ef4444";
-    markers[d.id].setLatLng(ll).setStyle(own ? { color: "#fff", fillColor: col, fillOpacity: .95 } : { color: col, fillColor: "#fff", fillOpacity: .85 }).bindPopup(popup);
+    const col = !own && at.lat == null && !mate ? "#94a3b8" : isOnline(d) ? "#22c55e" : "#ef4444";
+    markers[d.id].setLatLng(ll).setStyle(own ? { color: "#fff", fillColor: col, fillOpacity: .95, dashArray: null } : { color: col, fillColor: "#fff", fillOpacity: .85, dashArray: mate || at.lat != null ? null : "3 3" }).bindPopup(popup);
   }
   for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
-  $("mapCount").textContent = `${seen.size} on map${none ? ` · ${none} without a location` : ""}`;
+  $("mapCount").textContent = `${seen.size} on map${guessed ? ` · ${guessed} without GPS or site location (approximate)` : ""}`;
   const pts = Object.values(markers).map(m => m.getLatLng());
   if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 }); fitted = true; }
 }
@@ -2999,6 +3024,13 @@ $("maxLog").onclick = async e => {
 
 // ---- hooks for the 3D Max (module script below); all calls are safe before it has loaded ----
 const bot = (fn, ...a) => { try { window.MaxBot?.[fn]?.(...a); } catch (e) { console.warn("Max:", e); } };
+// A new sign-in (came here from the login page, not a reload): Max welcomes them once Max and the user are loaded.
+// window.maxJustIn: Max starts in the middle of the screen instead of his corner.
+if (window.maxJustIn = /^\/login(\.html)?$/.test(new URL(document.referrer || location.href).pathname) && performance.getEntriesByType("navigation")[0]?.type === "navigate") {
+  let tries = 0;
+  const w = () => window.MaxBot && S.me ? bot("welcome", (S.me.name || S.me.username || "").split(" ")[0]) : ++tries < 40 && setTimeout(w, 500);
+  setTimeout(w, 800);
+}
 // Short tip per page, the first time it opens this session (Max flies to the heading and says it).
 function pageTip(page) {
   const off = S.devices.filter(d => !isOnline(d)).length, c = S.ticketCounts;
@@ -3270,10 +3302,10 @@ function frame(now) {
   mixer.update(dt);
   renderer.render(scene, camera);
 }
-const h0 = home();
+const h0 = window.maxJustIn ? { x: (innerWidth - SIZE) / 2, y: (innerHeight - SIZE) / 2 } : home(); // just signed in: centre, see welcome()
 pos.x = h0.x; pos.y = h0.y; place();
 loop("Idle_Hover");
-doze(); // asleep since last time
+if (!window.maxJustIn) doze(); // asleep since last time (after a sign-in he wakes for the welcome first)
 requestAnimationFrame(frame);
 addEventListener("resize", () => { if (!flight && mode === "idle" && !homeOverride) { const h = home(); pos.x = h.x; pos.y = h.y; place(); } });
 
@@ -3283,6 +3315,14 @@ window.MaxBot = {
   talk(text) { talk(text); },
   // the panel opened / closed: dock next to it or back to the corner
   dock() { if (!homeOverride && !sleeping) goHome(); },
+  // just signed in: he starts in the middle of the screen, salutes and says hello, then flies to his corner
+  // (dozes off there if "Max sleeps" is on)
+  welcome(name) {
+    homeOverride = null; rouse();
+    play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") });
+    say(`Welcome back${name ? ", " + name : ""}!`, 3000);
+    setTimeout(() => goHome(() => { window.maxJustIn = false; doze(); }), 3500);
+  },
   // after an answer: point at the first device / ticket it mentions if it is on the page
   answered(text, proposals) {
     talk(text);

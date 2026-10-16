@@ -195,9 +195,10 @@ function whoIs(req) {
   const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":");
   return same(user, ADMIN_USER) && same(rest.join(":"), ADMIN_PASSWORD) ? ROOT : null;
 }
-// AGENT_KEY (optional): a second key for PC agents (Windows / Linux), so the tablets' key (built into the app) stays private.
-const AGENT_KEY = process.env.AGENT_KEY || "";
-const isDevice = req => { const k = req.headers["x-device-key"] || ""; return same(k, DEVICE_KEY) || (!!AGENT_KEY && same(k, AGENT_KEY)); };
+// AGENT_KEY: a second key for PC agents (Windows / Linux), so the tablets' key (built into the app) stays private.
+// Not set in the environment: the server makes one on first start and keeps it in portal.json.
+const agentKey = () => process.env.AGENT_KEY || portal.agentKey || "";
+const isDevice = req => { const k = req.headers["x-device-key"] || ""; return same(k, DEVICE_KEY) || (!!agentKey() && same(k, agentKey())); };
 
 // Slow down password guessing: 5 wrong tries per IP, then locked out for a minute.
 const failures = new Map();
@@ -1244,6 +1245,7 @@ const ready = (async () => {
   if (portal.vpnHub || portal.vpnAdmins) { delete portal.vpnHub; delete portal.vpnAdmins; dirty = true; }
   for (const d of Object.values(devices)) if ("vpn" in d || "vpnKey" in d || "vpnUp" in d) { delete d.vpn; delete d.vpnKey; delete d.vpnUp; dirty = true; }
   for (const d of Object.values(devices)) if (!d.code) { d.code = newCode(); dirty = true; }
+  if (!process.env.AGENT_KEY && !portal.agentKey) { portal.agentKey = crypto.randomBytes(24).toString("base64url"); dirty = true; }
   const built = path.join(__dirname, "..", "Kiosk app phase2.apk");
   if (CLOUD || portal.apps.length || !fs.existsSync(built)) return;
   const buf = fs.readFileSync(built), id = rid();
@@ -1586,7 +1588,7 @@ async function handler(req, res) {
         users: u.admin ? portal.users.map(publicUser) : undefined, modules: MODULES,
         announcements: u.admin ? portal.announcements : [],
         whatsapp: u.admin ? portal.whatsapp : undefined,
-        agentKey: u.admin ? AGENT_KEY || null : undefined, // shown in "Add device" for Windows / Linux / IoT
+        agentKey: u.admin ? agentKey() || null : undefined, // shown in "Add device" for Windows / Linux / IoT
         lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
         models: MODELS, relayProfiles: Object.fromEntries(MODELS.map(m => [m, modelProfile(m)])), relayEdited: Object.keys(portal.relayProfiles || {}),
         relayIfaces: RELAY_IFACES, maintImage: portal.maintImage?.at || 0,
