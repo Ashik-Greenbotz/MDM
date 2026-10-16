@@ -3018,7 +3018,8 @@ $("maxLog").onclick = async e => {
 // ---- hooks for the 3D Max (module script below); all calls are safe before it has loaded ----
 const bot = (fn, ...a) => { try { window.MaxBot?.[fn]?.(...a); } catch (e) { console.warn("Max:", e); } };
 // A new sign-in (came here from the login page, not a reload): Max welcomes them once Max and the user are loaded.
-if (/^\/login(\.html)?$/.test(new URL(document.referrer || location.href).pathname) && performance.getEntriesByType("navigation")[0]?.type === "navigate") {
+// window.maxJustIn: Max starts in the middle of the screen instead of his corner.
+if (window.maxJustIn = /^\/login(\.html)?$/.test(new URL(document.referrer || location.href).pathname) && performance.getEntriesByType("navigation")[0]?.type === "navigate") {
   let tries = 0;
   const w = () => window.MaxBot && S.me ? bot("welcome", (S.me.name || S.me.username || "").split(" ")[0]) : ++tries < 40 && setTimeout(w, 500);
   setTimeout(w, 800);
@@ -3294,10 +3295,10 @@ function frame(now) {
   mixer.update(dt);
   renderer.render(scene, camera);
 }
-const h0 = home();
+const h0 = window.maxJustIn ? { x: (innerWidth - SIZE) / 2, y: (innerHeight - SIZE) / 2 } : home(); // just signed in: centre, see welcome()
 pos.x = h0.x; pos.y = h0.y; place();
 loop("Idle_Hover");
-doze(); // asleep since last time
+if (!window.maxJustIn) doze(); // asleep since last time (after a sign-in he wakes for the welcome first)
 requestAnimationFrame(frame);
 addEventListener("resize", () => { if (!flight && mode === "idle" && !homeOverride) { const h = home(); pos.x = h.x; pos.y = h.y; place(); } });
 
@@ -3307,11 +3308,10 @@ window.MaxBot = {
   talk(text) { talk(text); },
   // the panel opened / closed: dock next to it or back to the corner
   dock() { if (!homeOverride && !sleeping) goHome(); },
-  // just signed in: appears in the middle of the screen, salutes and says hello, then flies to his corner
+  // just signed in: he starts in the middle of the screen, salutes and says hello, then flies to his corner
   // (dozes off there if "Max sleeps" is on)
   welcome(name) {
-    homeOverride = null; rouse(); flight = null; mode = "idle";
-    pos.x = (innerWidth - SIZE) / 2; pos.y = (innerHeight - SIZE) / 2; place();
+    homeOverride = null; rouse();
     play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") });
     say(`Welcome back${name ? ", " + name : ""}!`, 3000);
     setTimeout(() => goHome(doze), 3500);
