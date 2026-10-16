@@ -678,7 +678,7 @@ function route(live) {
     const tip = pageTip(page || "overview");
     if (tip && !shown.includes(page || "overview") && $("maxPanel").hidden) {
       try { sessionStorage.setItem("maxTips", JSON.stringify([...shown, page || "overview"])); } catch {}
-      setTimeout(() => bot("tip", $("view").querySelector("h2"), tip), 1400);
+      if (!window.maxJustIn) setTimeout(() => bot("tip", $("view").querySelector("h2"), tip), 1400); // a sign-in gets the welcome instead
     }
   }
 }
@@ -3314,7 +3314,7 @@ window.MaxBot = {
     homeOverride = null; rouse();
     play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") });
     say(`Welcome back${name ? ", " + name : ""}!`, 3000);
-    setTimeout(() => goHome(doze), 3500);
+    setTimeout(() => goHome(() => { window.maxJustIn = false; doze(); }), 3500);
   },
   // after an answer: point at the first device / ticket it mentions if it is on the page
   answered(text, proposals) {
