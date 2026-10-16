@@ -1130,12 +1130,12 @@ async function screenshot(d, send = true) {
 }
 
 // Live remote control (Android): the device streams its screen while this window is open and stops ~20 s after it
-// closes. Click = tap, drag = swipe. About 1 frame a second on Android 11-13, up to 3 on 14+.
+// closes. Click = tap, drag = swipe. About 1 picture a second on Android 11-13, 3 on 14+; taps go through at once.
 async function liveView(d) {
   const dl = $("shotDlg"), base = `/api/devices/${encodeURIComponent(d.id)}/live`;
   shotTimers.forEach(clearInterval);
   shotTimers = [];
-  let open = true, last = 0, down = null;
+  let open = true, down = null;
   dl.innerHTML = `<h2>🖥 ${esc(label(d))} <span class="code">${esc(d.code || "")}</span></h2>
     <div class="shot-msg" id="liveWait"><div class="spin"></div><b>Connecting…</b>
       <p class="meta">${isOnline(d) ? "The device picks this up on its next check-in, usually within 10 seconds." : `⚠️ ${esc(label(d))} is offline (last seen ${ago(d.lastSeen)}).`}</p></div>
@@ -1165,21 +1165,28 @@ async function liveView(d) {
   dl.addEventListener("close", () => removeEventListener("resize", fit), { once: true });
   if (!dl.open) dl.showModal();
   try { await api(`/api/devices/${d.id}/command`, { type: "live" }); } catch (e) { toast(e.message, true); return dl.close(); }
-  while (open) { // the next frame as soon as the last one has loaded
+  // Each request waits on the server for a picture newer than the last, so it shows the moment it arrives.
+  let lastAt = 0, shown = "";
+  while (open) {
     try {
-      const f = await api(base);
-      if (f.at > last) {
-        last = f.at;
-        await new Promise(r => { img.onload = img.onerror = r; img.src = `${base}.jpg?t=${f.at}`; });
+      const r = await fetch(`${base}.jpg?after=${lastAt}`);
+      if (r.status === 401) { location.href = "/login"; break; }
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+      const at = Number(r.headers.get("x-frame-at")) || 0, lag = Math.round((Number(r.headers.get("x-now")) - at) / 1000);
+      if (r.status === 200) {
+        lastAt = at;
+        const next = URL.createObjectURL(await r.blob());
+        await new Promise(ok => { img.onload = img.onerror = ok; img.src = next; });
+        if (shown) URL.revokeObjectURL(shown);
+        shown = next;
         img.hidden = false;
-        fit();
         $("liveWait").hidden = true;
+        fit();
       }
-      const lag = f.at ? Math.round((f.now - f.at) / 1000) : 0;
-      $("liveAt").textContent = !f.at ? "" : lag < 5 ? "● Live" : `No new picture for ${lag} s`;
+      $("liveAt").textContent = !at ? "" : lag < 5 ? "● Live" : `No new picture for ${lag} s`;
     } catch (e) { if (open) { toast(e.message, true); dl.close(); } break; }
-    await new Promise(r => setTimeout(r, 250));
   }
+  if (shown) URL.revokeObjectURL(shown);
 }
 
 // target: same shape as /api/bulk ({ids} | {all:true} ...); n = how many devices, for the confirm text.

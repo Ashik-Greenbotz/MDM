@@ -1084,48 +1084,50 @@ public class DeviceService extends Service {
         new Thread(this::liveLoop, "live").start();
     }
 
+    private volatile int liveW, liveH;
+
+    // Pictures: as often as Android allows screenshots (once a second on 11-13, three times on 14+). Rooted devices
+    // (Telpo) use screencap instead: ~0.2 s a picture, so about 4 a second.
     private void liveLoop() {
         long until = System.currentTimeMillis() + 30 * 60 * 1000; // a forgotten window can't stream forever
-        int w = 0, h = 0, fails = 0;
+        long gap = Build.VERSION.SDK_INT >= 34 ? 340 : 1010, last = 0;
+        int fails = 0;
+        Boolean root = null; // found out on the first picture
+        new Thread(this::liveInputs, "live-in").start();
         try {
-            while (System.currentTimeMillis() < until) {
+            while (live && System.currentTimeMillis() < until) {
                 ScreenshotService a = ScreenshotService.instance;
                 if (a == null) break;
+                long wait = last + (root == Boolean.TRUE ? 120 : gap) - System.currentTimeMillis();
+                if (wait > 0) Thread.sleep(wait);
+                last = System.currentTimeMillis();
                 android.graphics.Bitmap[] got = new android.graphics.Bitmap[1];
-                java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
-                a.capture(b -> { got[0] = b; done.countDown(); }, err -> done.countDown());
-                done.await(3, java.util.concurrent.TimeUnit.SECONDS);
-                byte[] jpeg = null;
-                if (got[0] != null) {
-                    w = got[0].getWidth();
-                    h = got[0].getHeight();
-                    float k = Math.min(1f, 720f / Math.max(w, h)); // small frames keep it quick on slow Wi-Fi
-                    android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(got[0], Math.round(w * k), Math.round(h * k), true);
-                    ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, out);
-                    if (small != got[0]) small.recycle();
-                    got[0].recycle();
-                    jpeg = out.toByteArray();
+                if (root != Boolean.FALSE) {
+                    got[0] = rootCapture();
+                    if (root == null) root = got[0] != null;
                 }
-                JSONObject r;
+                if (root == Boolean.FALSE) {
+                    java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+                    a.capture(b -> { got[0] = b; done.countDown(); }, err -> done.countDown());
+                    done.await(3, java.util.concurrent.TimeUnit.SECONDS);
+                }
+                if (got[0] == null) continue;
+                int w = got[0].getWidth(), h = got[0].getHeight();
+                float k = Math.min(1f, 720f / Math.max(w, h)); // small pictures keep it quick on slow Wi-Fi
+                android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(got[0], Math.round(w * k), Math.round(h * k), true);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, out);
+                if (small != got[0]) small.recycle();
+                got[0].recycle();
+                liveW = w;
+                liveH = h;
                 try {
-                    r = postLive(jpeg, w, h);
+                    if (liveCall("/api/live?w=" + w + "&h=" + h, out.toByteArray()).optBoolean("stop")) break;
                     fails = 0;
                 } catch (Exception e) {
                     if (++fails >= 5) throw e; // a Wi-Fi blip shouldn't end the session
                     Thread.sleep(1000);
-                    continue;
                 }
-                if (r.optBoolean("stop")) break;
-                JSONArray in = r.optJSONArray("inputs");
-                for (int i = 0; in != null && i < in.length(); i++) {
-                    JSONObject o = in.getJSONObject(i);
-                    a.input(o.optString("a"), (float) o.optDouble("x") * w, (float) o.optDouble("y") * h,
-                            (float) o.optDouble("x2") * w, (float) o.optDouble("y2") * h);
-                    Thread.sleep(150);
-                }
-                // Android 11-13 allow one screenshot a second (14+: three); after a tap, give the screen time to change.
-                Thread.sleep(in != null && in.length() > 0 ? 350 : jpeg == null ? 400 : 150);
             }
         } catch (Exception e) {
             Log.w(TAG, "live remote control stopped", e);
@@ -1134,18 +1136,68 @@ public class DeviceService extends Service {
         }
     }
 
-    private JSONObject postLive(byte[] jpeg, int w, int h) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/live?w=" + w + "&h=" + h).openConnection();
+    // The screen through `su 0 screencap` (raw: a 16-byte header w, h, format, dataspace, then RGBA pixels).
+    // null when the device isn't rooted or anything looks off.
+    private static android.graphics.Bitmap rootCapture() {
+        Process p = null;
+        try {
+            p = new ProcessBuilder("su", "0", "screencap").start();
+            java.io.DataInputStream in = new java.io.DataInputStream(new java.io.BufferedInputStream(p.getInputStream(), 1 << 16));
+            byte[] head = new byte[16];
+            in.readFully(head);
+            java.nio.ByteBuffer hb = java.nio.ByteBuffer.wrap(head).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            int w = hb.getInt(), h = hb.getInt(), format = hb.getInt();
+            if (format != 1 || w <= 0 || h <= 0 || (long) w * h > 16_000_000) return null; // 1 = RGBA_8888
+            byte[] px = new byte[w * h * 4];
+            in.readFully(px);
+            android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+            b.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(px));
+            return b;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (p != null) p.destroy();
+        }
+    }
+
+    // Taps and keys: a long-poll the server answers the moment one is sent from the portal.
+    private void liveInputs() {
+        int fails = 0;
+        while (live) {
+            try {
+                JSONObject r = liveCall("/api/live/input", null);
+                fails = 0;
+                if (r.optBoolean("stop")) break;
+                JSONArray in = r.optJSONArray("inputs");
+                ScreenshotService a = ScreenshotService.instance;
+                for (int i = 0; in != null && a != null && liveW > 0 && i < in.length(); i++) {
+                    JSONObject o = in.getJSONObject(i);
+                    a.input(o.optString("a"), (float) o.optDouble("x") * liveW, (float) o.optDouble("y") * liveH,
+                            (float) o.optDouble("x2") * liveW, (float) o.optDouble("y2") * liveH);
+                    if (i + 1 < in.length()) Thread.sleep(100);
+                }
+            } catch (Exception e) {
+                if (++fails >= 5) break;
+                try { Thread.sleep(1000); } catch (InterruptedException x) { break; }
+            }
+        }
+        live = false;
+    }
+
+    private JSONObject liveCall(String path, byte[] jpeg) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + path).openConnection();
         try {
             c.setConnectTimeout(10000);
-            c.setReadTimeout(15000);
-            c.setRequestMethod("POST");
-            c.setDoOutput(true);
-            c.setRequestProperty("Content-Type", "image/jpeg");
+            c.setReadTimeout(25000);
             c.setRequestProperty("X-Device-Key", key(this));
             c.setRequestProperty("X-Device-Id", deviceId());
-            try (OutputStream o = c.getOutputStream()) {
-                if (jpeg != null) o.write(jpeg);
+            if (jpeg != null) {
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "image/jpeg");
+                try (OutputStream o = c.getOutputStream()) {
+                    o.write(jpeg);
+                }
             }
             return readReply(c);
         } finally {
