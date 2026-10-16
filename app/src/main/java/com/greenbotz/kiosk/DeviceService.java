@@ -1100,8 +1100,8 @@ public class DeviceService extends Service {
 
     private void startLive() {
         if (live) return;
-        if (ScreenshotService.instance == null || Build.VERSION.SDK_INT < 30) {
-            event(this, "Remote control needs the screenshot service (Android 11+, run setup-tablet.bat once)");
+        if (ScreenshotService.instance == null) {
+            event(this, "Remote control needs the screenshot service (run setup-tablet.bat once)");
             return;
         }
         live = true;
@@ -1129,6 +1129,10 @@ public class DeviceService extends Service {
                 if (root != Boolean.FALSE) {
                     got[0] = rootCapture();
                     if (root == null) root = got[0] != null;
+                }
+                if (root == Boolean.FALSE && Build.VERSION.SDK_INT < 30) {
+                    event(this, "Remote control needs Android 11+ or a rooted device");
+                    break;
                 }
                 if (root == Boolean.FALSE) {
                     java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
