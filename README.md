@@ -26,7 +26,7 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 - **Sites**: **+ Add site**, **Edit name / location / coordinates / logo** on each site card (**Logo: Upload…** shrinks the image to 128 px; sites without one show a building icon; the logo shows on the site card and the site page) (**Find address** searches OneMap), add devices to a site, send a command to a whole site. Only admins can edit or delete sites.
 - **Alerts**: offline > 2 min, battery < 20 %, app crash, and **high CPU (≥ 90 %), RAM (≥ 95 %), storage (≥ 95 %) or temperature (≥ 75 °C)** (raised and cleared automatically; a health alert clears only below the amber level, 70 % / 80 % / 80 % / 60 °C, so a value sitting at the limit doesn't send a WhatsApp every minute). Open alerts sound a **battleship alarm** (`dashboard/alarm.wav`, mixkit) in the portal until someone clicks **Acknowledge** (the sound button mutes it; the browser only plays sound after the first click on the page).
   **Max announces** every new alert in the middle of the screen and reads it aloud (muted with the speaker button in his chat): which device, which site, and when the automatic ticket will be opened. When the automatic ticket is created he comes back: assigned to whom and what happens next, or "no technician is assigned yet, please check and assign" (click the message to open the ticket).
-  **💬 WhatsApp alerts** (admin): each number gets a WhatsApp message (CallMeBot, free) for every new alert, a reminder every hour while a device stays offline, and a message when it is back online. The dialog shows how to add a number. Check: `node functions/test-whatsapp.js`.
+  **💬 WhatsApp alerts** (admin, set on the **Configuration** page): each number gets a WhatsApp message (CallMeBot, free) for every new alert, a reminder every hour while a device stays offline, and a message when it is back online. When more than 3 messages are due for one number at once (a site outage), it gets **one summary** ("🚨 N DEVICE ALERTS", first 15 listed) instead. The dialog shows how to add a number. Check: `node functions/test-whatsapp.js`.
 - **Bug Finder**: every app that **crashed or froze** on any device (all installed apps, not only ours), with time, site, device name, Device ID, app, the problem line and the **full log**; filters by site / problem / app, **⬇ Download logs** (everything the filters show, one .txt); click a report to open its own page (details, full log, **⬇ Download log**), admin **Clear all**. Kept in `bugs.json` (newest 3000). Sources: Windows PCs send Application Error (1000) / Application Hang (1002) events (agent v17); tablets send Android DropBox crash / ANR / native crash entries (app 10.20) and need log access once over USB: `adb shell pm grant com.greenbotz.kiosk android.permission.READ_LOGS`, `adb shell pm grant com.greenbotz.kiosk android.permission.READ_DROPBOX_DATA` (Android 11+) and `adb shell appops set com.greenbotz.kiosk GET_USAGE_STATS allow` (rooted Telpo terminals grant it themselves). Devices without access are listed on the page; they still report our own app's crashes. Module `bugs` in Users & access.
 - **Scheduled tasks**: a command at a set time on chosen days (e.g. restart a site every night).
 - **Apps & files**: upload an .apk (up to 2 GB) with optional **release notes** (kept as a record with who uploaded it; click the Release notes column to read or edit them later) and install it silently on devices (OTA); send files to Download/Kiosk. **Install on devices… / Send to devices…** lists the sites: point at a site (or tap it) to see its devices and tick them, or tick a whole site / All sites.
@@ -34,7 +34,7 @@ Phase 1 (the finished kiosk app on its own) is kept unchanged in `F:\kisok`.
 - **Announcements** (admin): a message (text, optional image) shown full screen on the tablets until someone taps **Acknowledge**.
 - **Technical Team**: see [Technical team and tickets](#technical-team-and-tickets).
 - **Activity log**, **Users & access** (portal logins, **Can close tickets**).
-- **Configuration** (admins only): **🛠 Maintenance mode** on / off for all devices or one site, and the **maintenance screen image** (upload your own, or the built-in "System Maintenance"; tablets fetch it on their next check-in, app 10.20+); **⚡ Door relay per device type** (relay yes / no / unknown, relay file, ON / OFF value, root, readable, pulse, follows maintenance, per model; a device's own verified relay setup still wins; **Built-in** restores the default); **💬 WhatsApp alerts** numbers; **Max** on / off, model and daily limit.
+- **Configuration** (admins only): **🛠 Maintenance mode** on / off for all devices or one site, and the **maintenance screen image** (upload your own, or the default **"System update in progress / Please use the entrance"** poster, `functions/maintenance-default.jpg`, which the server sends when no image is uploaded and is also built into app 10.21; **Use default image** goes back to it; tablets fetch it on their next check-in, app 10.20+; bump `MAINT_DEFAULT_AT` in `server.js` if the poster file is replaced); **⚡ Door relay per device type** (relay yes / no / unknown, relay file, ON / OFF value, root, readable, pulse, follows maintenance, per model; a device's own verified relay setup still wins; **Built-in** restores the default); **💬 WhatsApp alerts** numbers; **Max** on / off, model and daily limit.
 - **Max** (orange robot, bottom right): the AI assistant. **He speaks everything he shows** (answers, tips, pointing, alerts, tour; the speaker button in the chat mutes him). **"Show me around"** (chip, typed or spoken): he starts on Overview and opens every menu page one by one, then explains the top bar last (theme, speaker, Map, alerts, profile), moving on when he has finished speaking. Open another page meanwhile and he explains that one, then resumes the tour (click him to stop). **Click him to talk**: he says "Hi, I'm Max. How can I help you?" and listens; spoken questions get spoken answers and he keeps listening until you go quiet, type, or close the chat. Voice input uses the browser's speech service, and falls back to Whisper running inside the browser (about 40 MB downloaded once per laptop) where that service fails (Firefox, Brave, some Edge, blocked networks). The microphone needs https or localhost: on a plain `http://<IP>` address the browser blocks it. **🌙** puts him to sleep: he lies down in a small bed in his corner until an alert or a click wakes him. See [Max](#max-the-ai-assistant).
 - **Maintenance mode** shows the System Maintenance screen on the tablets.
 - Light "Apple glass" look and an Apple-style neutral dark mode (black / grey, no blue): theme button in the top bar. Device and site links can be bookmarked or shared.
@@ -143,6 +143,17 @@ Ask in words (or tap the microphone: the browser's speech recognition, Chrome / 
 - **Admin settings**: Users & access → **Max** card: on/off, model, and questions per person per day. There is also a limit of 10 questions per minute per person.
 - Accounts need the **Max** page ticked. Each question is written to the Activity log.
 
+## Sign-in page
+`dashboard/login.html`: no Enter or button press needed. The password is checked by itself 0.5 s after you stop typing (Enter or a click checks at once). After a wrong password the button turns red and flies around the whole screen on two jet flames (the flames point away from where it is going) and shoots at the pointer. The right password turns it green ("🚀 Welcome!") and it takes off before the portal opens (about 2 s). The server still locks an IP out for a minute after 5 wrong tries.
+
+## Large fleets (1000+ devices)
+Load-tested on 16 Oct 2026 with 1000 simulated devices checking in every 10 s plus an open portal: device check-in p99 21 ms, every portal page under 0.12 s (with 400 open alerts too).
+- Each device's health history is kept in `server/history/<id>.json` (written only when it gets a new 5-minute sample), so `devices.json` stays small (~2 MB for 1000 devices, was ~42 MB). An old `devices.json` moves its history out on the first save.
+- Big responses are gzipped (the portal's state is ~2 MB for 1000 devices).
+- Hourly log pulls are spread over the hour by Device ID (minute = `LOG_PULL_MINUTE` + Device ID, mod 60).
+- WhatsApp outage summaries (see Alerts above).
+- Limits: 4-digit Device IDs (9000 devices max); the activity log keeps the last 5000 events.
+
 ## Our devices (16 Oct 2026)
 On 16 Oct the three test devices were moved to the **local** portal on the office PC (`http://192.168.68.53:8080`; the PC's DHCP address changes, reserve it in the router).
 
@@ -184,7 +195,8 @@ The F10 checked in to **production** once as **2987** before it was moved to loc
 | `functions/test-whatsapp.js` | End-to-end check of the WhatsApp offline alerts: `node test-whatsapp.js`. |
 | `functions/test-tickets.js` | End-to-end check of device models, relay profiles and tickets: `node test-tickets.js`. |
 | `functions/.env.example` | Copy to `functions/.env` (not in git): admin login, `DEVICE_KEY`, time zone. |
-| `server/` | Office PC data (not in git): `devices.json`, `portal.json` (incl. WhatsApp numbers), `logs/`, `uploads/`. |
+| `server/` | Office PC data (not in git): `devices.json`, `portal.json` (incl. WhatsApp numbers), `history/` (health charts, one file per device), `logs/`, `uploads/`. |
+| `functions/maintenance-default.jpg` | Default maintenance screen poster (served when no image is uploaded). |
 | `dashboard/` | Portal pages: `index.html` (portal), `login.html`, `logo.png`, `max.glb` (3D Max) and `max.png` (flat fallback), `manifest.json` (Add to Home screen). |
 | `start-server.bat` / `start-server.sh` | Start the office PC server on port 8080. |
 | `Dockerfile`, `docker-compose.yml`, `Caddyfile` | Cloud server: portal in Docker behind Caddy (https for mdm.gbotz.site). |
@@ -195,7 +207,7 @@ The F10 checked in to **production** once as **2987** before it was moved to loc
 | `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
 | `agents/` | Monitoring agents: `agent.ps1` (Windows; `install-agent.bat` installs it as a start-up task, run as administrator), `agent.sh` (Linux), `esp32.ino` (IoT). |
 
-### Tablet app (`app/`, current version 10.20)
+### Tablet app (`app/`, current version 10.21)
 | Path | What |
 |---|---|
 | `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |

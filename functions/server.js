@@ -7,6 +7,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 
 const CLOUD = !!process.env.K_SERVICE; // set by Cloud Functions / Cloud Run
 const PORT = Number(process.env.PORT || 8080);
@@ -113,8 +114,13 @@ const store = {
     return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(key)}?alt=media&token=${token}`;
   },
 };
-const appKey = id => `uploads/apps/${id}.apk`, fileKey = id => `uploads/files/${id}`;
-if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs"]) fs.mkdirSync(local(dir), { recursive: true });
+// Maintenance screen image: the admin's upload (portal.maintImage), else the default poster shipped with the server.
+// Devices re-download when the version changes; bump MAINT_DEFAULT_AT when maintenance-default.jpg is replaced.
+const MAINT_DEFAULT = path.join(__dirname, "maintenance-default.jpg"), MAINT_DEFAULT_AT = 1;
+const maintVersion = () => portal.maintImage?.at || (fs.existsSync(MAINT_DEFAULT) ? MAINT_DEFAULT_AT : 0);
+const maintImg = async () => portal.maintImage ? store.read("uploads/maintenance.jpg") : fs.promises.readFile(MAINT_DEFAULT).catch(() => null);
+const appKey = id => `uploads/apps/${id}.apk`, fileKey = id => `uploads/files/${id}`, histKey = id => `history/${id}.json`;
+if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs", "history"]) fs.mkdirSync(local(dir), { recursive: true });
 
 let devices = {};
 const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], announcements: [], whatsapp: [], waOutbox: [], waHistory: [], kioskApp: null,
@@ -132,15 +138,25 @@ function newCode() {
 }
 // A device's site is stored in d.group (the portal calls groups "sites"). Sites can also exist before any device is in them.
 
+// Health history (d.history, d.historyH) is most of a device's data (~40 KB each), so it is kept out of devices.json
+// in history/<id>.json and written only for devices that got a new sample (histDirty). With 1000 devices this keeps
+// the 5 s save at ~2 MB instead of ~40 MB.
 let dirty = false;
+const histDirty = new Set();
 async function flush() {
-  if (!dirty) return;
+  if (!dirty && !histDirty.size) return;
+  const ids = [...histDirty];
   dirty = false;
+  histDirty.clear();
   try {
-    await Promise.all([store.write("devices.json", JSON.stringify(devices)), store.write("portal.json", JSON.stringify(portal)),
+    // history first: a migrated device must not lose its history if devices.json (now without it) is written and this isn't
+    await Promise.all(ids.filter(id => devices[id]).map(id => store.write(histKey(id), JSON.stringify({ history: devices[id].history, historyH: devices[id].historyH }))));
+    const slim = Object.fromEntries(Object.entries(devices).map(([id, { history, historyH, ...d }]) => [id, d]));
+    await Promise.all([store.write("devices.json", JSON.stringify(slim)), store.write("portal.json", JSON.stringify(portal)),
       store.write("bugs.json", JSON.stringify(bugs))]);
   } catch (e) {
     dirty = true;
+    for (const id of ids) histDirty.add(id);
     console.error("save failed:", e.message);
   }
 }
@@ -213,8 +229,14 @@ function loginFailed(ip) {
 }
 
 function send(res, status, body, type = "application/json") {
-  res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store" });
-  res.end(type === "application/json" ? JSON.stringify(body) : body);
+  let out = type === "application/json" ? JSON.stringify(body) : body;
+  const headers = { "Content-Type": type, "Cache-Control": "no-store" };
+  if (typeof out === "string" && out.length > 8192 && /\bgzip\b/.test(res.req?.headers["accept-encoding"] || "")) {
+    out = zlib.gzipSync(out, { level: 1 }); // fastest level: still ~8x smaller, a few ms for 2 MB
+    Object.assign(headers, { "Content-Encoding": "gzip", Vary: "Accept-Encoding" });
+  }
+  res.writeHead(status, headers);
+  res.end(out);
 }
 
 function readBody(req, limit = 64 * 1024) {
@@ -425,28 +447,38 @@ async function callmebot(phone, apikey, text) {
   if (!res.ok || /error|invalid|not (been )?(activated|registered)|wrong/i.test(body)) throw new Error(`HTTP ${res.status} ${body.slice(0, 150)}`);
 }
 let waBusy = false;
+// More than WA_BATCH messages due for one number at once (a site outage, 500 devices down): one summary message instead
+// of hundreds, which CallMeBot would refuse anyway (one message per WA_GAP_MS).
+const WA_BATCH = 3, WA_LIST = 15;
+const waLine = x => x.text.split("\n\n").slice(0, 4).join(" · ");
 async function waSend() {
   if (waBusy || !portal.waOutbox.length) return;
   waBusy = true;
   try {
-    for (const x of portal.waOutbox.filter(x => x.dueAt <= Date.now())) {
-      const r = waRecipient(x.phone), name = r?.name || x.phone;
-      try {
-        if (!r) throw Object.assign(new Error("number removed"), { drop: true });
-        await callmebot(r.phone, r.apikey, x.text);
-        portal.waOutbox = portal.waOutbox.filter(y => y !== x);
-        portal.waHistory.push({ key: x.key, type: x.type, phone: x.phone, at: Date.now() });
-        if (portal.waHistory.length > 1000) portal.waHistory.splice(0, portal.waHistory.length - 1000);
-        log(null, "whatsapp", `WhatsApp ${x.type} sent to ${name}`);
-      } catch (e) {
-        x.tries++;
-        x.dueAt = Date.now() + WA_RETRY_MS;
-        const giveUp = e.drop || x.tries >= WA_TRIES;
-        if (giveUp) portal.waOutbox = portal.waOutbox.filter(y => y !== x);
-        log(null, "whatsapp", `WhatsApp ${x.type} to ${name} failed (try ${x.tries}${giveUp ? ", gave up" : ", will retry"}): ${e.message}`);
+    const byPhone = new Map();
+    for (const x of portal.waOutbox.filter(x => x.dueAt <= Date.now())) byPhone.set(x.phone, [...(byPhone.get(x.phone) || []), x]);
+    for (const [phone, list] of byPhone) {
+      const sends = list.length <= WA_BATCH ? list.map(x => [[x], x.text, x.type])
+        : [[list, `🚨 ${list.length} DEVICE ALERTS\n\n${list.slice(0, WA_LIST).map(x => "• " + waLine(x)).join("\n\n")}` +
+          (list.length > WA_LIST ? `\n\n…and ${list.length - WA_LIST} more. Open the portal for the full list.` : ""), `summary of ${list.length}`]];
+      for (const [items, text, what] of sends) {
+        const r = waRecipient(phone), name = r?.name || phone;
+        try {
+          if (!r) throw Object.assign(new Error("number removed"), { drop: true });
+          await callmebot(r.phone, r.apikey, text);
+          portal.waOutbox = portal.waOutbox.filter(y => !items.includes(y));
+          for (const x of items) portal.waHistory.push({ key: x.key, type: x.type, phone, at: Date.now() });
+          if (portal.waHistory.length > 1000) portal.waHistory.splice(0, portal.waHistory.length - 1000);
+          log(null, "whatsapp", `WhatsApp ${what} sent to ${name}`);
+        } catch (e) {
+          for (const x of items) { x.tries++; x.dueAt = Date.now() + WA_RETRY_MS; }
+          const giveUp = e.drop || items[0].tries >= WA_TRIES;
+          if (giveUp) portal.waOutbox = portal.waOutbox.filter(y => !items.includes(y));
+          log(null, "whatsapp", `WhatsApp ${what} to ${name} failed (try ${items[0].tries}${giveUp ? ", gave up" : ", will retry"}): ${e.message}`);
+        }
+        dirty = true;
+        await new Promise(ok => setTimeout(ok, Number(process.env.WA_GAP_MS ?? 3000))); // CallMeBot refuses messages sent too close together
       }
-      dirty = true;
-      await new Promise(ok => setTimeout(ok, Number(process.env.WA_GAP_MS ?? 3000))); // CallMeBot refuses messages sent too close together
     }
   } finally { waBusy = false; }
 }
@@ -464,16 +496,19 @@ function waRemind() {
 }
 
 // ---- alerts: opened when a condition starts, resolved when it ends (crashes stay until acknowledged) ----
-function setAlert(d, kind, on, text) {
-  const open = portal.alerts.find(a => a.deviceId === d.id && a.kind === kind && !a.resolvedAt);
+// idx: optional map of open alerts by "deviceId|kind" (checkAlerts passes one so 1000 devices don't each scan every alert)
+function setAlert(d, kind, on, text, idx) {
+  const open = idx ? idx.get(d.id + "|" + kind) : portal.alerts.find(a => a.deviceId === d.id && a.kind === kind && !a.resolvedAt);
   if (on && !open) {
     const a = { id: rid(), deviceId: d.id, kind, text, at: Date.now() };
     if (kind === "offline") a.waNextAt = a.at + WA_REMIND_MS;
     portal.alerts.push(a);
+    idx?.set(d.id + "|" + kind, a);
     log(d.id, "alert", text);
     waQueue(kind, d, a);
   } else if (!on && open) {
     open.resolvedAt = Date.now();
+    idx?.delete(d.id + "|" + kind);
     log(d.id, "resolved", `${kind} alert cleared`);
     if (kind === "offline") {
       // back online: cancel whatever is still waiting for this alert, then send the recovery message
@@ -489,18 +524,18 @@ function setAlert(d, kind, on, text) {
   }
 }
 function checkAlerts() {
-  const now = Date.now();
+  const now = Date.now(), idx = new Map(portal.alerts.filter(a => !a.resolvedAt).map(a => [a.deviceId + "|" + a.kind, a]));
   for (const d of Object.values(devices)) {
     const online = now - d.lastSeen < ONLINE_MS;
     if (d.wasOnline && !online) log(d.id, "offline", `${label(d)} went offline`);
     d.wasOnline = online;
     const offline = now - d.lastSeen > OFFLINE_ALERT_MS;
-    setAlert(d, "offline", offline, `${label(d)} offline since ${new Date(d.lastSeen).toLocaleString("en-GB", { timeZone: TIME_ZONE })}`);
-    if (offline) autoTicket(d, portal.alerts.find(a => a.deviceId === d.id && a.kind === "offline" && !a.resolvedAt));
-    setAlert(d, "battery", !offline && d.battery != null && d.battery < LOW_BATTERY && !d.charging, `${label(d)} battery low (${d.battery}%)`);
+    setAlert(d, "offline", offline, `${label(d)} offline since ${new Date(d.lastSeen).toLocaleString("en-GB", { timeZone: TIME_ZONE })}`, idx);
+    if (offline) autoTicket(d, idx.get(d.id + "|offline"));
+    setAlert(d, "battery", !offline && d.battery != null && d.battery < LOW_BATTERY && !d.charging, `${label(d)} battery low (${d.battery}%)`, idx);
     for (const [k, name, red, amber, unit] of HEALTH_ALERTS) {
-      const open = portal.alerts.some(a => a.deviceId === d.id && a.kind === k && !a.resolvedAt), v = d[k];
-      setAlert(d, k, online && v != null && v >= (open ? amber : red), `${label(d)} ${name} high (${v}${unit})`);
+      const open = idx.has(d.id + "|" + k), v = d[k];
+      setAlert(d, k, online && v != null && v >= (open ? amber : red), `${label(d)} ${name} high (${v}${unit})`, idx);
     }
   }
   // Keep the last 1000 resolved alerts.
@@ -840,11 +875,13 @@ async function saveDailyLogs(d, text) {
   dirty = true;
 }
 let lastLogPull = "";
+// Each device's minute is LOG_PULL_MINUTE + its Device ID (mod 60), so 1000 devices upload ~17 a minute, not all at once.
 function pullLogs() {
-  const now = zoned(), hour = now.toDateString() + now.getHours();
-  if (now.getMinutes() !== LOG_PULL_MINUTE || lastLogPull === hour) return;
-  lastLogPull = hour;
+  const now = zoned(), slot = now.toDateString() + now.getHours() + ":" + now.getMinutes();
+  if (lastLogPull === slot) return;
+  lastLogPull = slot;
   for (const d of Object.values(devices)) {
+    if ((LOG_PULL_MINUTE + Number(d.code || 0)) % 60 !== now.getMinutes()) continue;
     if (Date.now() - d.lastSeen > ONLINE_MS || !COMMANDS[typeOf(d)].includes("logs") || d.queue?.some(c => c.type === "logs")) continue;
     (d.queue ||= []).push({ type: "logs", id: rid(), at: Date.now(), auto: true }); // not logged: would be 24 events a day per device
     dirty = true;
@@ -1241,6 +1278,10 @@ const ready = (async () => {
   devices = JSON.parse((await store.read("devices.json")) || "{}");
   Object.assign(portal, JSON.parse((await store.read("portal.json")) || "{}"));
   bugs = JSON.parse((await store.read("bugs.json")) || "[]");
+  await Promise.all(Object.values(devices).map(async d => {
+    if (d.history || d.historyH) return histDirty.add(d.id); // older devices.json had it inline: moved out on the next save
+    try { Object.assign(d, JSON.parse(await store.read(histKey(d.id)))); } catch {}
+  }));
   // The WireGuard VPN was removed (remote control replaces it): forget its keys and peers.
   if (portal.vpnHub || portal.vpnAdmins) { delete portal.vpnHub; delete portal.vpnAdmins; dirty = true; }
   for (const d of Object.values(devices)) if ("vpn" in d || "vpnKey" in d || "vpnUp" in d) { delete d.vpn; delete d.vpnKey; delete d.vpnUp; dirty = true; }
@@ -1319,6 +1360,7 @@ async function handler(req, res) {
         const prev = d.history?.[d.history.length - 1], hour = t => Math.floor(t / 36e5) * 36e5;
         (d.history ||= []).push([d.historyAt, ...HEALTH.map(k => d[k] ?? null)]);
         if (d.history.length > HISTORY_KEEP) d.history.shift();
+        histDirty.add(d.id);
         if (prev && hour(prev[0]) !== hour(d.historyAt)) { // an hour ended: keep its average for the week / month views
           const rows = d.history.filter(r => hour(r[0]) === hour(prev[0]));
           (d.historyH ||= []).push([hour(prev[0]), ...HEALTH.map((k, i) => {
@@ -1348,7 +1390,7 @@ async function handler(req, res) {
       const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null } : null;
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: portal.maintImage?.at || 0, announcement, ssh, agentUpdate,
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,
         config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
@@ -1423,8 +1465,8 @@ async function handler(req, res) {
     // The maintenance screen image set on the Configuration page (devices fetch it when maintImage changes).
     if (req.method === "GET" && p === "/api/maintenance.jpg") {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
-      const img = portal.maintImage && await store.read("uploads/maintenance.jpg");
-      return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no custom image" });
+      const img = await maintImg();
+      return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no image" });
     }
     // Live remote control, device side: POST a picture; GET /input waits up to 15 s for the next taps.
     if (p === "/api/live" || p === "/api/live/input") {
@@ -1591,7 +1633,7 @@ async function handler(req, res) {
         agentKey: u.admin ? agentKey() || null : undefined, // shown in "Add device" for Windows / Linux / IoT
         lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
         models: MODELS, relayProfiles: Object.fromEntries(MODELS.map(m => [m, modelProfile(m)])), relayEdited: Object.keys(portal.relayProfiles || {}),
-        relayIfaces: RELAY_IFACES, maintImage: portal.maintImage?.at || 0,
+        relayIfaces: RELAY_IFACES, maintImage: maintVersion(), maintCustom: !!portal.maintImage,
         categories: CATEGORIES, priorities: PRIORITIES, statuses: STATUS, flow: FLOW,
         technicians: can(u, "team", "devices") ? portal.technicians.map(({ apikey, ...t }) => ({ ...t, hasKey: !!apikey, ...techState(t) })) : [],
         ticketCounts: can(u, "team") ? ticketCounts(myTickets()) : null,
@@ -1622,8 +1664,8 @@ async function handler(req, res) {
     // ---- Configuration page (admins only) ----
     if (p === "/api/config/maintenance-image") {
       if (req.method === "GET") {
-        const img = portal.maintImage && await store.read("uploads/maintenance.jpg");
-        return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no custom image" });
+        const img = await maintImg();
+        return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no image" });
       }
       if (!u.admin) return deny("Only admins can change the maintenance image");
       if (url.searchParams.get("reset")) portal.maintImage = null;
@@ -1633,7 +1675,7 @@ async function handler(req, res) {
         await store.write("uploads/maintenance.jpg", img);
         portal.maintImage = { at: Date.now(), size: img.length };
       }
-      log(null, "maintenance", `Maintenance screen image ${portal.maintImage ? "changed" : "reset to the built-in one"} by ${by}`);
+      log(null, "maintenance", `Maintenance screen image ${portal.maintImage ? "changed" : "reset to the default poster"} by ${by}`);
       dirty = true;
       return send(res, 200, { ok: true });
     }
@@ -1783,6 +1825,7 @@ async function handler(req, res) {
         d.group = String(body.group || "").slice(0, 60).trim();
       } else {
         delete devices[m[1]];
+        store.remove(histKey(m[1]));
         log(m[1], "removed", `${label(d)} removed from the portal`);
       }
       return ok();
@@ -1804,7 +1847,7 @@ async function handler(req, res) {
         return ok({ count: list.length });
       }
       if (body.action === "delete") {
-        for (const d of list) delete devices[d.id];
+        for (const d of list) { delete devices[d.id]; store.remove(histKey(d.id)); }
         log(null, "removed", `${list.length} devices removed from the portal`);
         return ok({ count: list.length });
       }
