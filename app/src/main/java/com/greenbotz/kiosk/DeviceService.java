@@ -759,6 +759,7 @@ public class DeviceService extends Service {
         }
         // Slow jobs run on their own thread so check-ins keep going.
         if (type.equals("screenshot")) screenshot();
+        if (type.equals("live")) startLive();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
@@ -1067,6 +1068,88 @@ public class DeviceService extends Service {
             }
         } catch (Exception e) {
             Log.w(TAG, "screenshot upload failed", e);
+        }
+    }
+
+    // ---- live remote control: frames up, the portal's taps come back in each reply, until nobody watches ----
+    private volatile boolean live;
+
+    private void startLive() {
+        if (live) return;
+        if (ScreenshotService.instance == null || Build.VERSION.SDK_INT < 30) {
+            event(this, "Remote control needs the screenshot service (Android 11+, run setup-tablet.bat once)");
+            return;
+        }
+        live = true;
+        new Thread(this::liveLoop, "live").start();
+    }
+
+    private void liveLoop() {
+        long until = System.currentTimeMillis() + 30 * 60 * 1000; // a forgotten window can't stream forever
+        int w = 0, h = 0, fails = 0;
+        try {
+            while (System.currentTimeMillis() < until) {
+                ScreenshotService a = ScreenshotService.instance;
+                if (a == null) break;
+                android.graphics.Bitmap[] got = new android.graphics.Bitmap[1];
+                java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+                a.capture(b -> { got[0] = b; done.countDown(); }, err -> done.countDown());
+                done.await(3, java.util.concurrent.TimeUnit.SECONDS);
+                byte[] jpeg = null;
+                if (got[0] != null) {
+                    w = got[0].getWidth();
+                    h = got[0].getHeight();
+                    float k = Math.min(1f, 720f / Math.max(w, h)); // small frames keep it quick on slow Wi-Fi
+                    android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(got[0], Math.round(w * k), Math.round(h * k), true);
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, out);
+                    if (small != got[0]) small.recycle();
+                    got[0].recycle();
+                    jpeg = out.toByteArray();
+                }
+                JSONObject r;
+                try {
+                    r = postLive(jpeg, w, h);
+                    fails = 0;
+                } catch (Exception e) {
+                    if (++fails >= 5) throw e; // a Wi-Fi blip shouldn't end the session
+                    Thread.sleep(1000);
+                    continue;
+                }
+                if (r.optBoolean("stop")) break;
+                JSONArray in = r.optJSONArray("inputs");
+                for (int i = 0; in != null && i < in.length(); i++) {
+                    JSONObject o = in.getJSONObject(i);
+                    a.input(o.optString("a"), (float) o.optDouble("x") * w, (float) o.optDouble("y") * h,
+                            (float) o.optDouble("x2") * w, (float) o.optDouble("y2") * h);
+                    Thread.sleep(150);
+                }
+                // Android 11-13 allow one screenshot a second (14+: three); after a tap, give the screen time to change.
+                Thread.sleep(in != null && in.length() > 0 ? 350 : jpeg == null ? 400 : 150);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "live remote control stopped", e);
+        } finally {
+            live = false;
+        }
+    }
+
+    private JSONObject postLive(byte[] jpeg, int w, int h) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/live?w=" + w + "&h=" + h).openConnection();
+        try {
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "image/jpeg");
+            c.setRequestProperty("X-Device-Key", key(this));
+            c.setRequestProperty("X-Device-Id", deviceId());
+            try (OutputStream o = c.getOutputStream()) {
+                if (jpeg != null) o.write(jpeg);
+            }
+            return readReply(c);
+        } finally {
+            c.disconnect();
         }
     }
 

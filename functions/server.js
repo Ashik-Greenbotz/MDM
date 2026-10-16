@@ -44,7 +44,10 @@ const zoned = () => new Date(new Date().toLocaleString("en-US", { timeZone: TIME
 const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 
 // Commands each device type understands. A device's type comes from its own check-in; old tablets send none.
-const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "install", "file", "logs"];
+const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "live", "install", "file", "logs"];
+// Live remote control (Android): kept in memory only. The device posts a frame and gets back the taps queued since;
+// it stops on its own once nobody has watched for LIVE_IDLE_MS.
+const LIVE = {}, LIVE_IDLE_MS = 20000; // id -> { jpeg, at, w, h, seen, inputs }
 const COMMANDS = {
   "android-kiosk": ["unlock", "lock", "singleapp", "apps", "relay", ...ANDROID],
   android: ANDROID,
@@ -292,6 +295,10 @@ function queue(list, cmd, by) {
     if (!COMMANDS[typeOf(d)].includes(cmd.type)) continue;
     (d.queue ||= []).push({ ...cmd, id: rid(), at: Date.now() });
     if (cmd.type === "remote") d.remotePass = cmd.password;
+    if (cmd.type === "live") { // a new session starts clean; one still streaming carries on
+      const L = LIVE[d.id];
+      if (L && Date.now() - (L.at || 0) < 5000) L.seen = Date.now(); else LIVE[d.id] = { inputs: [], seen: Date.now() };
+    }
     if (d.queue.length > 20) d.queue.shift();
     log(d.id, "command", `${cmd.type}${cmd.name ? " " + cmd.name : ""} queued${by ? " by " + by : ""}`);
     n++;
@@ -1414,6 +1421,16 @@ async function handler(req, res) {
       dirty = true;
       return send(res, 200, { ok: true });
     }
+    if (req.method === "POST" && p === "/api/live") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const id = String(req.headers["x-device-id"] || ""), L = LIVE[id];
+      if (!devices[id] || !L || Date.now() - L.seen > LIVE_IDLE_MS) return send(res, 200, { stop: true });
+      const jpeg = await readBody(req, 4 * 1024 * 1024);
+      if (jpeg.length > 3 && jpeg[0] === 0xff && jpeg[1] === 0xd8) Object.assign(L, { jpeg, at: Date.now(), w: Number(url.searchParams.get("w")) || 0, h: Number(url.searchParams.get("h")) || 0 });
+      const inputs = L.inputs;
+      L.inputs = [];
+      return send(res, 200, { inputs });
+    }
     // Technical team tablet (device key + X-Device-Id of a tech device assigned to a technician). It acts as that technician:
     // only their tickets, only the "tech" status moves (never closing), notes, photos and their availability.
     if (p.startsWith("/api/tech/")) {
@@ -1573,6 +1590,23 @@ async function handler(req, res) {
       // events without a device (sites, uploads...) and those of removed devices: all-sites accounts only
       const list = portal.events.filter(e => (!dev || e.deviceId === dev) && (allSites(u) || sees(u, devices[e.deviceId])));
       return send(res, 200, { events: list.slice(-1000).reverse() });
+    }
+    // Live remote control: the latest frame (watching keeps the session alive) and taps / keys for the device.
+    m = /^\/api\/devices\/([\w-]+)\/live(\.jpg)?$/.exec(p);
+    if (m) {
+      const d = devices[m[1]], L = LIVE[m[1]];
+      if (!can(u, "devices") || !d || !sees(u, d)) return deny();
+      if (!L) return send(res, 404, { error: "no live session, open remote control again" });
+      L.seen = Date.now();
+      if (req.method === "GET" && m[2]) return L.jpeg ? send(res, 200, L.jpeg, "image/jpeg") : send(res, 204, "", "image/jpeg");
+      if (req.method === "GET") return send(res, 200, { at: L.at || 0, w: L.w, h: L.h, now: Date.now() });
+      if (req.method === "POST") {
+        const n = v => Math.min(1, Math.max(0, Number(v) || 0)), a = String(body.a || "");
+        if (!["tap", "swipe", "back", "home", "recents"].includes(a)) return send(res, 400, { error: "unknown action" });
+        L.inputs.push(a === "tap" ? { a, x: n(body.x), y: n(body.y) } : a === "swipe" ? { a, x: n(body.x), y: n(body.y), x2: n(body.x2), y2: n(body.y2) } : { a });
+        if (L.inputs.length > 20) L.inputs.shift();
+        return send(res, 200, { ok: true });
+      }
     }
     m = /^\/api\/devices\/([\w-]+)\/screenshot\.jpg$/.exec(p);
     if (req.method === "GET" && m) {

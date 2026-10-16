@@ -428,7 +428,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", live: "🖥 Remote control", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
   remote: "🖥 Set up remote desktop", sshon: "SSH on", sshoff: "SSH off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -830,6 +830,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
+        ${(S.commands[d.type] || []).includes("live") ? `<button class="btn ghost" data-cmd="live" title="Remote control" aria-label="Remote control">🖥</button>` : ""}
         <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`;
 // Public (internet) address the portal saw the device's check-in from; null on the same LAN as the portal.
 const pubIp = d => { const ip = String(d.ip || "").replace(/^::ffff:/, ""); return !ip || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|fe80:|f[cd])/i.test(ip) ? null : ip; };
@@ -1122,6 +1123,48 @@ async function screenshot(d, send = true) {
   catch (e) { sendError = e.message; render(); }
 }
 
+// Live remote control (Android): the device streams its screen while this window is open and stops ~20 s after it
+// closes. Click = tap, drag = swipe. About 1 frame a second on Android 11-13, up to 3 on 14+.
+async function liveView(d) {
+  const dl = $("shotDlg"), base = `/api/devices/${encodeURIComponent(d.id)}/live`;
+  shotTimers.forEach(clearInterval);
+  shotTimers = [];
+  let open = true, last = 0, down = null;
+  dl.innerHTML = `<h2>🖥 ${esc(label(d))} <span class="code">${esc(d.code || "")}</span></h2>
+    <div class="shot-msg" id="liveWait"><div class="spin"></div><b>Connecting…</b>
+      <p class="meta">${isOnline(d) ? "The device picks this up on its next check-in, usually within 10 seconds." : `⚠️ ${esc(label(d))} is offline (last seen ${ago(d.lastSeen)}).`}</p></div>
+    <img class="shot" id="liveImg" alt="Live screen of ${esc(label(d))}" hidden draggable="false" style="cursor:pointer;touch-action:none;user-select:none">
+    <div class="foot"><button class="btn" data-k="back">◀ Back</button><button class="btn" data-k="home">● Home</button><button class="btn" data-k="recents">▢ Recents</button>
+      <span class="grow"></span><span class="meta" id="liveAt"></span><button class="btn" data-k="close">Close</button></div>`;
+  dl.onclose = () => { open = false; };
+  const send = b => api(base, b).catch(e => toast(e.message, true));
+  dl.onclick = e => { const k = e.target.closest("[data-k]")?.dataset.k; if (k === "close") dl.close(); else if (k) send({ a: k }); };
+  const img = $("liveImg"), at = e => { const r = img.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
+  img.onpointerdown = e => { e.preventDefault(); down = at(e); img.setPointerCapture(e.pointerId); };
+  img.onpointerup = e => {
+    if (!down) return;
+    const u = at(e), r = img.getBoundingClientRect(), far = Math.hypot((u.x - down.x) * r.width, (u.y - down.y) * r.height) > 12;
+    send(far ? { a: "swipe", x: down.x, y: down.y, x2: u.x, y2: u.y } : { a: "tap", ...down });
+    down = null;
+  };
+  if (!dl.open) dl.showModal();
+  try { await api(`/api/devices/${d.id}/command`, { type: "live" }); } catch (e) { toast(e.message, true); return dl.close(); }
+  while (open) { // the next frame as soon as the last one has loaded
+    try {
+      const f = await api(base);
+      if (f.at > last) {
+        last = f.at;
+        await new Promise(r => { img.onload = img.onerror = r; img.src = `${base}.jpg?t=${f.at}`; });
+        img.hidden = false;
+        $("liveWait").hidden = true;
+      }
+      const lag = f.at ? Math.round((f.now - f.at) / 1000) : 0;
+      $("liveAt").textContent = !f.at ? "" : lag < 5 ? "● Live" : `No new picture for ${lag} s`;
+    } catch (e) { if (open) { toast(e.message, true); dl.close(); } break; }
+    await new Promise(r => setTimeout(r, 250));
+  }
+}
+
 // target: same shape as /api/bulk ({ids} | {all:true} ...); n = how many devices, for the confirm text.
 function maintenance(target, on, n) {
   if (on && n > 1 && !confirm(`Show the maintenance screen on ${n} devices?`)) return;
@@ -1139,6 +1182,7 @@ function renderMaint() {
 async function command(list, type, extra = {}) {
   if (type === "maintOn" || type === "maintOff") return maintenance({ ids: list.map(d => d.id) }, type === "maintOn", list.length);
   if (type === "screenshot" && list.length === 1) return screenshot(list[0]);
+  if (type === "live") return list.length === 1 ? liveView(list[0]) : toast("Remote control works on one device at a time", true);
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
   if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
