@@ -159,7 +159,7 @@ const same = (a, b) => {
 // ---- portal accounts ----
 // The ADMIN_USER / ADMIN_PASSWORD account is always a full admin (can't be locked out). More accounts live in portal.users:
 // { username, name, hash, admin, sites: ["*"] | [site names], modules: [MODULES...], readOnly, disabled, createdAt }
-const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "features", "team", "assistant"];
+const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant"];
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);

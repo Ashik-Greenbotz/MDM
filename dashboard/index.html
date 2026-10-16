@@ -197,7 +197,6 @@
   pre.log { margin: 0; padding: 14px 18px; max-height: 480px; overflow: auto; font: 12px/1.6 ui-monospace, "SF Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
   .qr { background: #fff; padding: 12px; border-radius: 14px; display: inline-block; }
   .qr svg { display: block; width: 280px; height: 280px; }
-  .feat td:first-child { white-space: normal; }
   .code { font: 700 13px/1 ui-monospace, "SF Mono", Consolas, monospace; letter-spacing: .08em; padding: 4px 8px; border-radius: 7px;
     background: var(--accent-soft); color: var(--accent); }
   tr.pending td { color: var(--muted); }
@@ -450,7 +449,7 @@ const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="curre
 const PAGES = [
   ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
-  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["features", "sparkles", "Features"], ["users", "users", "Users & access"],
+  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
@@ -1973,43 +1972,9 @@ VIEWS.activity = async (arg, first) => {
 };
 
 // Honest status of every feature on the roadmap.
-const FEATURES = [
-  ["App pinning (kiosk mode)", "done", "Lock tablets to chosen apps, or pin one app full screen; manual override: 6 taps top-right + PIN"],
-  ["Device lock / unlock", "done", "Unlock for 2 minutes, lock to kiosk, lock screen"],
-  ["Online / offline status", "done", "Live, devices check in every 10 s"],
-  ["Remote reboot", "done", "Android (device owner), Windows, Linux, IoT"],
-  ["Multi-app support (VMS, kiosk apps)", "done", "Choose allowed apps per tablet; push apps from Apps & files"],
-  ["OTA app update", "done", "Upload an .apk, install silently on many devices"],
-  ["Device registration (token)", "done", "Tokens put devices in a site and mode"],
-  ["Device registration (QR)", "done", "Android Enterprise QR on a factory-reset device"],
-  ["Device health (battery, memory, storage)", "done", "Plus temperature and Wi-Fi signal; 24-hour chart. Android doesn't let apps read CPU load (Windows agent does)"],
-  ["Basic logs", "done", "Activity log for every device and the whole portal"],
-  ["Remote logs & debug", "done", "Get logs pulls the app log and last crash from a device"],
-  ["Alerts (battery, offline, crash)", "done", "Raised and cleared automatically; alarm sound in the portal when a device goes offline"],
-  ["4-digit Device IDs", "done", "Create in the portal, type on the device to link; shown on the device's home screen"],
-  ["Offline alerts", "done", "Red banner + alarm sound in the portal; WhatsApp alert, hourly reminder and back-online message"],
-  ["Device grouping (sites)", "done", "Add sites, put devices in them, control a whole site"],
-  ["Bulk control", "done", "Tick devices or pick a site, send any command"],
-  ["Scheduled tasks", "done", "Command at a time on chosen days"],
-  ["Command automation", "partial", "Scheduled tasks; rules like \"if offline then…\" not yet"],
-  ["File transfer", "partial", "Portal → device; device → portal not yet"],
-  ["Offline mode (local network)", "done", "Runs fully on this PC's network, no internet needed"],
-  ["Windows / Linux support", "done", "agents/agent.ps1 and agents/agent.sh"],
-  ["Mobile admin app", "partial", "Portal works on phones and can be added to the home screen"],
-  ["Performance monitoring", "partial", "CPU load, RAM, storage and temperature gauges on each device's page; per-app usage not yet"],
-  ["Rooted & non-rooted support", "partial", "Works without root (device owner); root-only extras not yet"],
-  ["Remote control (VNC screen control)", "next", "Next phase. Android asks for consent each session unless the app is system-signed (Telpo) or the device is rooted"],
-  ["Screen recording", "next", "Comes with remote control"],
-  ["Remote ADB", "next", "Needs the secure tunnel"],
-  ["Secure tunnel access", "next", "Needed for cloud / remote sites"],
-  ["Device model & relay profiles", "done", "Model picked on the tablet or in the portal; F8, F10B and F10 relay profiles verified, others need testing (Relay setup…)"],
-  ["Technical team & maintenance tickets", "done", "Automatic tickets for offline devices, technicians near the site, team tablets, portal-only closing"],
-  ["Max, AI assistant", "done", "Text and voice; answers from live data, proposes actions you confirm. Needs a Claude API key on the server"],
-  ["AI monitoring", "later", "After enough health history is collected"],
-];
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", features: "Features", team: "Technical Team & tickets", assistant: "Max (AI assistant)" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)" };
 VIEWS.users = (arg, first) => {
   if (!first && document.activeElement?.closest("#view input")) return; // don't redraw under someone typing in the Max settings
   const users = S.users || [];
@@ -2084,14 +2049,6 @@ function userForm(x) {
   $("dlg").querySelector(".ugrid").onchange = sync;
   sync();
 }
-
-VIEWS.features = () => {
-  const P = { done: ["ok", "Done"], partial: ["warn", "Partly"], next: ["neutral", "Next phase"], later: ["neutral", "Later"] };
-  const n = k => FEATURES.filter(f => f[1] === k).length;
-  $("view").innerHTML = `<h2>Features</h2><p class="lead">${n("done")} done · ${n("partial")} partly done · ${n("next") + n("later")} to come.</p>
-    <div class="card feat"><table><tbody>${FEATURES.map(([f, s, note]) => `<tr><td><div class="name">${esc(f)}</div><div class="meta">${esc(note)}</div></td>
-      <td><span class="pill ${P[s][0]}">${P[s][1]}</span></td></tr>`).join("")}</tbody></table></div>`;
-};
 
 // ---------------- Technical Team: members, their tablets and maintenance tickets ----------------
 const TEAM_TABS = [["dashboard", "Dashboard"], ["members", "Team members"], ["devices", "Team devices"], ["tickets", "Tickets"], ["assign", "Assignment"],
@@ -3143,7 +3100,6 @@ const TOUR = {
   enroll: "Enroll devices makes a QR code to set up new tablets after a factory reset.",
   announcements: "Announcements show a full screen message on the tablets until someone taps Acknowledge.",
   activity: "The Activity log lists everything that happened, who did it and when.",
-  features: "Features shows the status of every planned feature of this portal.",
   users: "Users and access: create portal logins and choose what each person can see and do.",
 };
 window.dispatchEvent(new Event("maxbot-ready"));
