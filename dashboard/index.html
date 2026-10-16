@@ -1597,7 +1597,7 @@ function healthChart(el, hist) {
       ${ticks.map(t => `<line x1="${f(x(t))}" x2="${f(x(t))}" y1="${T}" y2="${H - B}" stroke="${css("--line")}" stroke-dasharray="2 4"/><text class="ax" x="${f(x(t))}" y="${H - 7}" text-anchor="${x(t) > W - R - 30 ? "end" : x(t) < L + 30 ? "start" : "middle"}">${lab(t)}</text>`).join("")}
       ${paths}<g class="hover" visibility="hidden"><line y1="${T}" y2="${H - B}" stroke="${css("--muted")}" stroke-dasharray="3 3"/>${series.map(([, , c]) => `<circle r="3.5" fill="${c}" stroke="${css("--card")}" stroke-width="1.5"/>`).join("")}</g>
       <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip" hidden></div></div>
-    <table class="hlegend"><tr><th>Name <span style="font-weight:400">· click to show one</span></th><th>Mean</th><th>Max</th><th>Last</th></tr>
+    <table class="hlegend"><tr><th title="Click a row to show only that one">Name</th><th>Mean</th><th>Max</th><th>Last</th></tr>
       ${stats.map(([n, c, u, mean, max, last]) => `<tr data-s="${n}" class="${series.length === 1 && series[0][0] !== n ? "off" : ""}"><td><i style="background:${c}"></i>${n}</td><td>${r1(mean)}${u}</td><td>${r1(max)}${u}</td><td><b>${r1(last)}${u}</b></td></tr>`).join("")}</table>`;
   el.querySelector(".hlegend").onclick = e => {
     const n = e.target.closest("[data-s]")?.dataset.s;
