@@ -574,7 +574,7 @@ public class DeviceService extends Service {
 
     // CPU load %: real use since the last check-in from /proc/stat where the system allows it (Android 7 and many
     // terminals, e.g. Telpo F8), otherwise an estimate from each core's clock speed (newer Android blocks /proc/stat).
-    private long prevBusy = -1, prevTotal;
+    private long prevBusy = -1, prevTotal, prevIdle = -1, prevIdleAt;
     private String cpuSource = "";
     // Chip name (e.g. rk3399, mt6789); Build.HARDWARE is often a generic board name on older Android.
     private static String boardPlatform() {
@@ -613,6 +613,30 @@ public class DeviceService extends Service {
             if (!first && dTotal > 0) return (int) Math.round(100.0 * dBusy / dTotal);
             return (int) Math.round(100.0 * busy / total); // first sample: average since boot
         } catch (Exception ignored) {
+        }
+        // Android 8+ hides /proc/stat from apps (Samsung). The per-core idle times are still readable and give the real
+        // load; the clock-speed guess below read 90%+ on an idle tablet, since clocks jump to max at every small task.
+        long idle = 0, now = android.os.SystemClock.elapsedRealtimeNanos() / 1000;
+        int cores = 0;
+        for (int i = 0; new java.io.File("/sys/devices/system/cpu/cpu" + i).exists(); i++) {
+            boolean counted = false;
+            for (int s = 0; ; s++) {
+                try (java.io.BufferedReader t = new java.io.BufferedReader(new java.io.FileReader("/sys/devices/system/cpu/cpu" + i + "/cpuidle/state" + s + "/time"))) {
+                    idle += Long.parseLong(t.readLine().trim()); // microseconds in this idle state
+                    counted = true;
+                } catch (Exception e) {
+                    break;
+                }
+            }
+            if (counted) cores++;
+        }
+        if (cores > 0) {
+            Integer load = null;
+            if (prevIdle >= 0 && now > prevIdleAt) load = (int) Math.round(100 - 100.0 * (idle - prevIdle) / ((double) (now - prevIdleAt) * cores));
+            prevIdle = idle;
+            prevIdleAt = now;
+            cpuSource = "Measured (idle time)";
+            return load == null ? null : Math.max(0, Math.min(100, load)); // first sample: nothing to compare yet
         }
         long cur = 0, max = 0;
         for (int i = 0; i < Runtime.getRuntime().availableProcessors(); i++) {
