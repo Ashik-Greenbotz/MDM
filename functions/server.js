@@ -88,7 +88,9 @@ const RELAY_PROFILES = {
   "Telpo VCP": { relay: "unknown" }, Akuvox: { relay: "unknown" }, Others: { relay: "unknown" },
 };
 // The model's profile with this device's verified overrides (d.relayCfg) on top. No model set: "unknown".
-const relayProfile = d => ({ ...(RELAY_PROFILES[d.deviceModel] || { relay: "unknown" }), ...(d.relayCfg || {}) });
+// A model's profile: the built-in one, with the admin's changes from the Configuration page on top.
+const modelProfile = m => ({ ...(RELAY_PROFILES[m] || { relay: "unknown" }), ...(portal.relayProfiles?.[m] || {}) });
+const relayProfile = d => ({ ...modelProfile(d.deviceModel), ...(d.relayCfg || {}) });
 const label = d => d.name || d.deviceName || d.id.slice(0, 8);
 const rid = () => crypto.randomBytes(8).toString("hex");
 
@@ -120,7 +122,7 @@ if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs"]) fs.mkdi
 
 let devices = {};
 const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], announcements: [], whatsapp: [], waOutbox: [], waHistory: [], kioskApp: null,
-  technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {} };
+  technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {}, relayProfiles: {}, maintImage: null };
 // Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
 // ("Add device", kept in portal.pending) and type it on the device to link it.
 const usedCodes = () => new Set([...Object.values(devices).map(d => d.code), ...portal.pending.map(x => x.code)]);
@@ -1370,7 +1372,7 @@ async function handler(req, res) {
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       const vpn = d.vpn && d.vpnKey && WG_ENDPOINT ? { on: true, address: vpnAddr(d) + "/32", privateKey: d.vpnKey.priv, hubPublicKey: vpnHub().pub,
         endpoint: WG_ENDPOINT, allowed: "10.66.0.0/16", keepalive: 25 } : { on: false };
-      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, announcement, ssh, vpn, agentUpdate,
+      return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: portal.maintImage?.at || 0, announcement, ssh, vpn, agentUpdate,
         config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
@@ -1441,6 +1443,12 @@ async function handler(req, res) {
       }
       dirty = true;
       return send(res, 200, { ok: true });
+    }
+    // The maintenance screen image set on the Configuration page (devices fetch it when maintImage changes).
+    if (req.method === "GET" && p === "/api/maintenance.jpg") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const img = portal.maintImage && await store.read("uploads/maintenance.jpg");
+      return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no custom image" });
     }
     // Live remote control, device side: POST a picture; GET /input waits up to 15 s for the next taps.
     if (p === "/api/live" || p === "/api/live/input") {
@@ -1572,7 +1580,7 @@ async function handler(req, res) {
     if (!u) return send(res, 401, { error: "login required" });
     const deny = (error = "Your account doesn't have access to this") => send(res, 403, { error });
     if (req.method === "POST" && u.readOnly) return deny("This account is view-only");
-    const raw = p === "/api/upload" || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
+    const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
     const body = req.method === "POST" && !raw ? await readJson(req) : {};
     const ok = extra => { dirty = true; send(res, 200, { ok: true, ...extra }); };
     const mine = list => list.filter(d => sees(u, d));
@@ -1608,7 +1616,8 @@ async function handler(req, res) {
         whatsapp: u.admin ? portal.whatsapp : undefined,
         agentKey: u.admin ? AGENT_KEY || null : undefined, // shown in "Add device" for Windows / Linux / IoT
         lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
-        models: MODELS, relayProfiles: RELAY_PROFILES, relayIfaces: RELAY_IFACES,
+        models: MODELS, relayProfiles: Object.fromEntries(MODELS.map(m => [m, modelProfile(m)])), relayEdited: Object.keys(portal.relayProfiles || {}),
+        relayIfaces: RELAY_IFACES, maintImage: portal.maintImage?.at || 0,
         categories: CATEGORIES, priorities: PRIORITIES, statuses: STATUS, flow: FLOW,
         technicians: can(u, "team", "devices") ? portal.technicians.map(({ apikey, ...t }) => ({ ...t, hasKey: !!apikey, ...techState(t) })) : [],
         ticketCounts: can(u, "team") ? ticketCounts(myTickets()) : null,
@@ -1622,6 +1631,46 @@ async function handler(req, res) {
       // events without a device (sites, uploads...) and those of removed devices: all-sites accounts only
       const list = portal.events.filter(e => (!dev || e.deviceId === dev) && (allSites(u) || sees(u, devices[e.deviceId])));
       return send(res, 200, { events: list.slice(-1000).reverse() });
+    }
+    // ---- Configuration page (admins only) ----
+    if (p === "/api/config/maintenance-image") {
+      if (req.method === "GET") {
+        const img = portal.maintImage && await store.read("uploads/maintenance.jpg");
+        return img ? send(res, 200, img, "image/jpeg") : send(res, 404, { error: "no custom image" });
+      }
+      if (!u.admin) return deny("Only admins can change the maintenance image");
+      if (url.searchParams.get("reset")) portal.maintImage = null;
+      else {
+        const img = await readBody(req, 8 * 1024 * 1024);
+        if (img.length < 4 || img[0] !== 0xff || img[1] !== 0xd8) return send(res, 400, { error: "send a JPEG image" });
+        await store.write("uploads/maintenance.jpg", img);
+        portal.maintImage = { at: Date.now(), size: img.length };
+      }
+      log(null, "maintenance", `Maintenance screen image ${portal.maintImage ? "changed" : "reset to the built-in one"} by ${by}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && p === "/api/config/relay") {
+      // Relay profile for a whole device model; devices with their own verified setup (relayCfg) keep it on top.
+      if (!u.admin) return deny("Only admins can change relay profiles");
+      const model = String(body.model || "");
+      if (!MODELS.includes(model)) return send(res, 400, { error: "pick a model" });
+      if (body.reset) delete portal.relayProfiles[model];
+      else {
+        const relay = String(body.relay || "");
+        if (!["yes", "no", "unknown"].includes(relay)) return send(res, 400, { error: "relay must be yes, no or unknown" });
+        if (relay !== "yes") portal.relayProfiles[model] = { relay };
+        else {
+          const iface = String(body.iface || ""), on = String(body.on), off = String(body.off);
+          if (!RELAY_IFACES.includes(iface)) return send(res, 400, { error: "pick one of the known relay files" });
+          if (!["0", "1"].includes(on) || !["0", "1"].includes(off) || on === off) return send(res, 400, { error: "ON and OFF must be 0 and 1 (one each)" });
+          portal.relayProfiles[model] = { relay, iface, on, off, root: !!body.root, readable: !!body.readable,
+            pulse: Math.min(600, Math.max(1, Math.round(Number(body.pulse) || 5))), maintLink: body.maintLink !== false };
+        }
+      }
+      log(null, "relay", `Relay profile for ${model} ${body.reset ? "reset to the built-in one" : "changed"} by ${by}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
     }
     // Live remote control, portal side: live.jpg?after=<time> waits up to 10 s for a newer picture (watching keeps the
     // session alive); POST sends a tap / swipe / key to the device straight away.

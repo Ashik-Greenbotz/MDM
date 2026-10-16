@@ -9,6 +9,7 @@ import android.view.View;
 import android.widget.ImageView;
 
 // Full-screen "System Maintenance" image shown on every device while the portal has maintenance mode on.
+// The image is the one uploaded on the portal's Configuration page, or the built-in one.
 // It sits on top of the home screen or a pinned app; Back does nothing. It closes itself when the portal turns it off.
 public class MaintenanceActivity extends Activity {
     static boolean on(Context ctx) {
@@ -17,16 +18,31 @@ public class MaintenanceActivity extends Activity {
 
     private final SharedPreferences.OnSharedPreferenceChangeListener listener = (p, key) -> {
         if (DeviceService.PREF_MAINTENANCE.equals(key) && !on(this)) leave();
+        if (DeviceService.PREF_MAINT_IMG.equals(key)) runOnUiThread(this::showImage);
     };
+    private android.widget.FrameLayout root;
+    private ImageView img;
+
+    private void showImage() {
+        java.io.File f = new java.io.File(getFilesDir(), "maintenance.jpg");
+        android.graphics.Bitmap b = getSharedPreferences("kiosk", MODE_PRIVATE).getLong(DeviceService.PREF_MAINT_IMG, 0) != 0 && f.exists()
+                ? android.graphics.BitmapFactory.decodeFile(f.getPath()) : null;
+        if (b != null) {
+            img.setImageBitmap(b);
+            root.setBackgroundColor(0xFF000000);
+        } else {
+            img.setImageResource(R.drawable.maintenance);
+            root.setBackgroundColor(0xFF53BFE0); // the built-in image's blue, so the letterbox bars blend in
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        android.widget.FrameLayout root = new android.widget.FrameLayout(this);
-        root.setBackgroundColor(0xFF53BFE0); // the image's blue, so the letterbox bars blend in
-        ImageView img = new ImageView(this);
+        root = new android.widget.FrameLayout(this);
+        img = new ImageView(this);
         img.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        img.setImageResource(R.drawable.maintenance);
+        showImage();
         root.addView(img, new android.widget.FrameLayout.LayoutParams(-1, -1));
         android.widget.TextView footer = new android.widget.TextView(this);
         footer.setText(R.string.footer);

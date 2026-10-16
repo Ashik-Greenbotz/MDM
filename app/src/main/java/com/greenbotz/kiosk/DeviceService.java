@@ -68,6 +68,7 @@ public class DeviceService extends Service {
     static final String PREF_TOKEN = "token";
     static final String PREF_CODE = "code";
     static final String PREF_MAINTENANCE = "maintenance";
+    static final String PREF_MAINT_IMG = "maint_img"; // version (portal time) of files/maintenance.jpg; 0 = built-in image
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
     static volatile boolean maintenanceShowing;
@@ -324,6 +325,12 @@ public class DeviceService extends Service {
                 prefs.edit().putBoolean(PREF_MAINTENANCE, maint).commit();
                 // Door follows maintenance on the change only, so manual relay commands win until the next change.
                 if (reply.optBoolean("relayLink", true) && relayState() != null) handler.post(() -> setRelay(maint, 0));
+            }
+            // The maintenance image set on the portal's Configuration page: fetched once per change.
+            long img = reply.optLong("maintImage", 0);
+            if (img != prefs.getLong(PREF_MAINT_IMG, 0) && !fetchingMaintImage) {
+                fetchingMaintImage = true;
+                new Thread(() -> fetchMaintImage(img)).start();
             }
             // Keep the maintenance screen up (also covers reboots and an app coming to the front).
             if (maint && !maintenanceShowing && !KioskActivity.monitorOnly(this)) {
@@ -1230,6 +1237,40 @@ public class DeviceService extends Service {
             return readReply(c);
         } finally {
             c.disconnect();
+        }
+    }
+
+    private volatile boolean fetchingMaintImage;
+
+    private void fetchMaintImage(long version) {
+        try {
+            java.io.File f = new java.io.File(getFilesDir(), "maintenance.jpg");
+            if (version == 0) {
+                f.delete();
+            } else {
+                java.io.File tmp = new java.io.File(getFilesDir(), "maintenance.tmp");
+                HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/maintenance.jpg").openConnection();
+                try {
+                    c.setConnectTimeout(10000);
+                    c.setReadTimeout(30000);
+                    c.setRequestProperty("X-Device-Key", key(this));
+                    c.setRequestProperty("X-Device-Id", deviceId());
+                    if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+                    try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(tmp)) {
+                        byte[] buf = new byte[16384];
+                        for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                    }
+                } finally {
+                    c.disconnect();
+                }
+                f.delete();
+                if (!tmp.renameTo(f)) throw new Exception("could not save the image");
+            }
+            getSharedPreferences("kiosk", MODE_PRIVATE).edit().putLong(PREF_MAINT_IMG, version).commit();
+        } catch (Exception e) {
+            Log.w(TAG, "maintenance image download failed", e);
+        } finally {
+            fetchingMaintImage = false;
         }
     }
 

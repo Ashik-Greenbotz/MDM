@@ -472,18 +472,19 @@ const CMD = {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Line icons from Lucide (lucide.dev, ISC licence), inlined so the portal works offline.
 const ICONS = {"activity":"<path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\"/>","bell":"<path d=\"M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9\"/><path d=\"M10.3 21a1.94 1.94 0 0 0 3.4 0\"/>","calendar-clock":"<path d=\"M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5\"/><path d=\"M16 2v4\"/><path d=\"M8 2v4\"/><path d=\"M3 10h5\"/><path d=\"M17.5 17.5 16 16.3V14\"/><circle cx=\"16\" cy=\"16\" r=\"6\"/>","layout-dashboard":"<rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/>","log-out":"<path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/><polyline points=\"16 17 21 12 16 7\"/><line x1=\"21\" x2=\"9\" y1=\"12\" y2=\"12\"/>","map-pin":"<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/>","map":"<path d=\"M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z\"/><path d=\"M15 5.764v15\"/><path d=\"M9 3.236v15\"/>","moon":"<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>","package":"<path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/><path d=\"M12 22V12\"/><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\"/><path d=\"m7.5 4.27 9 5.15\"/>","qr-code":"<rect width=\"5\" height=\"5\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"5\" height=\"5\" x=\"16\" y=\"3\" rx=\"1\"/><rect width=\"5\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/><path d=\"M21 16h-3a2 2 0 0 0-2 2v3\"/><path d=\"M21 21v.01\"/><path d=\"M12 7v3a2 2 0 0 1-2 2H7\"/><path d=\"M3 12h.01\"/><path d=\"M12 3h.01\"/><path d=\"M12 16v.01\"/><path d=\"M16 12h1\"/><path d=\"M21 12v.01\"/><path d=\"M12 21v-1\"/>","sparkles":"<path d=\"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z\"/><path d=\"M20 3v4\"/><path d=\"M22 5h-4\"/><path d=\"M4 17v2\"/><path d=\"M5 18H3\"/>","sun-moon":"<path d=\"M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.9 4.9 1.4 1.4\"/><path d=\"m17.7 17.7 1.4 1.4\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.3 17.7-1.4 1.4\"/><path d=\"m19.1 4.9-1.4 1.4\"/>","sun":"<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"m17.66 17.66 1.41 1.41\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.34 17.66-1.41 1.41\"/><path d=\"m19.07 4.93-1.41 1.41\"/>","tablet-smartphone":"<rect width=\"10\" height=\"14\" x=\"3\" y=\"8\" rx=\"2\"/><path d=\"M5 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-2.4\"/><path d=\"M8 18h.01\"/>","user-round":"<circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/>","users":"<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>","volume-2":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><path d=\"M16 9a5 5 0 0 1 0 6\"/><path d=\"M19.364 18.364a9 9 0 0 0 0-12.728\"/>","volume-x":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><line x1=\"22\" x2=\"16\" y1=\"9\" y2=\"15\"/><line x1=\"16\" x2=\"22\" y1=\"9\" y2=\"15\"/>"};
-Object.assign(ICONS, { wrench: "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
+Object.assign(ICONS, { settings: "<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
+  wrench: "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
   mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
   send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
   ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
-  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"],
+  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" || page === "announcements" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team" }[page] || page);
 
 let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {}, technicians: [], models: [], statuses: {}, flow: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
@@ -2123,6 +2124,100 @@ VIEWS.activity = async (arg, first) => {
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
   apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)" };
+// ---------------- Configuration (admins): maintenance mode, Max, WhatsApp alerts, relay per device type ----------------
+const cfgMaint = () => {
+  const on = S.devices.filter(d => d.maintenance);
+  return `<b>${on.length}</b> of ${S.devices.length} device${S.devices.length === 1 ? "" : "s"} showing the maintenance screen
+    ${on.length ? `<div class="chips" style="margin-top:6px">${on.map(d => `<a class="chip" href="#/device/${encodeURIComponent(d.id)}">${esc(label(d))} <span class="code">${esc(d.code || "")}</span></a>`).join("")}</div>` : ""}`;
+};
+const cfgWa = () => S.whatsapp?.length ? S.whatsapp.map(w => `<span class="chip">💬 ${esc(w.name || "")} ${esc(w.phone || "")}</span>`).join("") : `<span class="meta">No numbers yet.</span>`;
+VIEWS.config = (arg, first) => {
+  if (!first) { if ($("cfgMaint")) { $("cfgMaint").innerHTML = cfgMaint(); $("cfgWa").innerHTML = cfgWa(); } return; }
+  const targets = [["all", "All devices"], ...groups().filter(Boolean).map(g => ["site:" + g, "Site: " + g]), ["site:", "Devices not in any site"]];
+  const sel = (f, list, v) => `<select data-f="${f}">${list.map(x => `<option ${String(x) === String(v) ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>`;
+  const relayRow = m => {
+    const p = S.relayProfiles?.[m] || { relay: "unknown" }, edited = (S.relayEdited || []).includes(m);
+    return `<tr data-m="${esc(m)}"><td><b>${esc(m)}</b>${edited ? ` <span class="pill warn">changed</span>` : ""}</td>
+      <td>${sel("relay", ["yes", "no", "unknown"], p.relay)}</td>
+      <td>${sel("iface", S.relayIfaces || [], p.iface)}</td><td>${sel("on", [0, 1], p.on ?? 0)}</td><td>${sel("off", [0, 1], p.off ?? 1)}</td>
+      <td><input type="checkbox" data-f="root" ${p.root ? "checked" : ""}></td><td><input type="checkbox" data-f="readable" ${p.readable ? "checked" : ""}></td>
+      <td><input type="number" data-f="pulse" min="1" max="600" value="${esc(p.pulse || 5)}" style="width:64px"></td>
+      <td><input type="checkbox" data-f="maintLink" ${p.maintLink !== false ? "checked" : ""}></td>
+      <td><div class="row"><button class="btn" data-save>Save</button>${edited ? `<button class="btn ghost" data-reset>Built-in</button>` : ""}</div></td></tr>`;
+  };
+  $("view").innerHTML = `<h2>Configuration</h2><p class="lead">Settings for the whole portal. Only administrators see this page.</p>
+    <div class="card"><h3>🛠 Maintenance mode</h3><div class="pad">
+      <p id="cfgMaint" style="margin-top:0">${cfgMaint()}</p>
+      <div class="row"><select id="cfgTarget">${options(targets, "all")}</select>
+        <button class="btn primary" id="cfgMaintOn">Turn on</button><button class="btn" id="cfgMaintOff">Turn off</button></div>
+      <p class="meta">Devices show a full-screen maintenance image until it is turned off. On devices with a door relay, the relay follows it (see the table below).</p>
+      <h4 style="margin:18px 0 8px">Maintenance screen image</h4>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        ${S.maintImage ? `<img class="shot" src="/api/config/maintenance-image?t=${S.maintImage}" alt="Maintenance image" style="max-height:220px;margin:0">`
+          : `<div class="shot-msg" style="padding:16px;border:1px dashed var(--line);border-radius:14px;min-width:200px"><div style="font-size:34px">🛠</div><b>Built-in image</b><p class="meta">"System Maintenance"</p></div>`}
+        <div><label class="btn" style="cursor:pointer">Upload image…<input type="file" id="cfgImg" accept="image/*" hidden></label>
+          ${S.maintImage ? `<button class="btn ghost" id="cfgImgReset">Use built-in image</button>` : ""}
+          <p class="meta" style="max-width:360px">Shown full screen on every device in maintenance. Portrait works best on tablets. Devices pick it up on their next check-in (needs the latest tablet app).</p></div></div>
+    </div></div>
+    <div class="card"><h3>⚡ Door relay per device type</h3>
+      <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
+      <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
+        <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
+    <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
+      <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
+        <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
+        <div class="card"><h3>Max, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
+      <div class="pad"><p class="meta" style="margin-top:0">Max answers from live portal data with each person's own access, and only proposes actions for them to confirm.
+        Accounts need the "Max" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Max reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Max runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
+        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Max is on</label>
+          <span class="meta">Model</span><input id="maxModel" value="${esc(S.assistant?.model || "")}" style="width:190px">
+          <span class="meta">Questions per person per day</span><input id="maxDaily" type="number" min="1" max="5000" value="${esc(S.assistant?.dailyLimit || 200)}" style="width:90px">
+          <button class="btn primary" id="maxSave">Save</button></div></div></div>`;
+  const target = () => { const v = $("cfgTarget").value; return v === "all" ? { all: true } : { group: v.slice(5) }; };
+  const count = t => t.all ? S.devices.length : S.devices.filter(d => (d.group || "") === t.group).length;
+  $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
+  $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
+  $("cfgWaEdit").onclick = () => whatsappForm();
+  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
+  // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
+  $("cfgImg").onchange = () => {
+    const f = $("cfgImg").files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1920 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext("2d");
+      g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height); // transparent PNGs get a black background
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      c.toBlob(b => act(async () => {
+        const r = await fetch("/api/config/maintenance-image", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: b });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+      }, "Maintenance image saved").then(() => VIEWS.config(null, true)), "image/jpeg", 0.85);
+    };
+    img.onerror = () => toast("That file isn't an image", true);
+    img.src = URL.createObjectURL(f);
+  };
+  if ($("cfgImgReset")) $("cfgImgReset").onclick = () => act(async () => {
+    const r = await fetch("/api/config/maintenance-image?reset=1", { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+  }, "Built-in maintenance image restored").then(() => VIEWS.config(null, true));
+  // Relay rows: the detail fields only matter when the model has a relay.
+  const sync = tr => tr.querySelectorAll("[data-f]:not([data-f=relay])").forEach(x => (x.disabled = tr.querySelector("[data-f=relay]").value !== "yes"));
+  $("cfgRelay").querySelectorAll("tr").forEach(sync);
+  $("cfgRelay").onchange = e => sync(e.target.closest("tr"));
+  $("cfgRelay").onclick = e => {
+    const tr = e.target.closest("tr"), m = tr?.dataset.m;
+    if (!m) return;
+    const v = f => tr.querySelector(`[data-f=${f}]`);
+    if (e.target.closest("[data-reset]")) return act(() => api("/api/config/relay", { model: m, reset: true }), `${m}: built-in relay profile restored`).then(() => VIEWS.config(null, true));
+    if (!e.target.closest("[data-save]")) return;
+    act(() => api("/api/config/relay", { model: m, relay: v("relay").value, iface: v("iface").value, on: v("on").value, off: v("off").value,
+      root: v("root").checked, readable: v("readable").checked, pulse: v("pulse").value, maintLink: v("maintLink").checked }), `${m} relay profile saved`).then(() => VIEWS.config(null, true));
+  };
+};
+
 VIEWS.users = (arg, first) => {
   if (!first && document.activeElement?.closest("#view input")) return; // don't redraw under someone typing in the Max settings
   const users = S.users || [];
@@ -2141,15 +2236,7 @@ VIEWS.users = (arg, first) => {
         <td class="meta">${x.lastLogin ? ago(x.lastLogin) : "never"}</td>
         <td><div class="row"><button class="btn" data-u="edit" data-name="${esc(x.username)}">Edit</button>
           <button class="btn ghost danger" data-u="del" data-name="${esc(x.username)}">Delete</button></div></td></tr>`).join("")}
-      </tbody></table></div></div>
-    <div class="card"><h3>Max, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
-      <div class="pad"><p class="meta" style="margin-top:0">Max answers from live portal data with each person's own access, and only proposes actions for them to confirm.
-        Accounts need the "Max" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Max reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Max runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
-        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Max is on</label>
-          <span class="meta">Model</span><input id="maxModel" value="${esc(S.assistant?.model || "")}" style="width:190px">
-          <span class="meta">Questions per person per day</span><input id="maxDaily" type="number" min="1" max="5000" value="${esc(S.assistant?.dailyLimit || 200)}" style="width:90px">
-          <button class="btn primary" id="maxSave">Save</button></div></div></div>`;
-  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
+      </tbody></table></div></div>`;
   $("view").onclick = e => {
     const b = e.target.closest("[data-u]");
     if (!b) return;
