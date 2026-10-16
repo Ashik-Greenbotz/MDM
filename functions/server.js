@@ -852,6 +852,7 @@ function techFrom(body, old) {
   return {
     name, phone, apikey: body.apikey === undefined ? old?.apikey || "" : String(body.apikey || "").trim().slice(0, 40),
     active: body.active !== false, shareLocation: !!body.shareLocation,
+    ticketsOff: !!body.ticketsOff, // hides the ticket system ("My tickets") on their tablet until turned back on
     skills: (Array.isArray(body.skills) ? body.skills : []).filter(x => CATEGORIES.includes(x)),
     region: String(body.region || "").trim().slice(0, 80),
     base: base ? { ...base, label: String(body.base.label || "").trim().slice(0, 120) } : null,
@@ -1499,7 +1500,7 @@ async function handler(req, res) {
       // config: the model/usage the portal has (null until either side sets one). relayCfg: the relay file and values to use,
       // only when the profile is known; without it the app keeps finding the relay file itself (as before 10.14).
       const rp = relayProfile(d);
-      const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null } : null;
+      const config = d.deviceModel ? { model: d.deviceModel, usage: d.usage || "onsite", tech: techOf(d)?.name || null, ticketsOff: !!techOf(d)?.ticketsOff } : null;
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,

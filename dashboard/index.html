@@ -2600,11 +2600,12 @@ function techForm(t) {
       <label>Skills</label><div class="chips">${S.categories.map(c => chip(c, t?.skills?.includes(c))).join("")}</div>
       <label>Options</label><div class="chips">
         <label class="chip"><input type="checkbox" id="tActive" ${t?.active === false ? "" : "checked"}>Active</label>
-        <label class="chip"><input type="checkbox" id="tShare" ${t?.shareLocation ? "checked" : ""}>Use their tablet's live location (they agreed)</label></div></div>
-    <p class="meta">No skills ticked = can take any job. Without live location sharing only the base location is used, and the tablet's location isn't stored.</p>`,
+        <label class="chip"><input type="checkbox" id="tShare" ${t?.shareLocation ? "checked" : ""}>Use their tablet's live location (they agreed)</label>
+        <label class="chip"><input type="checkbox" id="tTickets" ${t?.ticketsOff ? "" : "checked"}>Ticket system on their tablet</label></div></div>
+    <p class="meta">No skills ticked = can take any job. Without live location sharing only the base location is used, and the tablet's location isn't stored. Untick "Ticket system on their tablet" to hide My tickets on their tablet for now (it comes back within ~10 s when ticked again).</p>`,
     t ? "Save" : "Add member", () => {
       act(() => api("/api/technicians", { id: t?.id, name: $("tName").value, phone: $("tPhone").value, ...($("tKey").value ? { apikey: $("tKey").value } : {}),
-        region: $("tRegion").value, active: $("tActive").checked, shareLocation: $("tShare").checked,
+        region: $("tRegion").value, active: $("tActive").checked, shareLocation: $("tShare").checked, ticketsOff: !$("tTickets").checked,
         skills: [...$("dlg").querySelectorAll("input[name=skill]:checked")].map(i => i.value),
         base: { label: $("tBase").value, lat: $("tLat").value, lng: $("tLng").value } }), t ? "Saved" : "Team member added");
     });
