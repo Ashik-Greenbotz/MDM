@@ -3307,10 +3307,14 @@ window.MaxBot = {
   talk(text) { talk(text); },
   // the panel opened / closed: dock next to it or back to the corner
   dock() { if (!homeOverride && !sleeping) goHome(); },
-  // just signed in: back to his corner, salute and say hello (dozes off again after if "Max sleeps" is on)
+  // just signed in: appears in the middle of the screen, salutes and says hello, then flies to his corner
+  // (dozes off there if "Max sleeps" is on)
   welcome(name) {
-    homeOverride = null; rouse();
-    goHome(() => { play("Greet_Salute", { once: true, then: () => { loop("Idle_Hover"); doze(); } }); say(`Welcome${name ? ", " + name : ""}! Click me any time if you need help.`, 5000); });
+    homeOverride = null; rouse(); flight = null; mode = "idle";
+    pos.x = (innerWidth - SIZE) / 2; pos.y = (innerHeight - SIZE) / 2; place();
+    play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") });
+    say(`Welcome back${name ? ", " + name : ""}!`, 3000);
+    setTimeout(() => goHome(doze), 3500);
   },
   // after an answer: point at the first device / ticket it mentions if it is on the page
   answered(text, proposals) {
