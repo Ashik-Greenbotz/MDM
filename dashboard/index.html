@@ -2523,6 +2523,8 @@ const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 function maxListen() {
   if (!Rec) return toast("Voice input isn't supported in this browser; type instead (Chrome or Edge support it)", true);
+  if (!window.isSecureContext) return toast("The microphone needs https (or localhost). On a plain http://IP address the browser blocks it", true);
+  if (useWhisper) return whisperListen();
   if (rec) return rec.stop();
   rec = new Rec();
   rec.lang = navigator.language || "en-SG";
@@ -2534,11 +2536,56 @@ function maxListen() {
     for (const r of e.results) (r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript));
     $("maxIn").value = final || interim; // shows what was heard while speaking
   };
-  rec.onerror = e => e.error === "no-speech" && talking ? (talking = false) : e.error === "aborted" ? null : toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
+  rec.onerror = e => ["network", "service-not-allowed", "language-not-supported"].includes(e.error)
+    ? (rec.onend = null, rec = null, useWhisper = true, whisperListen()) // the browser's speech service is unavailable here
+    : e.error === "no-speech" && talking ? (talking = false) : e.error === "aborted" ? null : toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
     : e.error === "no-speech" ? "Didn't hear anything" : "Voice input stopped: " + e.error, e.error !== "no-speech");
   rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); if (final.trim()) { $("maxIn").value = ""; maxAsk(final); } else talking = false; };
   $("maxMic").classList.add("rec");
   try { rec.start(); } catch (e) { rec = null; $("maxMic").classList.remove("rec"); toast("Couldn't start the microphone: " + e.message, true); }
+}
+// Fallback when the browser has no working speech service (Firefox, Brave, some Edge, blocked networks): record the mic
+// and transcribe in the browser with Whisper. The model (~40 MB) downloads once per laptop, then comes from the cache.
+let useWhisper = !Rec, asr = null, recStop = null;
+async function whisperListen() {
+  if (recStop) return recStop();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { talking = false; return toast("Microphone blocked: allow it in the browser's site settings", true); }
+  if (!asr) {
+    toast("Loading voice recognition (first time only)…");
+    asr = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2")
+      .then(t => t.pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en"));
+  }
+  const mr = new MediaRecorder(stream), chunks = [], ctx = new AudioContext(), an = ctx.createAnalyser();
+  const buf = new Uint8Array(an.fftSize), t0 = Date.now();
+  ctx.createMediaStreamSource(stream).connect(an);
+  let heard = false, quietSince = t0;
+  // Stops by itself after 1.5 s of quiet once speech was heard, 8 s of nothing, or 15 s total; a click on the mic stops too.
+  const tick = setInterval(() => {
+    an.getByteTimeDomainData(buf);
+    if (buf.some(v => Math.abs(v - 128) > 12)) { heard = true; quietSince = Date.now(); } // ponytail: fixed loudness threshold, tune 12 for noisy rooms
+    const now = Date.now();
+    if ((heard && now - quietSince > 1500) || (!heard && now - t0 > 8000) || now - t0 > 15000) recStop?.();
+  }, 100);
+  recStop = () => { recStop = null; clearInterval(tick); mr.stop(); stream.getTracks().forEach(t => t.stop()); ctx.close(); };
+  mr.ondataavailable = e => chunks.push(e.data);
+  mr.onstop = async () => {
+    $("maxMic").classList.remove("rec");
+    if (!heard || $("maxPanel").hidden) { talking = false; return; } // nothing said, or the chat was closed
+    $("maxIn").value = "…";
+    try {
+      const ac = new AudioContext({ sampleRate: 16000 }); // Whisper wants 16 kHz mono
+      const audio = (await ac.decodeAudioData(await new Blob(chunks).arrayBuffer())).getChannelData(0);
+      ac.close();
+      const text = (await (await asr)(audio)).text.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim(); // drops [BLANK_AUDIO], (music)
+      $("maxIn").value = "";
+      if (text) maxAsk(text); else talking = false;
+    } catch (e) { $("maxIn").value = ""; talking = false; asr = null; toast("Voice input failed: " + e.message, true); }
+  };
+  bot("listen");
+  $("maxMic").classList.add("rec");
+  mr.start();
 }
 // Max's voice. maxSay: a chat answer, interrupts whatever he was saying. maxVoice: anything shown in his bubble (tips,
 // pointing, alerts, the tour), queued after what he is saying; skipped if he just said the same words.
@@ -2568,7 +2615,7 @@ function maxVoice(text) {
 // he listens again after each one, until nothing is heard, something is typed, or the chat is closed.
 
 function maxHello() {
-  if (!Rec) return; // no voice input in this browser: the chat box is enough
+  if (!Rec && !window.MediaRecorder) return; // no voice input in this browser: the chat box is enough
   if (rec) { rec.onend = rec.onerror = null; rec.abort(); rec = null; $("maxMic").classList.remove("rec"); } // its end must not stop talk mode
   talking = true;
   const first = (S.me?.name || "").split(" ")[0];
@@ -2585,7 +2632,7 @@ function maxSpeakBtn() {
 function maxOpen(open) {
   $("maxPanel").hidden = !open;
   $("maxBtn").hidden = open || !S.assistant?.allowed;
-  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; window.speechSynthesis?.cancel(); rec?.stop(); }
+  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; window.speechSynthesis?.cancel(); rec?.stop(); recStop?.(); }
   bot("dock");
 }
 $("maxBtn").onclick = () => { maxOpen(true); maxHello(); };
