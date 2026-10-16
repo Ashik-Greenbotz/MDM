@@ -20,4 +20,20 @@ android {
         // Local/debug servers (setup screen "Debug"): local.properties server.key.debug = DEVICE_KEY in functions/.env
         resValue "string", "server_key_debug", localProps.getProperty("server.key.debug", "change-me-device-key")
     }
+    // The production tablets were signed with the debug key of the PC that built 10.12/10.13. Android only installs an
+    // update signed with the same key, so put a copy of that keystore next to the project and its path in
+    // local.properties (signing.keystore=prod-debug.keystore); keystores are not in git. Without it: this PC's debug key.
+    signingConfigs {
+        if (localProps.getProperty("signing.keystore")) {
+            prod {
+                storeFile rootProject.file(localProps.getProperty("signing.keystore"))
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
+        }
+    }
+    buildTypes {
+        debug { if (signingConfigs.findByName("prod")) signingConfig signingConfigs.prod }
+    }
 }
