@@ -2685,14 +2685,13 @@ function drawTicketMap(place, cands) {
 }
 
 // ---------------- map (opens from the header) ----------------
-// Map tiles: OneMap (Singapore's official map, free, no key; the default), Esri satellite and OpenStreetMap streets.
+// Map tiles: OneMap (Singapore's official map, free, no key; the default) and Esri satellite.
 function baseLayers() {
   const sat = L.layerGroup([L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "Imagery &copy; Esri" }),
     L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 })]);
-  const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" });
   const onemap = L.tileLayer("https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png", { minZoom: 11, maxZoom: 19,
     attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:14px;width:14px"> OneMap &copy; Singapore Land Authority' });
-  return { default: onemap, all: { "OneMap (SG)": onemap, Satellite: sat, Street: street } };
+  return { default: onemap, all: { "OneMap (SG)": onemap, Satellite: sat } };
 }
 let map, markers = {}, fitted = false;
 function drawMap() {
