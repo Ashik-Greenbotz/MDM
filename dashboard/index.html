@@ -3017,6 +3017,12 @@ $("maxLog").onclick = async e => {
 
 // ---- hooks for the 3D Max (module script below); all calls are safe before it has loaded ----
 const bot = (fn, ...a) => { try { window.MaxBot?.[fn]?.(...a); } catch (e) { console.warn("Max:", e); } };
+// A new sign-in (came here from the login page, not a reload): Max welcomes them once Max and the user are loaded.
+if (/^\/login(\.html)?$/.test(new URL(document.referrer || location.href).pathname) && performance.getEntriesByType("navigation")[0]?.type === "navigate") {
+  let tries = 0;
+  const w = () => window.MaxBot && S.me ? bot("welcome", (S.me.name || S.me.username || "").split(" ")[0]) : ++tries < 40 && setTimeout(w, 500);
+  setTimeout(w, 800);
+}
 // Short tip per page, the first time it opens this session (Max flies to the heading and says it).
 function pageTip(page) {
   const off = S.devices.filter(d => !isOnline(d)).length, c = S.ticketCounts;
@@ -3301,6 +3307,11 @@ window.MaxBot = {
   talk(text) { talk(text); },
   // the panel opened / closed: dock next to it or back to the corner
   dock() { if (!homeOverride && !sleeping) goHome(); },
+  // just signed in: back to his corner, salute and say hello (dozes off again after if "Max sleeps" is on)
+  welcome(name) {
+    homeOverride = null; rouse();
+    goHome(() => { play("Greet_Salute", { once: true, then: () => { loop("Idle_Hover"); doze(); } }); say(`Welcome${name ? ", " + name : ""}! Click me any time if you need help.`, 5000); });
+  },
   // after an answer: point at the first device / ticket it mentions if it is on the page
   answered(text, proposals) {
     talk(text);
