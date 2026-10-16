@@ -54,6 +54,8 @@ public class MaintenanceActivity extends Activity {
         fp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
         root.addView(footer, fp);
         setContentView(root);
+        root.setAlpha(0f); // fade in over the screen it replaces
+        root.animate().alpha(1f).setDuration(450).start();
     }
 
     @Override
@@ -77,6 +79,7 @@ public class MaintenanceActivity extends Activity {
     private void leave() {
         startActivity(new Intent(this, KioskActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         finish();
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out); // crossfade back to the home screen
     }
 
     @Override

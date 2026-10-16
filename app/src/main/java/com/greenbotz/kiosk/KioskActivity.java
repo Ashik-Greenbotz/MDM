@@ -34,7 +34,10 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.animation.ObjectAnimator;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.animation.DecelerateInterpolator;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -146,6 +149,16 @@ public class KioskActivity extends Activity {
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
+        // The clock fades in each new minute.
+        TextView clock = findViewById(R.id.clock);
+        clock.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            public void afterTextChanged(android.text.Editable s) {
+                clock.setAlpha(0.3f);
+                clock.animate().alpha(1f).setDuration(500).start();
+            }
+        });
         overridePending = getIntent().getBooleanExtra(EXTRA_OVERRIDE, false);
         adminPending = getIntent().getBooleanExtra(EXTRA_ADMIN, false);
         // Mode is picked once, on the first launch by setup-tablet.bat; after that only the admin menu changes it.
@@ -378,6 +391,19 @@ public class KioskActivity extends Activity {
         GradientDrawable pill = rounded(color & 0x00FFFFFF | 0x2E000000, 999);
         pill.setStroke(Math.round(getResources().getDisplayMetrics().density), color & 0x00FFFFFF | 0x66000000);
         status.setBackground(pill);
+        // A gentle pulse while something is wrong (offline / server offline), still when all is well.
+        boolean trouble = !online || !server;
+        if (trouble && statusPulse == null) {
+            statusPulse = ObjectAnimator.ofFloat(status, View.ALPHA, 1f, 0.55f);
+            statusPulse.setDuration(900);
+            statusPulse.setRepeatCount(ObjectAnimator.INFINITE);
+            statusPulse.setRepeatMode(ObjectAnimator.REVERSE);
+            statusPulse.start();
+        } else if (!trouble && statusPulse != null) {
+            statusPulse.cancel();
+            statusPulse = null;
+            status.setAlpha(1f);
+        }
     }
 
     // Own Wi-Fi list instead of the Settings panel, which links on to the rest of Settings.
@@ -471,6 +497,22 @@ public class KioskActivity extends Activity {
         return apps;
     }
 
+    // Animations: light ViewPropertyAnimator / ObjectAnimator work only, fine on the Telpo F8/F10. They follow the
+    // system "animation scale" setting (off = no animation).
+    private boolean tilesShown; // tiles slide in once, when the home screen first opens (not after every app)
+    private ObjectAnimator statusPulse;
+
+    // A tile shrinks a little under the finger and springs back; the click still goes through.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private static void pressable(View v) {
+        v.setOnTouchListener((x, e) -> {
+            int a = e.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN) x.animate().scaleX(0.94f).scaleY(0.94f).setDuration(90).start();
+            else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) x.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+            return false;
+        });
+    }
+
     private void renderApps() {
         GridLayout grid = findViewById(R.id.apps);
         grid.removeAllViews();
@@ -536,6 +578,17 @@ public class KioskActivity extends Activity {
                     GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(0, 4, GridLayout.CENTER));
             grid.addView(empty, lp);
         }
+        float lift = 24 * dp;
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            View t = grid.getChildAt(i);
+            pressable(t);
+            if (tilesShown) continue;
+            t.setAlpha(0f);
+            t.setTranslationY(lift);
+            t.animate().alpha(1f).translationY(0f).setStartDelay(80 + 50L * i).setDuration(380)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+        }
+        tilesShown = true;
     }
 
     private void chooseApps() {
