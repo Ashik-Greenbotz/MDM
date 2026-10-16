@@ -20,7 +20,8 @@ class Mqtt extends EventEmitter {
     this.opts = { username, password, clientId: clientId || "portal-" + Math.random().toString(16).slice(2, 10) };
     this.connected = false; this.error = "connecting…"; this.pid = 0; this.acks = new Map(); this.subs = new Set();
     this.connect();
-    setInterval(() => this.connected && this.sock.write(Buffer.from([0xc0, 0])), 30000).unref(); // PINGREQ
+    this.ping = setInterval(() => this.connected && this.sock.write(Buffer.from([0xc0, 0])), 30000); // PINGREQ
+    this.ping.unref();
   }
   connect() {
     const u = this.url, secure = u.protocol === "mqtts:", port = Number(u.port) || (secure ? 8883 : 1883);
@@ -52,7 +53,7 @@ class Mqtt extends EventEmitter {
       for (const [, a] of this.acks) { clearTimeout(a.timer); a.reject(new Error("MQTT connection lost")); }
       this.acks.clear();
       this.emit("down", this.error);
-      setTimeout(() => this.connect(), 5000).unref();
+      if (!this.closed) setTimeout(() => this.connect(), 5000).unref();
     });
   }
   onPacket(type, flags, body) {
@@ -71,6 +72,7 @@ class Mqtt extends EventEmitter {
       if (a) { clearTimeout(a.timer); this.acks.delete(body.readUInt16BE(0)); a.resolve(); }
     }
   }
+  close() { this.closed = true; clearInterval(this.ping); this.removeAllListeners(); this.sock.destroy(); }
   nextId() { return (this.pid = (this.pid % 65535) + 1); }
   sendSub(topic) { this.sock.write(packet(8, 2, Buffer.concat([u16(this.nextId()), str(topic), Buffer.from([0])]))); }
   subscribe(topic) { if (!topic || this.subs.has(topic)) return; this.subs.add(topic); if (this.connected) this.sendSub(topic); }

@@ -1330,9 +1330,10 @@ function rtspToMjpeg(src, res) {
 }
 
 // ---- Remote barrier control (Remote Command Centre): two cameras + two MQTT barriers per site ----
-// The broker address and login live only in the environment (MQTT_URL mqtt:// or mqtts://, MQTT_USER, MQTT_PASSWORD).
+// The broker: MQTT_URL (mqtt:// or mqtts://) + MQTT_USER / MQTT_PASSWORD in the environment win; otherwise the one an admin
+// saved on the Configuration page (portal.mqttBroker). Either way its password never goes to a browser.
 // Topics, payloads and camera addresses are in portal.barriers[site], kept out of portal.sites (which every browser receives).
-const mqtt = process.env.MQTT_URL ? new Mqtt(process.env.MQTT_URL, { username: process.env.MQTT_USER, password: process.env.MQTT_PASSWORD }) : null;
+let mqtt = null;
 const GATE_KEYS = ["visitor", "resident"], BARRIER_TIMEOUT = 8000, BARRIER_GAP = 5000; // wait for the controller's reply; min gap between commands
 const DEF_CAMS = [{ name: "Visitor barrier camera", mode: "mjpeg", url: "" }, { name: "Resident barrier camera", mode: "mjpeg", url: "" }];
 const DEF_GATE = { visitor: "Visitor Barrier", resident: "Resident Barrier" };
@@ -1343,13 +1344,20 @@ const barrierOf = site => {
 };
 const gateLive = {}, gateLast = {}, ackWait = new Set(); // "site\nkey" -> last state from the controller / time of the last command
 const subscribeBarriers = () => { for (const c of Object.values(portal.barriers)) for (const g of Object.values(c.gates || {})) { mqtt?.subscribe(g.ackTopic); mqtt?.subscribe(g.stateTopic); } };
-mqtt?.on("up", subscribeBarriers);
-mqtt?.on("message", (topic, text) => {
+function startMqtt() {
+  mqtt?.close();
+  const b = portal.mqttBroker, env = !!process.env.MQTT_URL;
+  const url = env ? process.env.MQTT_URL : b?.host ? `${b.tls ? "mqtts" : "mqtt"}://${b.host}:${b.port}` : "";
+  mqtt = url ? new Mqtt(url, env ? { username: process.env.MQTT_USER, password: process.env.MQTT_PASSWORD } : { username: b.username, password: b.password }) : null;
+  mqtt?.on("up", subscribeBarriers);
+  mqtt?.on("message", onBarrierMessage);
+}
+function onBarrierMessage(topic, text) {
   for (const w of ackWait) if (w.topic === topic) w.done(text);
   for (const [site, c] of Object.entries(portal.barriers)) for (const k of GATE_KEYS) {
     if (c.gates?.[k]?.stateTopic === topic) gateLive[site + "\n" + k] = { state: text.trim().slice(0, 40), stateAt: Date.now() };
   }
-});
+}
 // Publishes the barrier's command, then waits for the controller's reply on its ack topic (if set up).
 async function openBarrier(site, k, by) {
   const g = barrierOf(site).gates[k], entry = { at: Date.now(), user: by, site, barrier: g.label, command: g.payload };
@@ -2161,6 +2169,25 @@ async function handler(req, res) {
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
       return ok();
     }
+    // Barrier MQTT broker (Configuration page, admins). The password is write-only: blank keeps the saved one.
+    if (p === "/api/config/mqtt") {
+      if (!u.admin) return deny();
+      if (req.method === "POST") {
+        const host = String(body.host || "").trim(), port = Number(body.port) || (body.tls ? 8883 : 1883);
+        if (host && !/^[\w.-]{1,253}$/.test(host)) return send(res, 400, { error: "Host: a name or IP address only (no mqtt://)" });
+        if (!(port >= 1 && port <= 65535)) return send(res, 400, { error: "Port 1-65535" });
+        const old = portal.mqttBroker || {};
+        portal.mqttBroker = host ? { host, port, tls: !!body.tls, username: String(body.username || "").slice(0, 200),
+          password: body.password ? String(body.password).slice(0, 200) : old.host === host ? old.password : "" } : null;
+        startMqtt();
+        log(null, "barrier", host ? `Barrier MQTT broker set to ${host}:${port} by ${by}` : `Barrier MQTT broker removed by ${by}`);
+        dirty = true;
+        await new Promise(r => setTimeout(r, 2500)); // give it a moment, so the answer can say whether it connected
+      }
+      const b = portal.mqttBroker;
+      return send(res, 200, { fromEnv: !!process.env.MQTT_URL, host: b?.host || "", port: b?.port || 1883, tls: !!b?.tls, username: b?.username || "",
+        hasPassword: !!b?.password, connected: !!mqtt?.connected, error: mqtt ? mqtt.error : null });
+    }
     // ---------------- Barrier control: "barrier" module + the site must be one of the account's ----------------
     if (p.startsWith("/api/barrier")) {
       const site = String((req.method === "GET" ? url.searchParams.get("site") : body.site) || "");
@@ -2394,6 +2421,8 @@ async function handler(req, res) {
 
 // Save before the process stops (Ctrl+C on the PC, Cloud Run shutting the instance down).
 for (const sig of ["SIGINT", "SIGTERM"]) process.once(sig, () => flush().finally(() => process.exit(0)));
+
+ready.then(startMqtt);
 
 if (require.main === module) {
   ready.then(() => {

@@ -2381,6 +2381,12 @@ VIEWS.config = (arg, first) => {
       <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
       <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
         <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
+    <div class="card"><h3>🚧 Barrier MQTT broker<span class="grow"></span><span id="mqState"></span></h3><div class="pad">
+      <p class="meta" style="margin-top:0">The broker that Barrier Control sends the open commands to. The password stays on the server: leave it empty to keep the saved one.</p>
+      <div class="row" id="mqForm"><input id="mqHost" placeholder="Host or IP, e.g. 159.65.152.75" style="width:220px"><input id="mqPort" type="number" min="1" max="65535" placeholder="1883" style="width:90px">
+        <label class="chip"><input type="checkbox" id="mqTls"> TLS</label><input id="mqUser" placeholder="Username" style="width:160px" autocomplete="off">
+        <input id="mqPass" type="password" placeholder="Password" style="width:160px" autocomplete="new-password"><button class="btn primary" id="mqSave">Save &amp; connect</button></div>
+      <p class="meta" id="mqNote"></p></div></div>
     <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
       <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
         <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
@@ -2396,6 +2402,16 @@ VIEWS.config = (arg, first) => {
   $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
   $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
   $("cfgWaEdit").onclick = () => whatsappForm();
+  const mqShow = b => {
+    $("mqHost").value = b.host; $("mqPort").value = b.host ? b.port : ""; $("mqTls").checked = b.tls; $("mqUser").value = b.username; $("mqPass").value = "";
+    $("mqPass").placeholder = b.hasPassword ? "•••••••• (saved)" : "Password";
+    $("mqState").innerHTML = !b.host && !b.fromEnv ? `<span class="pill neutral">Not set</span>` : b.connected ? `<span class="pill ok">● Connected</span>`
+      : `<span class="pill bad">Not connected${b.error ? ": " + esc(b.error) : ""}</span>`;
+    $("mqNote").textContent = b.fromEnv ? "The server's MQTT_URL setting is in use and overrides this form." : "";
+  };
+  api("/api/config/mqtt").then(mqShow).catch(() => {});
+  $("mqSave").onclick = () => { toast("Connecting…"); act(() => api("/api/config/mqtt", { host: $("mqHost").value, port: $("mqPort").value, tls: $("mqTls").checked,
+    username: $("mqUser").value, password: $("mqPass").value }).then(mqShow), "Broker saved"); };
   $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
   // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
   $("cfgImg").onchange = () => {
