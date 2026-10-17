@@ -361,6 +361,7 @@ public class DeviceService extends Service {
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
             putUsage(d);
             d.put("lost", LostActivity.on(this));
+            d.put("adbWifi", adbWifiPort()); // >0 = adb over Wi-Fi is on (that port); 0 = off/not rooted
             Location loc = lastLocation;
             if (loc != null) {
                 d.put("lat", loc.getLatitude());
@@ -936,6 +937,7 @@ public class DeviceService extends Service {
         if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("wifi")) addWifi(cmd.optString("ssid"), cmd.optString("password"));
+        if (type.equals("adbwifi")) new Thread(() -> adbWifi(cmd.optBoolean("on", true)), "adbwifi").start();
         if (type.equals("browse")) new Thread(() -> browse(cmd.optString("path", "/sdcard")), "browse").start();
         if (type.equals("pull")) new Thread(() -> pullFile(cmd.optString("path")), "pull").start();
         if (type.equals("lost") || type.equals("found")) {
@@ -1706,6 +1708,37 @@ public class DeviceService extends Service {
             }
         } catch (Exception e) {
             event(this, "Download failed for " + path + ": " + e.getMessage());
+        }
+    }
+
+    // ADB over Wi-Fi: on rooted tablets the app turns network adb on/off itself (no cable, no prompt), giving the
+    // same full control as `adb connect <ip>:5555`. Non-rooted tablets (e.g. Samsung) need a one-time USB step.
+    private int adbWifiPort() {
+        try {
+            Process p = new ProcessBuilder("getprop", "service.adb.tcp.port").redirectErrorStream(true).start();
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+            String v = r.readLine();
+            p.waitFor();
+            return v == null || v.trim().isEmpty() ? 0 : Math.max(0, Integer.parseInt(v.trim()));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void adbWifi(boolean on) {
+        boolean root = new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
+        if (!root) {
+            event(this, "ADB over Wi-Fi needs root or a one-time USB step: adb tcpip 5555");
+            return;
+        }
+        try {
+            String cmd = on ? "setprop service.adb.tcp.port 5555; setprop persist.adb.tcp.port 5555; stop adbd; start adbd"
+                    : "setprop service.adb.tcp.port -1; setprop persist.adb.tcp.port \"\"; stop adbd; start adbd";
+            Process p = new ProcessBuilder("su", "0", "sh", "-c", cmd).redirectErrorStream(true).start();
+            p.waitFor();
+            event(this, on ? "ADB over Wi-Fi ON (port 5555)" : "ADB over Wi-Fi OFF");
+        } catch (Exception e) {
+            event(this, "ADB over Wi-Fi failed: " + e.getMessage());
         }
     }
 

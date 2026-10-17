@@ -76,7 +76,7 @@ async function termSave(id, T) {
   dirty = true;
 }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "browse", "pull", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "browse", "pull", "adbwifi", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -381,7 +381,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "patch", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess", "usage", "data", "lost"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess", "usage", "data", "lost", "adbWifi"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 // Health score 0-100 from the hourly averages (historyH rows: [time, ...HEALTH]) with warnings that look ahead:
 // storage filling up, running hotter than last week, battery running flat, RAM / CPU busy all day. Worked out once an hour.
@@ -506,6 +506,7 @@ function commandFrom(body) {
     return { type, message, phone, name: "on" };
   }
   if (type === "found") return { type, name: "off" };
+  if (type === "adbwifi") return { type, on: body.on !== false, name: body.on !== false ? "on" : "off" };
   if (type === "browse") return { type, path: String(body.path || "/sdcard").slice(0, 500), name: "list" };
   if (type === "pull") {
     const path = String(body.path || "");
@@ -2212,7 +2213,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
-        if ((body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "browse" || body.type === "pull") && !u.admin) return deny("Only admins can do this");
+        if ((body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "browse" || body.type === "pull" || body.type === "adbwifi") && !u.admin) return deny("Only admins can do this");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
@@ -2239,7 +2240,7 @@ async function handler(req, res) {
       if (!can(u, "devices", "sites")) return deny();
       const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
-      if (body.action === "command" && (body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found") && !u.admin) return deny("Only admins can do this");
+      if (body.action === "command" && (body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "adbwifi") && !u.admin) return deny("Only admins can do this");
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");

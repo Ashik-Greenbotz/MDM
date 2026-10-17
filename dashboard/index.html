@@ -1681,6 +1681,11 @@ VIEWS.device = async (id, first) => {
           <span class="meta">Pulse</span><input type="number" id="dPulse" min="1" max="600" value="5" style="width:70px"><span class="meta">s</span><button class="btn" data-relay="pulse">⚡ Pulse (open door)</button>
           <label class="chip"><input type="checkbox" id="dRelayLink"> Maintenance mode switches the relay (ON when it starts, OFF when it ends)</label></div>
           <p class="meta" id="dRelayNote" style="margin-bottom:0"></p></div></div>
+      <div class="card" id="dAdbCard" hidden><h3>ADB over Wi-Fi<span class="grow"></span><span id="dAdbState"></span></h3>
+        <div class="pad"><div class="row"><button class="btn primary" data-adb="1">Turn ON</button><button class="btn" data-adb="">Turn OFF</button>
+          <span class="meta">Rooted tablets (Telpo) switch network ADB on themselves — no cable. Then connect from a PC:</span></div>
+          <div id="dAdbCmd" class="row" style="margin-top:8px" hidden><code style="user-select:all" id="dAdbConnect"></code><button class="btn ghost" data-copy="dAdbConnect">Copy</button></div>
+          <p class="meta" id="dAdbNote" style="margin-bottom:0"></p></div></div>
       <div class="card" id="dSshCard" hidden><h3>Remote SSH<span class="grow"></span><span id="dSshState"></span></h3>
         <div class="pad"><div class="row"><button class="btn primary" data-ssh="1">SSH ON</button><button class="btn" data-ssh="">SSH OFF</button>
           <span class="meta">The tablet opens a tunnel to the portal while SSH is ON. Turn it off when you are done.</span></div>
@@ -1702,6 +1707,8 @@ VIEWS.device = async (id, first) => {
       if (r && !confirm(`${r === "off" ? "Relay OFF (lock the door)" : r === "on" ? "Relay ON (door stays open until Relay OFF)" : `Pulse ${$("dPulse").value} s (opens the door)`} on ${label(dev(id))}?\n\nThis switches the real door relay.`)) return;
       if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
         { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
+      const ab = e.target.closest("[data-adb]");
+      if (ab) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`, { type: "adbwifi", on: !!ab.dataset.adb }), `ADB over Wi-Fi ${ab.dataset.adb ? "on" : "off"} sent`);
       const sb = e.target.closest("[data-ssh]");
       if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
       const cp = e.target.closest("[data-copy]");
@@ -1769,6 +1776,12 @@ VIEWS.device = async (id, first) => {
   $("dRelayKv").innerHTML = Object.entries(kv).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   $("dRelayNote").textContent = rp.relay === "unknown" ? "This model's relay hasn't been verified. Test it with someone at the door, then use Relay setup… to save the mapping that worked." : "";
   $("dRelayLink").checked = d.relayLink !== false;
+  $("dAdbCard").hidden = d.type !== "android-kiosk" || !me().admin;
+  const adbOn = d.adbWifi > 0;
+  $("dAdbState").innerHTML = d.adbWifi == null ? `<span class="meta">Update the tablet app</span>` : adbOn ? `<span class="pill ok">ON · port ${d.adbWifi}</span>` : `<span class="pill">OFF</span>`;
+  $("dAdbCmd").hidden = !(adbOn && d.localIp);
+  if (adbOn && d.localIp) $("dAdbConnect").textContent = `adb connect ${d.localIp}:${d.adbWifi}`;
+  $("dAdbNote").textContent = adbOn && !d.localIp ? "On, but no LAN IP reported yet." : !adbOn ? "Off. Non-rooted tablets (Samsung) also need a one-time USB step: adb tcpip 5555." : "";
   $("dSshCard").hidden = !S.sshReady || d.type !== "android-kiosk";
   $("dSshState").innerHTML = !d.ssh ? `<span class="pill">OFF</span>` : d.sshUp ? `<span class="pill ok">Connected</span>`
     : `<span class="meta">${d.sshUp == null ? "Update the tablet app to 10.13" : "Connecting…"}</span>`;
