@@ -384,7 +384,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "patch", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess", "usage", "data", "lost", "adbWifi"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess", "data", "lost", "adbWifi"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 // Health score 0-100 from the hourly averages (historyH rows: [time, ...HEALTH]) with warnings that look ahead:
 // storage filling up, running hotter than last week, battery running flat, RAM / CPU busy all day. Worked out once an hour.
@@ -1617,6 +1617,9 @@ async function handler(req, res) {
       // when the app version changed and from what (Apps & files page: "installed / updated on" for each device)
       if (body.appVersion && body.appVersion !== d.appVersion) { d.appFrom = d.appVersion || null; d.appSince = Date.now(); }
       for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
+      // the app reports its top apps as "usage", but d.usage is the onsite / tech setting
+      if (Array.isArray(body.usage)) d.appUsage = body.usage;
+      if (Array.isArray(d.usage)) delete d.usage;
       // Windows remote access as the agent sees it (SSH server, RustDesk ID)
       if (body.remote && typeof body.remote === "object") {
         const r = body.remote;

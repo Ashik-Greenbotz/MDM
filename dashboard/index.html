@@ -52,7 +52,6 @@
   header { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 10px 22px;
     background: var(--glass); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px);
     border-bottom: 1px solid var(--edge); box-shadow: 0 1px 0 var(--line); }
-  header img { width: 38px; height: 38px; object-fit: contain; border-radius: 10px; background: #fff; box-shadow: 0 2px 10px rgba(242,140,0,.25); }
   header h1 { font-size: 17px; font-weight: 700; margin: 0; white-space: nowrap; letter-spacing: -.02em;
     background: linear-gradient(90deg, var(--text), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   header .sub { color: var(--muted); font-size: 12px; }
@@ -502,7 +501,6 @@
 </head>
 <body>
 <header>
-  <img src="/logo.png" alt="">
   <div>
     <h1>Device Remote Management</h1>
     <div class="sub">Interlock Group · every device across all sites</div>
@@ -1652,7 +1650,7 @@ VIEWS.device = async (id, first) => {
     Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
     ...(d.info || {}),
     "Data today": d.data && `${d.data.wifi} MB Wi-Fi · ${d.data.mobile} MB mobile`,
-    "Top apps (24 h)": d.usage?.length && d.usage.map(([n, m]) => `${n} ${m < 60 ? m + " min" : (m / 60).toFixed(1) + " h"}`).join(", "),
+    "Top apps (24 h)": d.appUsage?.length && d.appUsage.map(([n, m]) => `${n} ${m < 60 ? m + " min" : (m / 60).toFixed(1) + " h"}`).join(", "),
     "First seen": d.firstSeen && new Date(d.firstSeen).toLocaleString(), "Internal ID": d.id,
   };
   const cmds = S.commands[d.type] || [];

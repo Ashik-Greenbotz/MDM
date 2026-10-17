@@ -42,12 +42,7 @@
   @keyframes enter { from { opacity: 0; transform: translateY(30px) scale(.96); filter: blur(8px); } }
   @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
   @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
-  .logo-wrap { position: relative; width: 112px; height: 112px; margin: -4px auto 14px; }
-  .logo-wrap::before { content: ""; position: absolute; inset: -6px; border-radius: 30px; background: conic-gradient(from 0deg, var(--accent), var(--accent2), #4078ff, var(--accent));
-    filter: blur(14px); opacity: .55; animation: spin 6s linear infinite; }
-  .logo { position: relative; display: block; width: 112px; height: 112px; object-fit: contain; border-radius: 26px; background: #fff; animation: float 5s ease-in-out infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes float { 50% { transform: translateY(-5px); } }
   h1 { font-size: 26px; font-weight: 700; letter-spacing: -.03em; text-align: center; margin: 0 0 4px;
     background: linear-gradient(90deg, var(--text) 20%, var(--accent) 50%, var(--text) 80%); background-size: 200% auto;
     -webkit-background-clip: text; background-clip: text; color: transparent; animation: rise .7s var(--ease) both .12s, sheen 6s linear infinite 1s; }
@@ -123,7 +118,6 @@
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 <button class="theme" id="theme" type="button" aria-label="Change theme"></button>
 <form class="card" id="form" novalidate>
-  <div class="logo-wrap"><img class="logo" src="/logo.png" alt="Interlock Group"></div>
   <h1>Device Remote Management</h1>
   <p class="sub">Sign in to manage your tablets</p>
   <label for="user">Username</label>
