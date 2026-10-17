@@ -844,6 +844,7 @@ public class DeviceService extends Service {
         // Slow jobs run on their own thread so check-ins keep going.
         if (type.equals("screenshot")) screenshot();
         if (type.equals("live")) startLive();
+        if (type.equals("term")) startTerm();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
@@ -869,6 +870,24 @@ public class DeviceService extends Service {
             KioskActivity.setSingleApp(this, pkg);
             sentApps = null;
             startActivity(open); // reopen the kiosk screen, which locks and starts the app
+        }
+        // Portal "Restart pinned app": hiding an app kills it, unhiding brings it straight back. One restart, then the
+        // kiosk screen opens and pins it again as usual.
+        if (type.equals("restartapp")) {
+            String pkg = getSharedPreferences("kiosk", MODE_PRIVATE).getString(KioskActivity.PREF_SINGLE_APP, "");
+            if (pkg.isEmpty()) {
+                event(this, "Restart app: no app is pinned");
+            } else {
+                try {
+                    ComponentName admin = new ComponentName(this, AdminReceiver.class);
+                    dpm.setApplicationHidden(admin, pkg, true);
+                    dpm.setApplicationHidden(admin, pkg, false);
+                    event(this, "Pinned app restarted: " + pkg);
+                } catch (SecurityException e) {
+                    event(this, "Restart app failed: app is not device owner");
+                }
+                startActivity(open);
+            }
         }
         // Device owner apps may start activities from the background. Opening the kiosk screen locks it.
         if (type.equals("unlock") || type.equals("lock")) startActivity(open);
@@ -1152,6 +1171,72 @@ public class DeviceService extends Service {
             }
         } catch (Exception e) {
             Log.w(TAG, "screenshot upload failed", e);
+        }
+    }
+
+    // ---- remote shell: `sh -i` (as this app; `su` works on rooted tablets). Output goes up as it comes, typed lines
+    // come back by long-poll. Ctrl+C (or exit) starts a fresh shell; the server says stop once the window is closed.
+    private volatile boolean termOn;
+
+    private void startTerm() {
+        if (termOn) return;
+        termOn = true;
+        new Thread(this::termLoop, "term").start();
+    }
+
+    private void termLoop() {
+        Process sh = null;
+        int fails = 0;
+        try {
+            while (termOn) {
+                if (sh == null || !sh.isAlive()) {
+                    // Rooted tablets (Telpo): a root shell, full system control like `adb root`. Others: only this app's rights.
+                    boolean root = new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
+                    ProcessBuilder pb = new ProcessBuilder(root ? new String[]{"su", "0", "sh", "-i"} : new String[]{"sh", "-i"})
+                            .redirectErrorStream(true).directory(new File("/"));
+                    pb.environment().put("HOSTNAME", "tablet-" + appPrefs.getString(PREF_CODE, "")); // Android's mkshrc prompt: $HOSTNAME:$PWD $
+                    pb.environment().put("HOME", getFilesDir().getPath());
+                    Process p = sh = pb.start();
+                    new Thread(() -> termOutput(p), "term-out").start();
+                }
+                try {
+                    JSONObject r = liveCall("/api/term/input", null);
+                    fails = 0;
+                    if (r.optBoolean("stop")) break;
+                    JSONArray in = r.optJSONArray("inputs");
+                    for (int i = 0; in != null && i < in.length(); i++) {
+                        String s = in.getString(i);
+                        if (s.equals("\u0003")) {
+                            sh.destroy();
+                            sh.waitFor();
+                            continue;
+                        }
+                        if (!sh.isAlive()) continue;
+                        sh.getOutputStream().write(s.getBytes(StandardCharsets.UTF_8));
+                        sh.getOutputStream().flush();
+                    }
+                } catch (Exception e) {
+                    if (++fails >= 5) break;
+                    Thread.sleep(1000);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "remote shell stopped", e);
+        } finally {
+            if (sh != null) sh.destroy();
+            termOn = false;
+        }
+    }
+
+    private void termOutput(Process sh) {
+        byte[] b = new byte[8192];
+        try (InputStream in = sh.getInputStream()) {
+            for (int n; (n = in.read(b)) > 0; ) liveCall("/api/term", java.util.Arrays.copyOf(b, n));
+        } catch (Exception ignored) {
+        }
+        try {
+            if (termOn) liveCall("/api/term", "\n[shell ended, starting a new one]\n".getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
         }
     }
 

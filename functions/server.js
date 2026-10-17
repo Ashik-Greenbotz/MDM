@@ -60,8 +60,11 @@ function liveWait(L, who, ms, res) {
   });
 }
 const liveWake = (L, who) => L.wait[who].slice().forEach(f => f());
+// Remote shell (Android): same idea. The tablet's `sh` output piles up in `out` (last 100 KB; `base` = how much was
+// dropped before it), typed lines wait in `inputs`. Ends LIVE_IDLE_MS after the terminal window closes.
+const TERM = {}; // id -> { out, base, inputs, seen, wait }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -368,6 +371,8 @@ function queue(list, cmd, by) {
       const L = LIVE[d.id];
       if (L && Date.now() - (L.at || 0) < 5000) L.seen = Date.now(); else LIVE[d.id] = liveNew();
     }
+    // reopening keeps the same session (and its scrollback), so a tablet still running the shell just carries on
+    if (cmd.type === "term") (TERM[d.id] ||= { ...liveNew(), out: "", base: 0 }).seen = Date.now();
     if (d.queue.length > 20) d.queue.shift();
     log(d.id, "command", `${cmd.type}${cmd.name ? " " + cmd.name : ""} queued${by ? " by " + by : ""}`);
     n++;
@@ -1605,6 +1610,25 @@ async function handler(req, res) {
       L.inputs = [];
       return send(res, 200, { inputs });
     }
+    // Remote shell, device side: POST = shell output; GET /input waits up to 15 s for typed lines.
+    if (p === "/api/term" || p === "/api/term/input") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const id = String(req.headers["x-device-id"] || ""), T = TERM[id];
+      const over = () => !devices[id] || !T || TERM[id] !== T || Date.now() - T.seen > LIVE_IDLE_MS;
+      if (over()) return send(res, 200, { stop: true });
+      if (req.method === "POST") {
+        T.out += (await readBody(req, 1024 * 1024)).toString("utf8");
+        if (T.out.length > 200000) { T.base += T.out.length - 100000; T.out = T.out.slice(-100000); }
+        liveWake(T, "viewers");
+        return send(res, 200, { ok: true });
+      }
+      if (!T.inputs.length) await liveWait(T, "device", 15000, res);
+      if (res.destroyed) return;
+      if (over()) return send(res, 200, { stop: true });
+      const inputs = T.inputs;
+      T.inputs = [];
+      return send(res, 200, { inputs });
+    }
     // Technical team tablet (device key + X-Device-Id of a tech device assigned to a technician). It acts as that technician:
     // only their tickets, only the "tech" status moves (never closing), notes, photos and their availability.
     if (p.startsWith("/api/tech/")) {
@@ -1843,6 +1867,27 @@ async function handler(req, res) {
         return send(res, 200, { ok: true });
       }
     }
+    // Remote shell, portal side (admins): GET ?from=<n> waits up to 10 s for output past n; POST { data } types into it.
+    m = /^\/api\/devices\/([\w-]+)\/term$/.exec(p);
+    if (m) {
+      const d = devices[m[1]], T = TERM[m[1]];
+      if (!u.admin || !d) return deny("Only admins can run commands on devices");
+      if (!T) return send(res, 404, { error: "no shell session, open Remote SSH again" });
+      T.seen = Date.now();
+      if (req.method === "GET") {
+        const from = Math.max(Number(url.searchParams.get("from")) || 0, T.base), end = () => T.base + T.out.length;
+        if (end() <= from) await liveWait(T, "viewers", 10000, res);
+        if (res.destroyed) return;
+        T.seen = Date.now();
+        return send(res, 200, { to: end(), data: T.out.slice(Math.max(0, from - T.base)) });
+      }
+      if (req.method === "POST") {
+        T.inputs.push(String(body.data ?? "").slice(0, 4000));
+        if (T.inputs.length > 50) T.inputs.shift();
+        liveWake(T, "device");
+        return send(res, 200, { ok: true });
+      }
+    }
     m = /^\/api\/devices\/([\w-]+)\/screenshot\.jpg$/.exec(p);
     if (req.method === "GET" && m) {
       if (!can(u, "devices") || !sees(u, devices[m[1]])) return deny();
@@ -1924,7 +1969,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
-        if (body.type === "run" && !u.admin) return deny("Only admins can run commands on devices");
+        if ((body.type === "run" || body.type === "term") && !u.admin) return deny("Only admins can run commands on devices");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
@@ -1951,7 +1996,7 @@ async function handler(req, res) {
       if (!can(u, "devices", "sites")) return deny();
       const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
-      if (body.action === "command" && body.type === "run" && !u.admin) return deny("Only admins can run commands on devices");
+      if (body.action === "command" && (body.type === "run" || body.type === "term") && !u.admin) return deny("Only admins can run commands on devices");
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");
