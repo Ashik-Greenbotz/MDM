@@ -71,6 +71,7 @@ public class DeviceService extends Service {
     static final String PREF_CODE = "code";
     static final String PREF_MAINTENANCE = "maintenance";
     static final String PREF_LOST = "lost"; // JSON {message, phone}; empty = not lost
+    static final String PREF_SIGNAGE = "signage"; // JSON {urls, seconds, idleMin, enabled}; empty = off
     static final String PREF_MAINT_IMG = "maint_img"; // version (portal time) of files/maintenance.jpg; 0 = built-in image
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
@@ -377,6 +378,8 @@ public class DeviceService extends Service {
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
             applyConfig(prefs, reply, configDirty, sentModel, sentUsage);
             if (reply.has("settings")) applySettings(reply.optJSONObject("settings"));
+            if (reply.has("signage")) getSharedPreferences("kiosk", MODE_PRIVATE).edit()
+                    .putString(KioskActivity.PREF_SIGNAGE_KEY, reply.isNull("signage") ? "" : reply.optJSONObject("signage").toString()).apply();
             flushTechOutbox();
             boolean maint = reply.optBoolean("maintenance");
             if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) {

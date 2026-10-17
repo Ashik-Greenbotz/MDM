@@ -106,6 +106,14 @@
             android:lockTaskMode="if_whitelisted"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
+        <!-- Idle digital-signage slideshow, pushed per site from the portal -->
+        <activity
+            android:name=".SignageActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:lockTaskMode="if_whitelisted"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+
         <activity
             android:name=".SetupActivity"
             android:exported="false"

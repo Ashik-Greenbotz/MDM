@@ -77,6 +77,7 @@ public class KioskActivity extends Activity {
     static final String EXTRA_REMOTE_UNLOCK = "remote_unlock";
     static final String EXTRA_WAKE = "wake"; // night mode ended: this screen turns the display back on
     static final String PREF_LOST_KEY = DeviceService.PREF_LOST;
+    static final String PREF_SIGNAGE_KEY = DeviceService.PREF_SIGNAGE;
     // "kiosk" locks the device to this app; "monitor" only reports to the dashboard (phones, Telpo terminals).
     static final String PREF_MODE = "mode";
     // App pinning: package that runs full screen; the kiosk screen only shows briefly to reopen it.
@@ -218,6 +219,28 @@ public class KioskActivity extends Activity {
             scheduleSingleApp();
         }
         PinOverlay.sync(this);
+        armSignage();
+    }
+
+    // Idle digital signage: after the configured idle time on the kiosk home (nothing pinned), show the slideshow.
+    private final Runnable showSignage = () -> {
+        if (!monitorOnly(this) && prefs().getString(PREF_SINGLE_APP, "").isEmpty()
+                && !MaintenanceActivity.on(this) && !LostActivity.on(this) && SignageActivity.enabled(this)) {
+            startActivity(new Intent(this, SignageActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        }
+    };
+
+    private void armSignage() {
+        handler.removeCallbacks(showSignage);
+        if (!monitorOnly(this) && prefs().getString(PREF_SINGLE_APP, "").isEmpty() && SignageActivity.enabled(this)) {
+            handler.postDelayed(showSignage, SignageActivity.idleMs(this));
+        }
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        armSignage(); // any touch resets the idle timer
     }
 
     private void askOverridePin() {
@@ -251,6 +274,7 @@ public class KioskActivity extends Activity {
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(openSingleApp);
+        handler.removeCallbacks(showSignage);
         prefs().unregisterOnSharedPreferenceChangeListener(codeListener);
         unregisterReceiver(batteryReceiver);
     }

@@ -137,7 +137,7 @@ const store = {
 const MAINT_DEFAULT = path.join(__dirname, "maintenance-default.jpg"), MAINT_DEFAULT_AT = 1;
 const maintVersion = () => portal.maintImage?.at || (fs.existsSync(MAINT_DEFAULT) ? MAINT_DEFAULT_AT : 0);
 const maintImg = async () => portal.maintImage ? store.read("uploads/maintenance.jpg") : fs.promises.readFile(MAINT_DEFAULT).catch(() => null);
-const appKey = id => `uploads/apps/${id}.apk`, fileKey = id => `uploads/files/${id}`, histKey = id => `history/${id}.json`;
+const appKey = id => `uploads/apps/${id}.apk`, notesKey = id => `uploads/apps/${id}-notes.pdf`, fileKey = id => `uploads/files/${id}`, histKey = id => `history/${id}.json`;
 if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs", "history"]) fs.mkdirSync(local(dir), { recursive: true });
 
 let devices = {};
@@ -459,6 +459,13 @@ function cleanSettings(b = {}) {
   const hm = v => /^\d\d:\d\d$/.test(v || "") ? v : "";
   return { brightness: pct(b.brightness), volume: pct(b.volume), screenOff: hm(b.screenOff), screenOn: hm(b.screenOn),
     updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "" };
+}
+// Digital signage for a device: its site's playlist, as image URLs, when enabled.
+function signageOf(d) {
+  const sg = portal.sites.find(x => x.name === d.group)?.signage;
+  if (!sg || !sg.enabled || !(sg.images || []).length) return null;
+  const urls = sg.images.map(id => portal.files.find(f => f.id === id) && `/download/file/${id}`).filter(Boolean);
+  return urls.length ? { urls, seconds: sg.seconds || 10, idleMin: sg.idleMin || 2, enabled: true } : null;
 }
 // What a tablet uses: its own values, else its site's.
 function settingsOf(d) {
@@ -1684,7 +1691,7 @@ async function handler(req, res) {
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,
-        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false, settings: settingsOf(d) });
+        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false, settings: settingsOf(d), signage: signageOf(d) });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -1937,7 +1944,7 @@ async function handler(req, res) {
     if (!u) return send(res, 401, { error: "login required" });
     const deny = (error = "Your account doesn't have access to this") => send(res, 403, { error });
     if (req.method === "POST" && u.readOnly) return deny("This account is view-only");
-    const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
+    const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/apps\/[a-f0-9]{16}\/notes\.pdf$/.test(p) || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
     const body = req.method === "POST" && !raw ? await readJson(req) : {};
     const ok = extra => { dirty = true; send(res, 200, { ok: true, ...extra }); };
     const mine = list => list.filter(d => sees(u, d));
@@ -2339,6 +2346,14 @@ async function handler(req, res) {
       log(d.id, "settings", `Tablet settings of ${label(d)} changed by ${by}`);
       return ok();
     }
+    if (req.method === "POST" && p === "/api/sites/signage") {
+      const site = portal.sites.find(x => x.name === body.name);
+      if (!site || !u.admin) return deny();
+      const images = (Array.isArray(body.images) ? body.images : []).map(String).filter(id => portal.files.some(f => f.id === id)).slice(0, 50);
+      site.signage = { images, seconds: Math.max(2, Math.min(600, Math.round(Number(body.seconds)) || 10)), idleMin: Math.max(1, Math.min(240, Math.round(Number(body.idleMin)) || 2)), enabled: !!body.enabled && images.length > 0 };
+      log(null, "site", `Signage of site "${site.name}" ${site.signage.enabled ? "on" : "off"} (${images.length} images) by ${by}`);
+      return ok();
+    }
     if (req.method === "POST" && p === "/api/sites/settings") {
       const site = portal.sites.find(x => x.name === body.name);
       if (!site || !u.admin) return deny();
@@ -2462,12 +2477,38 @@ async function handler(req, res) {
       log(null, "upload", `Release notes updated for "${a.label}" by ${u.username}`);
       return ok();
     }
+    // Release notes as a PDF (optional): GET opens it, POST (raw PDF body) attaches / replaces it, POST ?remove=1 removes it.
+    m = /^\/api\/apps\/([a-f0-9]{16})\/notes\.pdf$/.exec(p);
+    if (m) {
+      const a = portal.apps.find(x => x.id === m[1]);
+      if (req.method === "GET") {
+        const pdf = can(u, "apps", "devices", "tasks") && a?.notesPdf && await store.read(notesKey(a.id));
+        if (!pdf) return send(res, 404, { error: "no release notes PDF" });
+        res.setHeader("Content-Disposition", disposition(a.notesPdf.name).replace(/^attachment/, "inline"));
+        return send(res, 200, pdf, "application/pdf");
+      }
+      if (!can(u, "apps")) return deny();
+      if (!a) return send(res, 404, { error: "app not found" });
+      if (url.searchParams.get("remove")) {
+        store.remove(notesKey(a.id));
+        delete a.notesPdf;
+        log(null, "upload", `Release notes PDF removed from "${a.label}" by ${u.username}`);
+        return ok();
+      }
+      const pdf = await readBody(req, 20 * 1024 * 1024);
+      if (pdf.subarray(0, 5).toString() !== "%PDF-") return send(res, 400, { error: "send a PDF file" });
+      await store.write(notesKey(a.id), pdf);
+      a.notesPdf = { name: String(url.searchParams.get("name") || "release-notes.pdf").replace(/[^\w .()-]/g, "_").slice(0, 80), size: pdf.length, at: Date.now(), by: u.username };
+      log(null, "upload", `Release notes PDF "${a.notesPdf.name}" added to "${a.label}" by ${u.username}`);
+      return ok();
+    }
     m = /^\/api\/(apps|files)\/([a-f0-9]{16})\/(delete|kiosk)$/.exec(p);
     if (req.method === "POST" && m) {
       if (!can(u, "apps")) return deny();
       if (m[3] === "kiosk" && m[1] === "apps") { portal.kioskApp = m[2]; return ok(); }
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
+      if (m[1] === "apps") store.remove(notesKey(m[2])); // no-op when the app had no notes PDF
       return ok();
     }
     // Barrier MQTT broker (Configuration page, admins). The password is write-only: blank keeps the saved one.
