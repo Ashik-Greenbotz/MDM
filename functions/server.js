@@ -76,7 +76,7 @@ async function termSave(id, T) {
   dirty = true;
 }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "browse", "pull", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -498,6 +498,12 @@ function commandFrom(body) {
     return { type, message, phone, name: "on" };
   }
   if (type === "found") return { type, name: "off" };
+  if (type === "browse") return { type, path: String(body.path || "/sdcard").slice(0, 500), name: "list" };
+  if (type === "pull") {
+    const path = String(body.path || "");
+    if (!path) throw new Error("no file path");
+    return { type, path: path.slice(0, 500), name: path.split("/").pop() };
+  }
   if (type === "wipe") {
     if (String(body.confirm) !== "WIPE") throw new Error("type WIPE to confirm");
     return { type, name: "factory reset" };
@@ -1596,6 +1602,8 @@ async function handler(req, res) {
       const fresh = !devices[body.id];
       const d = devices[body.id] || (devices[body.id] = { id: body.id, firstSeen: Date.now() });
       const wasOnline = d.lastSeen && Date.now() - d.lastSeen < ONLINE_MS;
+      // when the app version changed and from what (Apps & files page: "installed / updated on" for each device)
+      if (body.appVersion && body.appVersion !== d.appVersion) { d.appFrom = d.appVersion || null; d.appSince = Date.now(); }
       for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
       // Windows remote access as the agent sees it (SSH server, RustDesk ID)
       if (body.remote && typeof body.remote === "object") {
@@ -1710,6 +1718,29 @@ async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
     // Result of a PC command (run, install, message …): kept on the device (shown on its page) and in its activity.
+    // File browser: the device posts a directory listing.
+    if (req.method === "POST" && p === "/api/browse-result") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const d = devices[String(req.headers["x-device-id"] || "")];
+      if (!d) return send(res, 404, { error: "unknown device" });
+      const body = await readJson(req);
+      d.browse = { path: String(body.path || "").slice(0, 500), entries: (Array.isArray(body.entries) ? body.entries : []).slice(0, 2000), error: body.error ? String(body.error).slice(0, 200) : null, at: Date.now() };
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
+    // File browser: the device uploads a pulled file (raw bytes, X-Path header).
+    if (req.method === "POST" && p === "/api/pull") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const d = devices[String(req.headers["x-device-id"] || "")];
+      if (!d) return send(res, 404, { error: "unknown device" });
+      const path = String(req.headers["x-path"] || "file");
+      const buf = await readBody(req, 200 * 1024 * 1024);
+      await store.write(`pull/${d.id}.bin`, buf);
+      d.pull = { path, name: path.split("/").pop(), size: buf.length, at: Date.now() };
+      log(d.id, "device", `Downloaded file ${path} (${Math.ceil(buf.length / 1024)} KB)`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
     if (req.method === "POST" && p === "/api/command-result") {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
       const d = devices[String(req.headers["x-device-id"] || "")];
@@ -2049,6 +2080,14 @@ async function handler(req, res) {
       }
     }
     // Remote shell, portal side (admins): GET ?from=<n> waits up to 10 s for output past n; POST { data } types into it.
+    // The last file pulled off a device (admins).
+    m = /^\/api\/devices\/([\w-]+)\/pull\/download$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]], buf = u.admin && d && d.pull && await store.read(`pull/${d.id}.bin`);
+      if (!buf) return send(res, 404, { error: "no file" });
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Disposition": disposition(d.pull.name) });
+      return res.end(buf);
+    }
     // Location trail for the map (last points).
     m = /^\/api\/devices\/([\w-]+)\/trail$/.exec(p);
     if (req.method === "GET" && m) {
@@ -2165,7 +2204,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
-        if ((body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found") && !u.admin) return deny("Only admins can do this");
+        if ((body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "browse" || body.type === "pull") && !u.admin) return deny("Only admins can do this");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });

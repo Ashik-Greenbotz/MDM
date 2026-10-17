@@ -925,6 +925,8 @@ public class DeviceService extends Service {
         if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("wifi")) addWifi(cmd.optString("ssid"), cmd.optString("password"));
+        if (type.equals("browse")) new Thread(() -> browse(cmd.optString("path", "/sdcard")), "browse").start();
+        if (type.equals("pull")) new Thread(() -> pullFile(cmd.optString("path")), "pull").start();
         if (type.equals("lost") || type.equals("found")) {
             String json = "";
             if (type.equals("lost")) {
@@ -1629,6 +1631,70 @@ public class DeviceService extends Service {
             return b == null ? -1 : b.getRxBytes() + b.getTxBytes();
         } catch (Exception e) {
             return -1;
+        }
+    }
+
+    // File browser (admins, via the portal). Listing uses `ls` (root on rooted tablets, so any path); a download
+    // streams the file straight to the server with no size cap.
+    private boolean rooted() {
+        return new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
+    }
+
+    private String[] sh(String cmd) {
+        return rooted() ? new String[]{"su", "0", "sh", "-c", cmd} : new String[]{"sh", "-c", cmd};
+    }
+
+    private void browse(String path) {
+        JSONArray entries = new JSONArray();
+        String error = null;
+        try {
+            // -1 one per line, -A almost-all, -p mark directories with a trailing slash.
+            Process p = new ProcessBuilder(sh("ls -1Ap \"" + path.replace("\"", "") + "\"")).redirectErrorStream(true).start();
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+            for (String line; (line = r.readLine()) != null && entries.length() < 2000; ) {
+                if (line.isEmpty()) continue;
+                boolean dir = line.endsWith("/");
+                String nm = dir ? line.substring(0, line.length() - 1) : line;
+                entries.put(new JSONObject().put("name", nm).put("dir", dir));
+            }
+            p.waitFor();
+        } catch (Exception e) {
+            error = e.getMessage();
+        }
+        try {
+            techCall(this, "POST", "/api/browse-result", new JSONObject().put("path", path).put("entries", entries).put("error", error));
+        } catch (Exception e) {
+            Log.w(TAG, "browse post failed", e);
+        }
+    }
+
+    private void pullFile(String path) {
+        if (path == null || path.isEmpty()) return;
+        try {
+            Process proc = new ProcessBuilder(sh("cat \"" + path.replace("\"", "") + "\"")).start();
+            HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/pull").openConnection();
+            try {
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(120000);
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setChunkedStreamingMode(0);
+                c.setRequestProperty("Content-Type", "application/octet-stream");
+                c.setRequestProperty("X-Device-Key", key(this));
+                c.setRequestProperty("X-Device-Id", deviceId());
+                c.setRequestProperty("X-Path", path);
+                try (InputStream in = proc.getInputStream(); OutputStream o = c.getOutputStream()) {
+                    byte[] b = new byte[64 * 1024];
+                    for (int n; (n = in.read(b)) > 0; ) o.write(b, 0, n);
+                }
+                if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+                event(this, "File sent to the portal: " + path);
+            } finally {
+                c.disconnect();
+                proc.destroy();
+            }
+        } catch (Exception e) {
+            event(this, "Download failed for " + path + ": " + e.getMessage());
         }
     }
 
