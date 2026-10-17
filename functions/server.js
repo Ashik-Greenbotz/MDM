@@ -181,7 +181,7 @@ const same = (a, b) => {
 // ---- portal accounts ----
 // The ADMIN_USER / ADMIN_PASSWORD account is always a full admin (can't be locked out). More accounts live in portal.users:
 // { username, name, hash, admin, sites: ["*"] | [site names], modules: [MODULES...], readOnly, disabled, createdAt }
-const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs", "barrier"];
+const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs", "barrier", "reports"];
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
@@ -189,7 +189,19 @@ const allSites = u => u.admin || (u.sites || []).includes("*");
 const sees = (u, d) => !!d && (allSites(u) || (u.sites || []).includes(d.group || "")); // "No site" devices: all-sites accounts only
 const siteOk = (u, g) => allSites(u) || (!!g && (u.sites || []).includes(g));
 const can = (u, ...mods) => u.admin || mods.some(m => (u.modules || []).includes(m));
-const publicUser = ({ hash, ...u }) => u;
+const publicUser = ({ hash, totp, totpNew, ...u }) => ({ ...u, twoFactor: !!totp });
+// Two-factor sign-in (TOTP, RFC 6238): 6-digit codes from an authenticator app, a new one every 30 s. The secret is base32.
+// One step either side is accepted for clock drift. ponytail: a code can be reused within its 90 s window; remember the last step per account if that matters.
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const b32 = buf => [...buf].map(b => b.toString(2).padStart(8, "0")).join("").match(/.{1,5}/g).map(x => B32[parseInt(x.padEnd(5, "0"), 2)]).join("");
+const unb32 = s => Buffer.from(s.split("").map(c => B32.indexOf(c).toString(2).padStart(5, "0")).join("").match(/.{8}/g).map(x => parseInt(x, 2)));
+function totp(secret, step) {
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(step));
+  const h = crypto.createHmac("sha1", unb32(secret)).update(msg).digest(), o = h[19] & 15;
+  return String((h.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, "0");
+}
+const totpOk = (secret, code, t = Date.now()) => [-1, 0, 1].some(k => same(totp(secret, Math.floor(t / 30000) + k), String(code || "").replace(/\s/g, "")));
 
 // Login sessions: random token in an HttpOnly cookie -> { exp, user } (user null = the ADMIN_USER account). Lost on restart.
 // The cookie must be called __session: Firebase Hosting drops every other cookie.
@@ -359,6 +371,34 @@ const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "char
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
   "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
+// Health score 0-100 from the hourly averages (historyH rows: [time, ...HEALTH]) with warnings that look ahead:
+// storage filling up, running hotter than last week, battery running flat, RAM / CPU busy all day. Worked out once an hour.
+// ponytail: no battery-ageing estimate; the app would have to report charge capacity for that.
+function healthScore(d) {
+  const H = d.historyH || [], col = k => 1 + HEALTH.indexOf(k), last = H.slice(-24), week = H.slice(-7 * 24, -24);
+  const vals = (rows, k) => rows.map(r => r[col(k)]).filter(x => x != null);
+  const avg = (rows, k) => { const v = vals(rows, k); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const disk = d.disk ?? avg(last, "disk"), t24 = avg(last, "temp"), tWeek = avg(week, "temp");
+  if (disk == null && t24 == null && !last.length) return null;
+  let score = 100;
+  const warn = [];
+  if (disk != null) {
+    score -= Math.max(0, disk - 70);
+    const old = H.slice(-7 * 24).find(r => r[col("disk")] != null), days = old ? (Date.now() - old[0]) / 864e5 : 0;
+    const rate = days >= 1 ? (disk - old[col("disk")]) / days : 0; // % per day
+    if (rate > 0.05 && (100 - disk) / rate < 30) { warn.push(`Storage full in about ${Math.max(1, Math.round((100 - disk) / rate))} days`); score -= 15; }
+  }
+  if (t24 != null) {
+    score -= Math.max(0, t24 - 50) * 2;
+    if (tWeek != null && t24 - tWeek >= 5) { warn.push(`Running ${Math.round(t24 - tWeek)}°C hotter than last week`); score -= 10; }
+    else if (t24 >= 60) warn.push(`Hot: ${Math.round(t24)}°C on average today`);
+  }
+  const bMin = Math.min(...vals(last, "battery")), r24 = avg(last, "ram"), c24 = avg(last, "cpu");
+  if (bMin < LOW_BATTERY) { warn.push(`Battery dropped to ${Math.round(bMin)}% in the last day`); score -= 15; }
+  if (r24 >= 85) { warn.push(`RAM ${Math.round(r24)}% used on average today`); score -= 10; }
+  if (c24 >= 80) { warn.push(`CPU ${Math.round(c24)}% busy on average today`); score -= 10; }
+  return { score: Math.max(0, Math.min(100, Math.round(score))), warn, at: Date.now() };
+}
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
 function queue(list, cmd, by) {
@@ -536,6 +576,52 @@ function waRemind() {
     waQueue("reminder", d, a, a.waReminders);
   }
 }
+
+// ---- monthly report per site: uptime (from offline alerts), alerts by kind, tickets opened / resolved / on time ----
+// Month boundaries are in TIME_ZONE. Downtime counts from when the device stopped checking in (the alert comes OFFLINE_ALERT_MS later).
+// ponytail: only the last 1000 resolved alerts are kept (checkAlerts), so a big fleet's older months lose downtime; keep more if needed.
+function monthStart(y, m) { // m is 0-based and may be 12
+  const t = Date.UTC(y, m, 1), at = z => new Date(new Date(t).toLocaleString("en-US", { timeZone: z }));
+  return t - (at(TIME_ZONE) - at("UTC"));
+}
+function report(u, month) {
+  const [y, mo] = month.split("-").map(Number), from = monthStart(y, mo - 1), to = Math.min(monthStart(y, mo), Date.now());
+  const rows = new Map(), row = site => rows.get(site) || rows.set(site, { site, devices: 0, span: 0, down: 0, alerts: {}, opened: 0, resolved: 0, onTime: 0, open: 0 }).get(site);
+  const offline = new Map();
+  for (const a of portal.alerts) {
+    const d = devices[a.deviceId];
+    if (!d || !sees(u, d)) continue;
+    if (a.kind === "offline") offline.set(d.id, [...(offline.get(d.id) || []), a]);
+    if (a.at >= from && a.at < to) { const r = row(d.group || ""); r.alerts[a.kind] = (r.alerts[a.kind] || 0) + 1; }
+  }
+  for (const d of Object.values(devices).filter(d => sees(u, d))) {
+    const r = row(d.group || ""), start = Math.max(from, d.firstSeen || from);
+    r.devices++;
+    if (start >= to) continue;
+    r.span += to - start;
+    for (const a of offline.get(d.id) || []) r.down += Math.max(0, Math.min(to, a.resolvedAt || Date.now()) - Math.max(start, a.at - OFFLINE_ALERT_MS));
+  }
+  for (const t of portal.tickets) {
+    if (!(allSites(u) || siteOk(u, t.site))) continue;
+    const r = row(t.site || "");
+    if (t.createdAt >= from && t.createdAt < to) r.opened++;
+    if (t.resolvedAt >= from && t.resolvedAt < to) { r.resolved++; if (t.resolvedAt <= t.due) r.onTime++; }
+    if (t.createdAt < to && !(t.resolvedAt < to) && !(t.closedAt < to)) r.open++;
+  }
+  const done = r => ({ ...r, uptime: r.span ? Math.round(1000 * (1 - Math.min(r.down, r.span) / r.span)) / 10 : null, downH: Math.round(r.down / 36e5 * 10) / 10,
+    alertsTotal: Object.values(r.alerts).reduce((a, b) => a + b, 0) });
+  const sites = [...rows.values()].sort((a, b) => (a.site ? b.site ? a.site.localeCompare(b.site) : -1 : 1));
+  const total = { site: "All sites", devices: 0, span: 0, down: 0, alerts: {}, opened: 0, resolved: 0, onTime: 0, open: 0 };
+  for (const r of sites) {
+    for (const k of ["devices", "span", "down", "opened", "resolved", "onTime", "open"]) total[k] += r[k];
+    for (const [k, n] of Object.entries(r.alerts)) total.alerts[k] = (total.alerts[k] || 0) + n;
+  }
+  return { month, from, to, sites: sites.map(done), total: done(total) };
+}
+const reportText = r => `📊 MONTHLY REPORT ${r.month}\n\nUptime: ${r.total.uptime ?? "-"}% · Devices: ${r.total.devices} · Alerts: ${r.total.alertsTotal}\n\n` +
+  `Tickets: ${r.total.opened} opened, ${r.total.resolved} resolved (${r.total.onTime} on time), ${r.total.open} open at month end\n\n` +
+  r.sites.slice(0, 30).map(s => `• ${s.site || "No site"}: ${s.uptime ?? "-"}% up, ${s.alertsTotal} alerts, ${s.opened} tickets`).join("\n") +
+  (r.sites.length > 30 ? `\n…and ${r.sites.length - 30} more sites. Open Reports in the portal for the full list.` : "");
 
 // ---- alerts: opened when a condition starts, resolved when it ends (crashes stay until acknowledged) ----
 // idx: optional map of open alerts by "deviceId|kind" (checkAlerts passes one so 1000 devices don't each scan every alert)
@@ -1403,6 +1489,7 @@ const ready = (async () => {
     if (d.history || d.historyH) return histDirty.add(d.id); // older devices.json had it inline: moved out on the next save
     try { Object.assign(d, JSON.parse(await store.read(histKey(d.id)))); } catch {}
   }));
+  for (const d of Object.values(devices)) d.score = healthScore(d);
   // The WireGuard VPN was removed (remote control replaces it): forget its keys and peers.
   if (portal.vpnHub || portal.vpnAdmins) { delete portal.vpnHub; delete portal.vpnAdmins; dirty = true; }
   for (const d of Object.values(devices)) if ("vpn" in d || "vpnKey" in d || "vpnUp" in d) { delete d.vpn; delete d.vpnKey; delete d.vpnUp; dirty = true; }
@@ -1489,6 +1576,7 @@ async function handler(req, res) {
             return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null;
           })]);
           if (d.historyH.length > HOURLY_KEEP) d.historyH.shift();
+          d.score = healthScore(d);
         }
       }
       delete d.command; // old single-command format
@@ -1706,6 +1794,10 @@ async function handler(req, res) {
         loginFailed(ip);
         return send(res, 401, { error: acct?.disabled ? "This account is disabled" : "Wrong username or password" });
       }
+      if (acct?.totp && user && !totpOk(acct.totp, body.code)) { // right password, two-factor on: the code is the second step
+        if (body.code) loginFailed(ip);
+        return send(res, 401, { need2fa: true, error: body.code ? "Wrong code, try the newest one" : "Enter the 6-digit code from your authenticator app" });
+      }
       failures.delete(ip);
       const sid = crypto.randomBytes(32).toString("hex");
       sessions.set(sid, { exp: Date.now() + SESSION_MS, user });
@@ -1799,7 +1891,20 @@ async function handler(req, res) {
       const dev = url.searchParams.get("device");
       // events without a device (sites, uploads...) and those of removed devices: all-sites accounts only
       const list = portal.events.filter(e => (!dev || e.deviceId === dev) && (allSites(u) || sees(u, devices[e.deviceId])));
-      return send(res, 200, { events: list.slice(-1000).reverse() });
+      return send(res, 200, { events: list.slice(url.searchParams.get("all") ? 0 : -1000).reverse() });
+    }
+    // ---- Reports: monthly numbers per site; admins can send the summary to the WhatsApp alert numbers ----
+    if (p === "/api/report" || p === "/api/report/whatsapp") {
+      if (!can(u, "reports")) return deny();
+      const month = String(url.searchParams.get("month") || body.month || "");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return send(res, 400, { error: "Month must look like 2026-10" });
+      const r = report(u, month);
+      if (req.method === "GET") return send(res, 200, r);
+      if (!u.admin) return deny("Only admins send the report on WhatsApp");
+      if (!portal.whatsapp.length) return send(res, 400, { error: "No WhatsApp numbers yet (Configuration page)" });
+      waPush(`report:${month}:${Date.now()}`, null, "report", portal.whatsapp, reportText(r));
+      log(null, "whatsapp", `Monthly report ${month} queued for WhatsApp by ${by}`);
+      return ok();
     }
     // ---- Configuration page (admins only) ----
     if (p === "/api/config/maintenance-image") {
@@ -2466,6 +2571,32 @@ async function handler(req, res) {
       if (portal.users.length === before) return send(res, 404, { error: "no such account" });
       log(null, "user", `Account "${body.username}" deleted by ${by}`);
       return ok();
+    }
+    // Two-factor sign-in: start (new secret for the QR code; the same one again until confirmed), confirm with a code, off.
+    if (req.method === "POST" && p === "/api/users/2fa") {
+      if (!u.admin) return deny();
+      const acct = portal.users.find(x => x.username === body.username);
+      if (!acct) return send(res, 404, { error: "no such account" });
+      if (body.action === "start") {
+        acct.totpNew ||= b32(crypto.randomBytes(20));
+        dirty = true;
+        const issuer = encodeURIComponent("Interlock MDM");
+        return send(res, 200, { secret: acct.totpNew, uri: `otpauth://totp/${issuer}:${encodeURIComponent(acct.username)}?secret=${acct.totpNew}&issuer=${issuer}` });
+      }
+      if (body.action === "confirm") {
+        if (!acct.totpNew || !totpOk(acct.totpNew, body.code)) return send(res, 400, { error: "That code is wrong. Check the phone's clock and type the newest code." });
+        acct.totp = acct.totpNew;
+        delete acct.totpNew;
+        log(null, "user", `Two-factor sign-in turned on for "${acct.username}" by ${by}`);
+        return ok();
+      }
+      if (body.action === "off") {
+        delete acct.totp;
+        delete acct.totpNew;
+        log(null, "user", `Two-factor sign-in turned off for "${acct.username}" by ${by}`);
+        return ok();
+      }
+      return send(res, 400, { error: "unknown action" });
     }
     send(res, 404, { error: "not found" });
   } catch (e) {

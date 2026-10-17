@@ -531,11 +531,12 @@ Object.assign(ICONS, { settings: "<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 
   mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
   bug: "<path d=\"m8 2 1.88 1.88\"/><path d=\"M14.12 3.88 16 2\"/><path d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/><path d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/><path d=\"M12 20v-9\"/><path d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/><path d=\"M6 13H2\"/><path d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/><path d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/><path d=\"M22 13h-4\"/><path d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>",
   send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
+ICONS.chart = "<path d=\"M3 3v16a2 2 0 0 0 2 2h16\"/><path d=\"M18 17V9\"/><path d=\"M13 17V5\"/><path d=\"M8 17v-3\"/>";
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
   ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["bugs", "bug", "Bug Finder"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
-  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
+  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["reports", "chart", "Reports"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
@@ -874,6 +875,7 @@ const STATUS = {
   unlocked: ["Unlocked kiosks", d => d.type === "android-kiosk" && d.kioskLocked === false],
   low: ["Low battery", d => d.battery != null && d.battery < LOW_BATTERY],
   maintenance: ["In maintenance", d => d.maintenance],
+  health: ["Health warnings", d => d.score?.warn?.length > 0],
 };
 function shownDevices() {
   const q = filters.q.toLowerCase();
@@ -897,7 +899,7 @@ VIEWS.devices = (arg, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>Health</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
       </div>`;
     $("q").oninput = e => { filters.q = e.target.value; VIEWS.devices(); };
@@ -911,7 +913,8 @@ VIEWS.devices = (arg, first) => {
   const onl = S.devices.filter(isOnline).length;
   $("devStats").innerHTML = `<a class="stat" data-st=""><div class="n">${S.devices.length}</div><div class="l">Total devices</div></a>
     <a class="stat ok" data-st="online"><div class="n">${onl}</div><div class="l">Online</div></a>
-    <a class="stat bad" data-st="offline"><div class="n">${S.devices.length - onl}</div><div class="l">Offline</div></a>`;
+    <a class="stat bad" data-st="offline"><div class="n">${S.devices.length - onl}</div><div class="l">Offline</div></a>
+    <a class="stat warn" data-st="health"><div class="n">${S.devices.filter(STATUS.health[1]).length}</div><div class="l">Health warnings</div><div class="s">Storage, temperature, battery trend</div></a>`;
   // the live refresh (every 5 s) leaves a dropdown alone while it is open
   const fill = (id, html) => { if (document.activeElement !== $(id)) $(id).innerHTML = html; };
   fill("fType", options([["", "All types"], ...Object.entries(TYPES)], filters.type));
@@ -922,7 +925,7 @@ VIEWS.devices = (arg, first) => {
     (filters.status || filters.type ? "" : S.pending.filter(x => !filters.group || (filters.group === "__none" ? !x.group : x.group === filters.group))
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
-      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
+      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="4"></td>
       <td><button class="btn danger" data-unpend="${esc(x.code)}" title="Remove this waiting Device ID">🗑 Remove</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
@@ -936,7 +939,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td title="${esc(Object.entries(d.info || {}).map(([k, v]) => k + ": " + v).join("\n"))}"><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div>
         ${d.os || d.uptime != null ? `<div class="meta">${esc([d.os, d.uptime != null && "up " + fmtUptime(d.uptime)].filter(Boolean).join(" · "))}</div>` : ""}</td>
       ${showSite ? `<td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>` : ""}
-      <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
+      <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td><td>${scoreCell(d)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("live") ? `<button class="btn ghost" data-cmd="live" title="Remote control" aria-label="Remote control">🖥</button>` : ""}
@@ -944,6 +947,13 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
 // Public (internet) address the portal saw the device's check-in from; null on the same LAN as the portal.
 const pubIp = d => { const ip = String(d.ip || "").replace(/^::ffff:/, ""); return !ip || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|fe80:|f[cd])/i.test(ip) ? null : ip; };
 const q2 = () => filters.q.toLowerCase();
+// Health score from the server (worked out hourly from the health history): 0-100 plus look-ahead warnings.
+const scoreCell = d => {
+  const s = d.score;
+  if (s?.score == null) return `<span class="meta">–</span>`;
+  return `<span class="pill ${s.score < 50 ? "bad" : s.score < 80 || s.warn.length ? "warn" : "ok"}" title="${esc(s.warn.join("\n") || "No warnings")}">${s.score}${s.warn.length ? " ⚠" : ""}</span>`
+    + (s.warn.length ? `<div class="meta" style="max-width:180px;white-space:normal">${esc(s.warn[0])}</div>` : "");
+};
 // The address a device on the LAN uses for this portal (not "localhost" when the admin is on the server PC itself).
 const portalUrl = () => /^(localhost|127\.)/.test(location.hostname) && S.lan ? `http://${S.lan}${location.port ? ":" + location.port : ""}` : location.origin;
 // Install steps per device type. Tablets get a Device ID; PCs and IoT register themselves on their first check-in.
@@ -2248,15 +2258,81 @@ VIEWS.enroll = (arg, first) => {
 const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸", announcement: "📢", config: "⚙️", relay: "⚡", ticket: "🛠", team: "👷", assistant: "🤖", whatsapp: "💬", maintenance: "🛠", user: "👤", ssh: "🔐" };
 const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc(e.text)}${e.deviceId && dev(e.deviceId) && !location.hash.startsWith("#/device/")
   ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
+// Who did it: the log texts say "(by <name>)" at the end (tickets) or "by <username>" (commands, settings...); everything else is the system.
+const evBy = e => (/\(by (.+)\)$/.exec(e.text) || /\bby ([\w.@-]+)(?=$|\)|\s\(|,)/.exec(e.text) || [])[1] || "system";
+const evShown = list => {
+  const q = $("evQ").value.toLowerCase(), k = $("evKind").value, who = $("evUser").value;
+  return list.filter(e => (!k || e.kind === k) && (!who || evBy(e) === who) && (!q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)));
+};
+// Rows to CSV text; a cell starting with = + - @ gets a ' so a spreadsheet doesn't run it as a formula.
+const csvOf = rows => rows.map(r => r.map(v => {
+  v = String(v ?? "");
+  if (/^[=+\-@]/.test(v)) v = "'" + v;
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}).join(",")).join("\r\n");
+const saveText = (name, text, type = "text/csv") => {
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["\ufeff" + text], { type })), download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 VIEWS.activity = async (arg, first) => {
-  if (first) $("view").innerHTML = `<h2>Activity log</h2><p class="lead">Everything that happened: devices coming online and offline, commands sent and delivered, alerts, uploads, tasks.</p>
-    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Filter…"></div><div class="table-wrap"><table><tbody id="evRows"></tbody></table></div></div>`;
-  if (first) $("evQ").oninput = () => VIEWS.activity();
+  if (first) {
+    $("view").innerHTML = `<h2>Activity log</h2><p class="lead">Everything that happened: devices coming online and offline, commands sent and delivered, alerts, uploads, tasks.</p>
+    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Filter…"><select id="evKind"></select><select id="evUser"></select>
+      <button class="btn" id="evCsv">⬇ CSV</button></div><div class="table-wrap"><table><tbody id="evRows"></tbody></table></div></div>`;
+    $("evQ").oninput = $("evKind").onchange = $("evUser").onchange = () => VIEWS.activity();
+    // the export takes the whole log (up to 5000 entries), not just the 1000 on screen
+    $("evCsv").onclick = () => act(async () => {
+      const list = evShown((await api("/api/events?all=1")).events);
+      saveText(`activity-${new Date().toISOString().slice(0, 10)}.csv`, csvOf([["Time", "Type", "User", "Device", "Device ID", "Site", "What happened"],
+        ...list.map(e => { const d = dev(e.deviceId); return [new Date(e.at).toLocaleString(), e.kind, evBy(e), d ? label(d) : "", d?.code || "", d?.group || "", e.text]; })]));
+      return list.length;
+    }, n => `${n} entries exported`);
+  }
   const r = await api("/api/events").catch(() => ({ events: [] }));
   if (!$("evRows")) return;
-  const q = $("evQ").value.toLowerCase();
-  $("evRows").innerHTML = r.events.filter(e => !q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)).slice(0, 500).map(eventRow).join("")
-    || `<tr><td class="empty">Nothing yet</td></tr>`;
+  const fill = (id, all, list) => { if (document.activeElement !== $(id)) { const v = $(id).value; $(id).innerHTML = options([["", all], ...list.map(x => [x, x])], v); } };
+  fill("evKind", "All types", [...new Set(r.events.map(e => e.kind))].sort());
+  fill("evUser", "All users", [...new Set(r.events.map(evBy))].sort());
+  $("evRows").innerHTML = evShown(r.events).slice(0, 500).map(eventRow).join("") || `<tr><td class="empty">Nothing matches</td></tr>`;
+};
+
+// Reports: monthly uptime, alerts and tickets per site. CSV, a printable page and (admins) a WhatsApp summary.
+const REP_COLS = [["Site", s => s.site || "No site"], ["Devices", s => s.devices], ["Uptime %", s => s.uptime ?? "–"], ["Downtime (h)", s => s.downH],
+  ["Offline alerts", s => s.alerts.offline || 0], ["Other alerts", s => s.alertsTotal - (s.alerts.offline || 0)],
+  ["Tickets opened", s => s.opened], ["Resolved", s => s.resolved], ["Resolved on time", s => s.onTime], ["Open at month end", s => s.open]];
+const repRows = r => [...r.sites, r.total];
+const repTable = r => `<table><thead><tr>${REP_COLS.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${repRows(r).map(s =>
+  `<tr${s === r.total ? ` style="font-weight:700"` : ""}>${REP_COLS.map(c => `<td>${esc(c[1](s))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+const repSpan = r => `${new Date(r.from).toLocaleDateString()} – ${new Date(r.to - 1).toLocaleDateString()}`;
+let repMonth = new Date().toISOString().slice(0, 7);
+VIEWS.reports = async (arg, first) => {
+  if (!first) return; // monthly numbers: no redraw every 5 s
+  $("view").innerHTML = `<h2>Reports</h2><p class="lead">Monthly uptime, alerts and tickets per site. Uptime counts the time devices were not checking in.</p>
+    <div class="card"><div class="toolbar"><input type="month" id="repM" value="${repMonth}" max="${new Date().toISOString().slice(0, 7)}"><span class="meta" id="repSpan"></span><span class="grow" style="flex:1"></span>
+      <button class="btn" id="repCsv">⬇ CSV</button><button class="btn" id="repPrint">🖨 Print</button>${me().admin ? `<button class="btn" id="repWa">💬 Send on WhatsApp</button>` : ""}</div>
+      <div class="table-wrap" id="repBody"><p class="empty">Loading…</p></div></div>`;
+  let r = null;
+  const load = async () => {
+    r = await api("/api/report?month=" + repMonth).catch(e => (toast("Failed: " + e.message, true), null));
+    if (r && $("repBody")) { $("repBody").innerHTML = repTable(r); $("repSpan").textContent = repSpan(r); }
+  };
+  $("repM").onchange = e => { if (e.target.value) { repMonth = e.target.value; load(); } };
+  $("repCsv").onclick = () => r && saveText(`report-${r.month}.csv`, csvOf([REP_COLS.map(c => c[0]), ...repRows(r).map(s => REP_COLS.map(c => c[1](s)))]));
+  $("repPrint").onclick = () => {
+    if (!r) return;
+    const w = open("", "_blank");
+    if (!w) return toast("Allow pop-ups for this site to print", true);
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Report ${esc(r.month)}</title><style>body{font:13px system-ui,sans-serif;margin:24px;color:#111}
+      table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:6px 8px;text-align:left}th{background:#eee}</style>
+      <h1>Monthly report · ${esc(r.month)}</h1><p>${esc(repSpan(r))} · printed ${esc(new Date().toLocaleString())}</p>${repTable(r)}`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+  if ($("repWa")) $("repWa").onclick = () => confirm(`Send the ${repMonth} summary to the WhatsApp alert numbers?`)
+    && act(() => api("/api/report/whatsapp", { month: repMonth }), "Report queued for WhatsApp");
+  load();
 };
 
 // Bug Finder: crashes and freezes of every app on every device, newest first.
@@ -2347,7 +2423,7 @@ VIEWS.bug = async (id, first) => {
 // Honest status of every feature on the roadmap.
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)", reports: "Reports" };
 // ---------------- Barrier control (Remote Command Centre): two live cameras and the open buttons of one site ----------------
 // The server holds the MQTT broker login and the camera addresses; the page only sees names, states and results.
 // Boom barrier: post, striped arm (.arm lifts on hover / while sending), base
@@ -2524,6 +2600,11 @@ VIEWS.config = (arg, first) => {
       <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
       <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
         <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
+    <div class="card"><h3>🎫 Offline auto-ticket</h3><div class="pad">
+      <div class="row"><label class="chip"><input type="checkbox" id="cfgAuto" ${S.ticketSettings?.autoTickets ? "checked" : ""}>Create a Technical Team ticket when an onsite device stays offline</label>
+        <span class="meta">for more than</span><input type="number" id="cfgAfter" min="0" max="1440" value="${esc(S.ticketSettings?.ticketAfterMin ?? 10)}" style="width:80px">
+        <span class="meta">minutes after its offline alert</span><button class="btn primary" id="cfgAutoSave">Save</button></div>
+      <p class="meta">One ticket per outage; if the device goes offline again while its ticket is open, the ticket gets a note instead. Priority and auto-assign are in Technical Team › Settings.</p></div></div>
     <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
       <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
         <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
@@ -2539,6 +2620,7 @@ VIEWS.config = (arg, first) => {
   $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
   $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
   $("cfgWaEdit").onclick = () => whatsappForm();
+  $("cfgAutoSave").onclick = () => act(() => api("/api/team-settings", { ...S.ticketSettings, autoTickets: $("cfgAuto").checked, ticketAfterMin: $("cfgAfter").value }), "Offline auto-ticket saved");
   $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
   // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
   $("cfgImg").onchange = () => {
@@ -2596,6 +2678,7 @@ VIEWS.users = (arg, first) => {
         <td class="wrap" style="max-width:220px">${esc(siteText(x))}</td><td class="wrap meta" style="max-width:320px">${esc(modText(x))}</td>
         <td class="meta">${x.lastLogin ? ago(x.lastLogin) : "never"}</td>
         <td><div class="row"><button class="btn" data-u="edit" data-name="${esc(x.username)}">Edit</button>
+          <button class="btn ${x.twoFactor ? "" : "ghost"}" data-u="2fa" data-name="${esc(x.username)}" title="Two-factor sign-in with an authenticator app">${x.twoFactor ? "🔐 2FA on" : "2FA off"}</button>
           <button class="btn ghost danger" data-u="del" data-name="${esc(x.username)}">Delete</button></div></td></tr>`).join("")}
       </tbody></table></div></div>`;
   $("view").onclick = e => {
@@ -2604,10 +2687,32 @@ VIEWS.users = (arg, first) => {
     const x = users.find(u => u.username === b.dataset.name);
     if (b.dataset.u === "add") userForm();
     if (b.dataset.u === "edit" && x) userForm(x);
+    if (b.dataset.u === "2fa" && x) twoFactorForm(x);
     if (b.dataset.u === "del" && x && confirm(`Delete the account "${x.username}"? They are signed out right away.`))
       act(() => api("/api/users/delete", { username: x.username }), "Account deleted");
   };
 };
+
+// Two-factor sign-in for one account: scan the QR code with an authenticator app (Google / Microsoft Authenticator, Authy),
+// then type its code to switch it on. Turning it off is for a lost phone.
+async function twoFactorForm(x) {
+  if (x.twoFactor) {
+    if (confirm(`Turn off two-factor sign-in for "${x.username}"? They then sign in with the password only.`))
+      act(() => api("/api/users/2fa", { username: x.username, action: "off" }), "Two-factor sign-in turned off");
+    return;
+  }
+  let r;
+  try { r = await api("/api/users/2fa", { username: x.username, action: "start" }); } catch (e) { return toast("Failed: " + e.message, true); }
+  const qr = qrcode(0, "M");
+  qr.addData(r.uri);
+  qr.make();
+  dialog(`<h2>Two-factor sign-in for ${esc(x.username)}</h2>
+    <p class="meta">On ${esc(x.name || x.username)}'s phone, open an authenticator app (Google Authenticator, Microsoft Authenticator or Authy) and scan this code.</p>
+    <div class="qr" style="max-width:220px;margin:8px auto">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
+    <p class="meta">Can't scan? Type this key in the app: <code style="user-select:all">${esc(r.secret.match(/.{1,4}/g).join(" "))}</code></p>
+    <label>Then type the 6-digit code the app shows</label><input id="tfCode" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" style="width:140px">`,
+    "Turn on", () => act(() => api("/api/users/2fa", { username: x.username, action: "confirm", code: $("tfCode").value }), "Two-factor sign-in is on. From now on they sign in with the password plus a code."));
+}
 
 function userForm(x) {
   const all = !x || (x.sites || []).includes("*"), mods = x ? x.modules || [] : ["overview", "devices", "alerts"];
