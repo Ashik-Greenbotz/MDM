@@ -128,7 +128,24 @@ The portal menu **Technical Team** has these tabs: Dashboard, Team members, Team
 - **Search**: by ticket number, title, site, device or technician, with status, site, technician and date filters, 25 per page.
 - **Check**: `node functions/test-tickets.js`. It covers the automatic ticket, no duplicates, suggestions, the tablet can't close, retries, file types, and the relay refused on a Samsung.
 
-## Max, the AI assistant
+## Aux, the AI assistant (called Max until 17 Oct 2026)
+Renamed **Aux** on 17 Oct (in the code the ids still say `max`: `maxBtn`, `localMax`, `maxMovie`). Below, "Max" = Aux.
+
+**Standalone by choice: no API key, no tokens.** The built-in engine (`localMax` in `functions/server.js`) is the product. New since 17 Oct:
+- **Every question is recorded** on the server in `server/max-questions.jsonl` (time, who, question, understood or not).
+- **Learns every night at 23:30:** when someone gets an answer by rewording a question within 2 minutes, the first wording is learned. Learned wordings also match with up to 2 extra words ("is anything broken right now").
+- **Configuration → 🧠 Aux training:** this week's questions he didn't understand, with **Teach** (pick the question he should answer instead) / **Ignore**, and the list of learned wordings with ✕ to forget. He refuses to learn an answer he doesn't understand himself.
+- **More questions:** "open settings / users / bug finder / devices…" (any page), "open Adam Park" / "is Adam Park ok" (a site), "devices at Adam Park", "list all sites", "battery low devices", "storage almost full", "offline for more than half a day / 2 hours", "who made you".
+- **Voice:**
+  - The mic is off while he speaks and opens again 0.35 s after he finishes, and an echo of his own words is ignored. Your question is sent as soon as the sentence is recognised.
+  - Edge uses the natural "Andrew" voice. Chrome has no natural voices.
+  - A reply with a list is spoken as its heading + "Please check the list".
+  - An optional `OPENAI_API_KEY` gives OpenAI's voice through `/api/tts` (not used: it costs per use).
+- **🎬 Watch the 2-min tour** (Overview; shown when Configuration › Portal tour is ticked): a 2-minute marketing video.
+  - Designed scenes over a particle background, with Aux presenting and narrating, plus subtitles.
+  - A music track and sound effects made in the browser (no audio files).
+  - Skip with ✕ or Esc. He wakes up for it even when "sleeps" is on.
+
 Max is the 3D robot from `dashboard/max.glb` (`IPR_Mascot_v6`, 48 animations), drawn with three.js. He lives on the whole portal, not only in the chat:
 - He docks bottom right, hovers and fidgets, and gets bored after a few quiet minutes.
 - **Drag** him anywhere. **Click** him to open the chat. **Double-click** sends him home.
@@ -166,6 +183,35 @@ Ask in words (or tap the microphone: the browser's speech recognition, Chrome / 
 - **Device health score**: Devices has a **Health** column (0–100, worked out every hour from the health history) with warnings such as "Storage full in about 26 days", "Running 8 °C hotter than last week", "Battery dropped to 12 % in the last day", or RAM / CPU busy all day. There is also a **Health warnings** tile and filter.
 - **Configuration → 🎫 Offline auto-ticket**: turn the automatic Technical Team ticket on or off and set how many minutes after the offline alert it is created. This is the same setting as Technical Team → Settings.
 
+## Release 17 Oct 2026 evening (main 336d0fa, LIVE on mdm.gbotz.site)
+- **Full A-to-Z test** of the portal, the server and the 3 office tablets: 31 bugs found, 26 fixed. The report is in `testing report/TESTING REPORT.md` (local folder, not in git; see **Testing**).
+- **Security fixes (server):**
+  - Device maps have no prototype, and the device ids `__proto__` / `constructor` / `prototype` are refused. A fake device could have rewritten every device.
+  - One `ADMIN_ONLY` list (run, term, wipe, lost, found, browse, pull, adbwifi) guards single, bulk and scheduled commands. A site-limited user's task only targets their own site.
+  - Basic-auth (curl) gets the same lockout as the sign-in page: 5 wrong tries, then a minute's wait.
+  - Check-in numbers and IPs are validated. A body that's too big gets a clear 413; the tablet check-in limit is 512 KB.
+  - The cookie is `Secure` behind the https proxy. Validation added for geofence (empty or 0 = off), task time and days, ticket due date and site names; a site that doesn't exist is refused. Unknown site or app → 404. Technicians are managed by all-sites accounts only.
+  - Tablets get `language: ""` instead of `null` (the app had saved "null" as its locale).
+- **Portal fixes:** the phone header fits the screen, the device picker and notes dialogs fit their boxes, and **Copy** works on plain http too.
+- **Command Center:** the sites map is narrower, with location pins in the status colours and an **OneMap / Satellite** switch. **Open alerts** and **Site health** sit side by side.
+- **From the other session:** portal themes (classic / animated / embossed, auto light 06-18), the login-page Yeti (Configuration toggle), the Portal tour toggle, a device location pin plus "Turn on Google location", and the Aux rename.
+- **App 10.32** (versionCode 49): source only, **not published** to production, so no tablet is offered it. Fixes:
+  - Logs read as root on rooted tablets, with a 20 s watchdog.
+  - File browse/pull paths are quoted (no shell injection), and pull checks the file first.
+  - Root screencap fallback.
+  - The language "null" fix, and a guarded `startForeground`.
+- Production tablets (apps 10.13-10.31) were checked after the deploy: all online ones check in normally and all 18 device pages open.
+
+## Testing
+Full test of 17 Oct: `testing report/` (not in git) has `TESTING REPORT.md` plus the detailed web, server and Android findings. Re-runnable scripts, kept in the PC's temp folder:
+- Web, every page and dialog in headless Chrome: `%TEMP%\claude\qa-web\qa.mjs all`
+- Server, on a separate copy (port 8097, no WhatsApp or MQTT): `%TEMP%\claude\qa-api\start.sh` then `node t1.mjs`…`t4.mjs`
+- Still open, needs a decision:
+  - The kiosk admin password is the default **1234** on all tablets, with no lockout.
+  - Android restrictions (safe mode, factory reset, debugging) are not set.
+  - The APK is debuggable.
+  - No logcat on non-rooted Android 13+ tablets: kiosk mode blocks Android's consent pop-up.
+
 ## Sign-in page
 `dashboard/login.html`: no Enter or button press needed. The password is checked by itself 0.5 s after you stop typing (Enter or a click checks at once). After a wrong password the button turns red and flies around the whole screen on two jet flames (the flames point away from where it is going) and shoots at the pointer. The right password turns it green ("🚀 Welcome!") and it takes off before the portal opens (about 2 s). The server still locks an IP out for a minute after 5 wrong tries.
 
@@ -178,13 +224,13 @@ Load-tested on 16 Oct 2026 with 1000 simulated devices checking in every 10 s pl
 - Limits: 4-digit Device IDs (9000 devices max); the activity log keeps the last 5000 events.
 
 ## Our devices (16 Oct 2026)
-On 16 Oct the three test devices were moved to the **local** portal on the office PC (`http://192.168.68.53:8080`; the PC's DHCP address changes, reserve it in the router).
+On 16 Oct the three test devices were moved to the **local** portal on the office PC. On 17 Oct the PC was at **`http://192.168.68.56:8080`** (its DHCP address changes, so reserve it in the router). Laptops need https for the microphone: use the browser flag `unsafely-treat-insecure-origin-as-secure` for that address, or an https proxy in front of 8080.
 
 | Device | Android | Connection | Local Device ID |
 |---|---|---|---|
-| Telpo F8 intercom (door relay) | 11, rooted | ADB over Wi-Fi `192.168.68.54:5555` | 2030 |
+| Telpo F8 intercom (door relay) | 11, rooted | ADB over Wi-Fi `192.168.68.54:5555` (refused on 17 Oct: ADB is off; app still 10.28) | 2030 |
 | Samsung Galaxy Tab A11 | 16 | ADB over USB (`R8YL405XLNY`) | 1724 |
-| Telpo F10 intercom (door relay `/sys/class/telpoio/relay_en`) | 9, rooted | ADB over Wi-Fi `192.168.68.50:5555` | 3270 |
+| Telpo F10 intercom (door relay `/sys/class/telpoio/relay_en`) | 9, rooted | ADB over Wi-Fi `192.168.68.53:5555` (17 Oct) | 3270 |
 | F10B intercom (rk3568, door relay) | 11 | ADB over Wi-Fi `192.168.1.181:5555` | |
 
 The F10 checked in to **production** once as **2987** before it was moved to local: delete 2987 on mdm.gbotz.site. Earlier (13 Oct) the F8 and Samsung were on production as 5846 and 8177. Still to do in the production portal: delete the old offline devices 6201 (old F8) and 7041 (old Samsung), rename 5846 and 8177 and put them in their sites, and test the relay (Relay OFF, ON, Pulse, maintenance on/off).
@@ -231,7 +277,7 @@ The F10 checked in to **production** once as **2987** before it was moved to loc
 | `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
 | `agents/` | Monitoring agents: `agent.ps1` (Windows; `install-agent.bat` installs it as a start-up task, run as administrator), `agent.sh` (Linux), `esp32.ino` (IoT). |
 
-### Tablet app (`app/`, current version 10.25)
+### Tablet app (`app/`, source 10.32; production has 10.31 and older)
 | Path | What |
 |---|---|
 | `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |
@@ -269,4 +315,5 @@ Android only installs an app update signed with the **same key** as the app alre
 - Also not in git: `functions/.env` (admin login, `DEVICE_KEY`) and `server/` (`portal.json` holds the WhatsApp numbers and CallMeBot keys).
 - Change the default `ADMIN_PASSWORD` and `DEVICE_KEY` on any server reachable from outside. Plain http is only acceptable on the office network.
 - The tablet APK is debuggable (`run-as` works, which the troubleshooting steps use), so anyone with USB debugging on a tablet can read the app's data. Make a signed release build before tablets go to customers.
+- The kiosk admin password (6 taps) is still the default **1234** on the tablets, with no lockout, and it can't be set from the portal yet. Found in the 17 Oct test; decide a policy.
 - Next phase: remote screen control (VNC), screen recording, remote ADB and the secure tunnel.
