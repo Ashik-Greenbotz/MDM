@@ -155,9 +155,11 @@ Ask in words (or tap the microphone: the browser's speech recognition, Chrome / 
 - **Technical team → edit a member → "Ticket system on their tablet"**: untick to hide **My tickets** on that technician's tablet for now; tick again and it comes back within ~10 s (app 10.23).
 - **Devices**: a waiting Device ID ("Not linked yet") has a **🗑 Remove** button.
 - **Remote control**: the mouse wheel scrolls the device (a swipe at the pointer).
-- **App 10.22 / 10.23** (built, not yet installed on tablets): light animations (home tiles slide in, press effect, status pulse while offline, clock fade, maintenance fade) and the ticket-system switch.
+- **App 10.22 / 10.23** (in 10.25, published 17 Oct): light animations (home tiles slide in, press effect, status pulse while offline, clock fade, maintenance fade) and the ticket-system switch.
 
-## Portal Batch B (17 Oct 2026, dev 125cc56, portal only)
+## Release 17 Oct 2026 (main 5c1f0c2, LIVE on mdm.gbotz.site; app 10.25 published to production Apps & files with release notes)
+
+## Portal Batch B (17 Oct 2026, portal only)
 - **Reports** (new page, module `reports` in Users & access): pick a month to see each site's devices, **uptime %** and downtime hours (the time devices were not checking in, taken from offline alerts), offline / other alerts, and tickets opened, resolved, resolved on time and still open at month end. **⬇ CSV**, **🖨 Print** (a clean printable page), and **💬 Send on WhatsApp** (admins; a summary to the alert numbers).
 - **Two-factor sign-in** (optional per account): Users & access → **2FA off** button → scan the QR code with Google / Microsoft Authenticator or Authy, then type the code to turn it on. After the right password, the sign-in page asks for the 6-digit code. Lost phone: an admin clicks **🔐 2FA on** to turn it off. The main `ADMIN_USER` login has no 2FA, so nobody can be locked out.
 - **Activity log**: filter by **type** and by **user** (who sent the command / changed the setting), and **⬇ CSV** export of the whole log (up to 5000 entries).
@@ -229,7 +231,7 @@ The F10 checked in to **production** once as **2987** before it was moved to loc
 | `REMOTE_ACCESS.md` | Plan for reaching the portal and devices from anywhere over https. |
 | `agents/` | Monitoring agents: `agent.ps1` (Windows; `install-agent.bat` installs it as a start-up task, run as administrator), `agent.sh` (Linux), `esp32.ino` (IoT). |
 
-### Tablet app (`app/`, current version 10.23)
+### Tablet app (`app/`, current version 10.25)
 | Path | What |
 |---|---|
 | `app/build.gradle` | Version, and the device keys read from `local.properties` (`server.key`, `server.key.debug`, not in git). |
@@ -258,7 +260,7 @@ Android only installs an app update signed with the **same key** as the app alre
 ### Built apps (not in git, they contain device keys)
 | Path | What |
 |---|---|
-| `final apk/mdmkiosk app.apk` (= `final apk/Kiosk.apk`) | Latest app **10.23**, signed with the production key (`7478efb4...`). One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. `OLD 10.18 wrong key - do not use.apk` is signed with another PC's key: tablets that get it can't take portal updates. |
+| `final apk/mdmkiosk app.apk` (= `final apk/Kiosk.apk`) | Latest app **10.25** (versionCode 42, also the latest kiosk app on mdm.gbotz.site since 17 Oct 2026), signed with the production key (`7478efb4...`). One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. `OLD 10.18 wrong key - do not use.apk` is signed with another PC's key: tablets that get it can't take portal updates. |
 | `Cloud APK/Kiosk app v10.18.apk` | Same build, 10.18. `Kiosk app v10.12.apk` is the previous one. |
 | `Kiosk app cloud.apk`, `Kiosk app local.apk`, `Kiosk app phase2.apk` | Older builds. |
 

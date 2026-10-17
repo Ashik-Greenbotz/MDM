@@ -295,6 +295,11 @@
     background: #1a1a1a; color: #eee; border: 1px solid #333; }
   #shotDlg.term .xt { height: min(68vh, 640px); padding: 6px; background: #0c0c0c; border-radius: 8px; border: 1px solid #262626; }
   #shotDlg.term .meta { color: #8a8a8a; }
+  .fb-list { border: 1px solid var(--line); border-radius: 10px; }
+  .fb-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .fb-row:last-child { border-bottom: 0; }
+  .fb-row:hover { background: var(--hover); }
+  .fb-row[data-dir] { font-weight: 500; }
   #shotDlg h2 .code { font-size: 13px; vertical-align: middle; }
   img.shot { display: block; max-width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; border-radius: 14px; border: 1px solid var(--line); background: #000;
     box-shadow: 0 20px 50px rgba(0,0,0,.3); animation: zoom .5s var(--ease); }
@@ -370,7 +375,8 @@
   nav a .ico { width: 19px; height: 19px; color: var(--muted); transition: color .2s, transform .3s var(--ease); }
   nav a:hover .ico { color: var(--text); transform: scale(1.1); }
   nav a.on .ico { color: var(--accent); filter: drop-shadow(0 0 6px rgba(242,140,0,.45)); }
-  .who { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .who { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+  .who:hover { color: var(--text); }
   .who .ico { width: 16px; height: 16px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
@@ -547,7 +553,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Device restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", term: "⌨ Remote SSH", restartapp: "🔄 Restart pinned app", screenshot: "📸 Screenshot", live: "🖥 Remote control", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Device restart", wifi: "📶 Wi-Fi setup…", lost: "🔴 Lost mode…", found: "Lost mode off", wipe: "🧨 Factory reset…", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", term: "⌨ Remote SSH", restartapp: "🔄 Restart pinned app", screenshot: "📸 Screenshot", live: "🖥 Remote control", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
   remote: "🖥 Set up remote desktop", sshon: "SSH on", sshoff: "SSH off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -567,7 +573,7 @@ const PAGES = [
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team", bug: "bugs" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team", bug: "bugs", app: "apps" }[page] || page);
 
 let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {}, technicians: [], models: [], statuses: {}, flow: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
@@ -595,7 +601,7 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps" && c !== "relay" && c !== "restartapp")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin", "restartapp"] : [c]), "maintOn", "maintOff"] : cmds;
+const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps" && c !== "relay" && c !== "restartapp" && c !== "found")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin", "restartapp"] : [c]), "maintOn", "maintOff"] : cmds;
 const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
 const stateCell = d => (d.maintenance ? `<span class="pill warn" title="Showing the System Maintenance screen">🛠 Maintenance</span> ` : "") + stateCell1(d);
 const stateCell1 = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
@@ -646,7 +652,8 @@ async function refresh() {
   $("bellN").hidden = !n;
   $("bellN").textContent = n;
   $("who").innerHTML = S.me ? `${ico("user-round")}<span class="t">${esc(S.me.name || S.me.username)}</span>${S.me.readOnly ? `<span class="pill neutral">View only</span>` : ""}` : "";
-  $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}` : "";
+  $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}. Click to change your password` : "";
+  $("who").onclick = () => S.me && myPassword();
   renderNav();
   renderAlarm();
   watchAutoTickets();
@@ -736,7 +743,7 @@ function renderNav() {
   const cur = (location.hash.slice(2) || "overview").split("/")[0];
   const counts = { devices: S.devices.length, sites: groups().filter(Boolean).length, alerts: openAlerts().length, tasks: S.tasks.length,
     team: S.ticketCounts ? S.ticketCounts.new + S.ticketCounts.resolved : 0 };
-  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") || (cur === "bug" && k === "bugs") ? "on" : ""}">
+  $("nav").innerHTML = PAGES.filter(([k]) => canOpen(k)).map(([k, icon, t]) => `<a href="#/${k}" class="${cur === k || (cur === "device" && k === "devices") || (cur === "site" && k === "sites") || (cur === "ticket" && k === "team") || (cur === "bug" && k === "bugs") || (cur === "app" && k === "apps") ? "on" : ""}">
     ${ico(icon)}<span class="t">${t}</span>${counts[k] ? `<span class="c ${k === "alerts" ? "bad" : ""}">${counts[k]}</span>` : ""}</a>`).join("");
 }
 
@@ -1421,6 +1428,25 @@ async function command(list, type, extra = {}) {
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
   if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
+  if (type === "lost" && extra.message === undefined) {
+    const anyLost = list.some(d => d.lost);
+    return dialog(`<h2>🔴 Lost mode</h2>
+      <p class="meta">Show a full-screen "lost device" notice on ${list.length === 1 ? esc(label(list[0])) : list.length + " tablets"}. The screen is locked to it until you turn it off.</p>
+      <div class="grid"><label for="loMsg">Message</label><input id="loMsg" maxlength="300" value="This device belongs to Interlock. Please call to return it." >
+        <label for="loPhone">Phone</label><input id="loPhone" maxlength="40" placeholder="e.g. +65 6123 4567"></div>`,
+      "Turn on lost mode", () => command(list, "lost", { message: $("loMsg").value, phone: $("loPhone").value }),
+      anyLost ? ["Turn lost mode OFF", () => command(list, "found", { ok: true }), "danger"] : null);
+  }
+  if (type === "found" && !extra.ok) return command(list, "found", { ok: true });
+  if (type === "wipe" && extra.confirm === undefined) return dialog(`<h2>🧨 Factory reset</h2>
+    <p class="meta" style="color:var(--bad)"><b>This erases ${list.length === 1 ? esc(label(list[0])) : "all " + list.length + " tablets"} completely</b> — every app, setting and the kiosk itself. It cannot be undone, and someone has to set the tablet up again by hand.</p>
+    <div class="grid"><label for="wpC">Type <b>WIPE</b> to confirm</label><input id="wpC" autocomplete="off" placeholder="WIPE"></div>`,
+    "Erase device", () => { if ($("wpC").value !== "WIPE") return toast("Type WIPE to confirm", true); command(list, "wipe", { confirm: "WIPE" }); });
+  if (type === "wifi" && extra.ssid === undefined) return dialog(`<h2>📶 Wi-Fi setup</h2>
+    <p class="meta">Send a Wi-Fi network to ${list.length === 1 ? esc(label(list[0])) : list.length + " tablets"}. They join it on the next check-in and remember it. Leave the password blank for an open network.</p>
+    <div class="grid"><label for="wSsid">Network name (SSID)</label><input id="wSsid" maxlength="32" required autofocus>
+      <label for="wPass">Password</label><input id="wPass" type="text" maxlength="63" placeholder="blank = open network"></div>`,
+    "Send", () => { const ssid = $("wSsid").value.trim(); if (!ssid) return toast("Type a Wi-Fi name", true); command(list, "wifi", { ssid, password: $("wPass").value }); });
   if (type === "unpin") return command(list, "singleapp", { package: "", appName: "unpin" });
   if (type === "restartapp") {
     list = list.filter(d => d.singleApp);
@@ -1506,11 +1532,88 @@ function askGroup(what, cur, done) {
 
 // Tablet settings: a site's defaults, or one tablet's own values (empty = use the site's / leave as it is).
 const UPDATES = { "": "Leave as it is", auto: "Install automatically", night: "Install only at night (1–5 am)", postpone: "Postpone (up to 30 days)" };
+const LANGS = { "": "Device default", en: "English", "zh-CN": "中文", ms: "Bahasa Melayu", ta: "தமிழ்" };
 function settingsText(own = {}, site = {}) {
   const v = k => own?.[k] !== null && own?.[k] !== undefined && own?.[k] !== "" ? own[k] : site?.[k] !== null && site?.[k] !== "" ? site?.[k] : null;
   const parts = [v("brightness") != null && `brightness ${v("brightness")}%`, v("volume") != null && `volume ${v("volume")}%`,
     v("screenOff") && v("screenOn") && `screen off ${v("screenOff")}–${v("screenOn")}`, v("updates") && `updates: ${UPDATES[v("updates")].toLowerCase()}`].filter(Boolean);
   return parts.join(" · ") || "Not set";
+}
+// File browser: lists a folder on the tablet (root on rooted ones). Click a folder to open it, a file to download it.
+async function fileBrowser(d) {
+  let path = "/sdcard";
+  const dl = $("dlg");
+  const open = async p => {
+    path = p;
+    dl.querySelector("#fbList").innerHTML = `<p class="meta">Loading ${esc(p)} … (the tablet answers within ~10 s)</p>`;
+    dl.querySelector("#fbPath").textContent = p;
+    const at = Date.now();
+    try { await api(`/api/devices/${encodeURIComponent(d.id)}/command`, { type: "browse", path: p }); } catch (e) { return toast(e.message, true); }
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const x = dev(d.id);
+      if (x?.browse && x.browse.at > at && x.browse.path === p) return render(x.browse);
+    }
+    dl.querySelector("#fbList").innerHTML = `<p class="empty">No answer from the tablet. It may be offline.</p>`;
+  };
+  const render = b => {
+    if (b.error) { dl.querySelector("#fbList").innerHTML = `<p class="empty">Could not open this folder: ${esc(b.error)}</p>`; return; }
+    const up = path.replace(/\/+$/, "").split("/").slice(0, -1).join("/") || "/";
+    const rows = b.entries.sort((a, c) => (c.dir - a.dir) || a.name.localeCompare(c.name)).map(e => {
+      const full = (path.replace(/\/+$/, "") || "") + "/" + e.name;
+      return e.dir ? `<div class="fb-row" data-dir="${esc(full)}">📁 ${esc(e.name)}</div>`
+        : `<div class="fb-row"><span>📄 ${esc(e.name)}</span><button class="btn ghost" data-file="${esc(full)}">⬇ Download</button></div>`;
+    }).join("");
+    dl.querySelector("#fbList").innerHTML = (path !== "/" ? `<div class="fb-row" data-dir="${esc(up)}">⬆ ..</div>` : "") + (rows || `<p class="meta">Empty folder</p>`);
+  };
+  dialog(`<h2>📁 Files · ${esc(label(d))}</h2>
+    <div class="row" style="gap:6px"><input id="fbGo" style="flex:1;font-family:ui-monospace,Consolas,monospace" value="/sdcard"><button class="btn" id="fbGoBtn" type="button">Go</button></div>
+    <p class="meta" style="margin:6px 0"><code id="fbPath"></code> — click a folder to open it, a file to download it to your computer. Rooted tablets can browse any path.</p>
+    <div id="fbList" class="fb-list" style="max-height:50vh;overflow:auto"></div>
+    <p class="meta">Upload to the tablet: use the <b>Send file…</b> action (goes to Download/Kiosk).</p>`);
+  dl.querySelector("#fbGoBtn").onclick = () => open(dl.querySelector("#fbGo").value.trim() || "/sdcard");
+  dl.querySelector("#fbList").onclick = async e => {
+    const dir = e.target.closest("[data-dir]")?.dataset.dir;
+    if (dir != null) { dl.querySelector("#fbGo").value = dir; return open(dir); }
+    const file = e.target.closest("[data-file]")?.dataset.file;
+    if (file) return pullFile(d, file);
+  };
+  open("/sdcard");
+}
+
+async function pullFile(d, file) {
+  toast("Fetching " + file.split("/").pop() + " from the tablet…");
+  const at = Date.now();
+  try { await api(`/api/devices/${encodeURIComponent(d.id)}/command`, { type: "pull", path: file }); } catch (e) { return toast(e.message, true); }
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const x = dev(d.id);
+    if (x?.pull && x.pull.at > at && x.pull.path === file) {
+      const a = document.createElement("a");
+      a.href = `/api/devices/${encodeURIComponent(d.id)}/pull/download`;
+      a.download = x.pull.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      return toast(`Downloaded ${x.pull.name} (${Math.ceil(x.pull.size / 1024)} KB)`);
+    }
+  }
+  toast("The tablet did not send the file (too big, missing, or offline)", true);
+}
+// Digital signage: pick uploaded images to cycle on the kiosk screen when it is idle.
+function signageDialog(site) {
+  const imgs = S.files.filter(f => /^image\//.test(f.type || "") || /\.(png|jpe?g|webp|gif)$/i.test(f.name || ""));
+  const sg = site.signage || { images: [], seconds: 10, idleMin: 2, enabled: false };
+  if (!imgs.length) return dialog(`<h2>🖼 Signage · ${esc(site.name)}</h2><p class="empty">No images uploaded yet. Add some on <a href="#/apps" onclick="$('dlg').close()">Apps &amp; files</a> first, then come back.</p>`);
+  dialog(`<h2>🖼 Signage · ${esc(site.name)}</h2>
+    <p class="meta">Pick images to show full-screen on the kiosk when nobody has touched it for a while. Tapping the screen returns to the home screen. Only works when no app is pinned.</p>
+    <div class="fb-list" style="max-height:38vh;overflow:auto">${imgs.map(f => `<label class="fb-row"><input type="checkbox" value="${esc(f.id)}" ${sg.images.includes(f.id) ? "checked" : ""}> ${esc(f.name)}</label>`).join("")}</div>
+    <div class="grid" style="margin-top:10px"><label for="sgSec">Seconds per image</label><input type="number" id="sgSec" min="2" max="600" value="${sg.seconds || 10}">
+      <label for="sgIdle">Start after idle (minutes)</label><input type="number" id="sgIdle" min="1" max="240" value="${sg.idleMin || 2}">
+      <label for="sgOn">Enabled</label><input type="checkbox" id="sgOn" ${sg.enabled ? "checked" : ""}></div>`,
+    "Save", () => {
+      const images = [...$("dlg").querySelectorAll(".fb-list input:checked")].map(x => x.value);
+      act(() => api("/api/sites/signage", { name: site.name, images, seconds: +$("sgSec").value, idleMin: +$("sgIdle").value, enabled: $("sgOn").checked }),
+        "Signage saved; tablets pick it up on their next check-in");
+    });
 }
 function tabletSettings(d, site) {
   const s = (d ? d.settings : site.settings) || {}, base = d ? siteOf(d.group)?.settings || {} : {};
@@ -1523,14 +1626,16 @@ function tabletSettings(d, site) {
       <label for="stOff">Screen off at</label><input type="time" id="stOff" value="${s.screenOff || ""}">
       <label for="stOn">Screen on at</label><input type="time" id="stOn" value="${s.screenOn || ""}">
       <label for="stU">System updates</label><select id="stU">${options(Object.entries(UPDATES))}</select>
+      <label for="stL">Language</label><select id="stL">${options(Object.entries(LANGS))}</select>
     </div><p class="meta">Night mode: the screen turns off at the first time and back on at the second (both needed). ${d && base.screenOff ? `Site: ${base.screenOff}–${base.screenOn}.` : ""}</p>`,
     "Save", () => {
       const num = id => $(id).value === "" ? null : Number($(id).value);
-      const v = { brightness: num("stB"), volume: num("stV"), screenOff: $("stOff").value, screenOn: $("stOn").value, updates: $("stU").value };
+      const v = { brightness: num("stB"), volume: num("stV"), screenOff: $("stOff").value, screenOn: $("stOn").value, updates: $("stU").value, language: $("stL").value };
       act(() => d ? api(`/api/devices/${encodeURIComponent(d.id)}/settings`, v) : api("/api/sites/settings", { name: site.name, settings: v }),
         "Tablet settings saved; tablets apply them on their next check-in");
     });
   $("stU").value = s.updates || "";
+  $("stL").value = s.language || "";
 }
 VIEWS.device = async (id, first) => {
   const d = dev(id);
@@ -1545,7 +1650,10 @@ VIEWS.device = async (id, first) => {
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
     Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
     Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
-    ...(d.info || {}), "First seen": d.firstSeen && new Date(d.firstSeen).toLocaleString(), "Internal ID": d.id,
+    ...(d.info || {}),
+    "Data today": d.data && `${d.data.wifi} MB Wi-Fi · ${d.data.mobile} MB mobile`,
+    "Top apps (24 h)": d.usage?.length && d.usage.map(([n, m]) => `${n} ${m < 60 ? m + " min" : (m / 60).toFixed(1) + " h"}`).join(", "),
+    "First seen": d.firstSeen && new Date(d.firstSeen).toLocaleString(), "Internal ID": d.id,
   };
   const cmds = S.commands[d.type] || [];
   if (first) {
@@ -1553,7 +1661,7 @@ VIEWS.device = async (id, first) => {
       <p><a href="#/devices">← All devices</a></p>
       <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
         <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
-        <button class="btn" data-a="map">🗺 Map</button><button class="btn" data-a="settings" id="dSetBtn">⚙ Tablet settings…</button><button class="btn danger" data-a="delete">Remove</button></div>
+        <button class="btn" data-a="map">🗺 Map</button><button class="btn" data-a="settings" id="dSetBtn">⚙ Tablet settings…</button><button class="btn" data-a="files" id="dFilesBtn">📁 Files…</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card" id="dUpdCard" hidden><div class="pad row"><span id="dUpdText"></span><span class="grow" style="flex:1"></span><button class="btn primary" id="dUpdBtn">⬆ Update to latest version</button></div></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
@@ -1575,6 +1683,11 @@ VIEWS.device = async (id, first) => {
           <span class="meta">Pulse</span><input type="number" id="dPulse" min="1" max="600" value="5" style="width:70px"><span class="meta">s</span><button class="btn" data-relay="pulse">⚡ Pulse (open door)</button>
           <label class="chip"><input type="checkbox" id="dRelayLink"> Maintenance mode switches the relay (ON when it starts, OFF when it ends)</label></div>
           <p class="meta" id="dRelayNote" style="margin-bottom:0"></p></div></div>
+      <div class="card" id="dAdbCard" hidden><h3>ADB over Wi-Fi<span class="grow"></span><span id="dAdbState"></span></h3>
+        <div class="pad"><div class="row"><button class="btn primary" data-adb="1">Turn ON</button><button class="btn" data-adb="">Turn OFF</button>
+          <span class="meta">Rooted tablets (Telpo) switch network ADB on themselves — no cable. Then connect from a PC:</span></div>
+          <div id="dAdbCmd" class="row" style="margin-top:8px" hidden><code style="user-select:all" id="dAdbConnect"></code><button class="btn ghost" data-copy="dAdbConnect">Copy</button></div>
+          <p class="meta" id="dAdbNote" style="margin-bottom:0"></p></div></div>
       <div class="card" id="dSshCard" hidden><h3>Remote SSH<span class="grow"></span><span id="dSshState"></span></h3>
         <div class="pad"><div class="row"><button class="btn primary" data-ssh="1">SSH ON</button><button class="btn" data-ssh="">SSH OFF</button>
           <span class="meta">The tablet opens a tunnel to the portal while SSH is ON. Turn it off when you are done.</span></div>
@@ -1596,6 +1709,8 @@ VIEWS.device = async (id, first) => {
       if (r && !confirm(`${r === "off" ? "Relay OFF (lock the door)" : r === "on" ? "Relay ON (door stays open until Relay OFF)" : `Pulse ${$("dPulse").value} s (opens the door)`} on ${label(dev(id))}?\n\nThis switches the real door relay.`)) return;
       if (r) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`,
         { type: "relay", on: r !== "off", seconds: r === "pulse" ? Number($("dPulse").value) : 0 }), `Relay ${r} sent to the device`);
+      const ab = e.target.closest("[data-adb]");
+      if (ab) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`, { type: "adbwifi", on: !!ab.dataset.adb }), `ADB over Wi-Fi ${ab.dataset.adb ? "on" : "off"} sent`);
       const sb = e.target.closest("[data-ssh]");
       if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
       const cp = e.target.closest("[data-copy]");
@@ -1603,6 +1718,7 @@ VIEWS.device = async (id, first) => {
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
       if (b.dataset.a === "settings") return tabletSettings(dev(id));
+      if (b.dataset.a === "files") return fileBrowser(dev(id));
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
     };
     $("dUpdBtn").onclick = () => {
@@ -1634,6 +1750,7 @@ VIEWS.device = async (id, first) => {
   $("dAppsCard").hidden = !apps.length;
   const rp = d.relayProfile || { relay: "unknown" }, ri = d.relayInfo || {};
   $("dModelBtn").hidden = $("dSetBtn").hidden = d.type !== "android-kiosk";
+  $("dFilesBtn").hidden = d.type !== "android-kiosk" || !me().admin;
   const upd = d.type === "android-kiosk" && latestKioskApp(), uv = upd && verOf(upd.label);
   // Only when an update is waiting; up to date shows just the App version row in Details.
   $("dUpdCard").hidden = !(upd && (!uv || !d.appVersion || cmpVer(d.appVersion, uv) < 0));
@@ -1661,6 +1778,12 @@ VIEWS.device = async (id, first) => {
   $("dRelayKv").innerHTML = Object.entries(kv).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   $("dRelayNote").textContent = rp.relay === "unknown" ? "This model's relay hasn't been verified. Test it with someone at the door, then use Relay setup… to save the mapping that worked." : "";
   $("dRelayLink").checked = d.relayLink !== false;
+  $("dAdbCard").hidden = d.type !== "android-kiosk" || !me().admin;
+  const adbOn = d.adbWifi > 0;
+  $("dAdbState").innerHTML = d.adbWifi == null ? `<span class="meta">Update the tablet app</span>` : adbOn ? `<span class="pill ok">ON · port ${d.adbWifi}</span>` : `<span class="pill">OFF</span>`;
+  $("dAdbCmd").hidden = !(adbOn && d.localIp);
+  if (adbOn && d.localIp) $("dAdbConnect").textContent = `adb connect ${d.localIp}:${d.adbWifi}`;
+  $("dAdbNote").textContent = adbOn && !d.localIp ? "On, but no LAN IP reported yet." : !adbOn ? "Off. Non-rooted tablets (Samsung) also need a one-time USB step: adb tcpip 5555." : "";
   $("dSshCard").hidden = !S.sshReady || d.type !== "android-kiosk";
   $("dSshState").innerHTML = !d.ssh ? `<span class="pill">OFF</span>` : d.sshUp ? `<span class="pill ok">Connected</span>`
     : `<span class="meta">${d.sshUp == null ? "Update the tablet app to 10.13" : "Connecting…"}</span>`;
@@ -1897,7 +2020,7 @@ VIEWS.site = async (name, first) => {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
       <div class="row" style="margin-bottom:4px;gap:12px">${siteLogo(site, true)}<h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
-        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="settings">⚙ Tablet settings…</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
+        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="settings">⚙ Tablet settings…</button><button class="btn" data-s="signage">🖼 Signage…</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
       <div class="cols">
@@ -1925,6 +2048,7 @@ VIEWS.site = async (name, first) => {
       if (b?.dataset.s === "edit") siteForm(siteOf(name));
       if (b?.dataset.s === "addDev") addDevicesToSite(name);
       if (b?.dataset.s === "settings") tabletSettings(null, siteOf(name));
+      if (b?.dataset.s === "signage") signageDialog(siteOf(name));
       if (b?.dataset.s === "map") openMap(mine());
       if (b?.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) {
         act(() => api("/api/sites/delete", { name }), "Site deleted").then(() => { location.hash = "#/sites"; });
@@ -1963,13 +2087,14 @@ function siteForm(site) {
       <label class="btn" style="cursor:pointer">Upload…<input type="file" id="sLogo" accept="image/*" hidden></label>
       <button class="btn ghost" type="button" id="sLogoDel" ${site?.logo ? "" : "hidden"}>Remove</button></div>
     <label class="meta">Coordinates</label><div class="row"><input id="sLat" style="width:110px" placeholder="latitude" value="${esc(site?.lat ?? "")}">
-      <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div></div>
+      <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div>
+    <label class="meta">Geofence</label><div class="row"><input id="sGeo" type="number" min="20" max="50000" style="width:110px" placeholder="off" value="${esc(site?.geofence ?? "")}"><span class="meta">metres — alert when a tablet goes this far from the site (needs coordinates)</span></div></div>
     <div id="sFound" class="chips" style="margin-top:8px"></div>
     <p class="meta">Coordinates are used to find technicians near the site. Find address searches OneMap (Singapore) for the Location; you can also type them.</p>`,
     site ? "Save" : "Add site", () => {
       const name = $("sName").value.trim();
       if (!name) return toast("Site name is required", true);
-      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name, logo }),
+      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, geofence: $("sGeo").value, oldName: site?.name, logo }),
         site ? "Site saved" : `Site "${name}" added`);
     });
   // Logo: shrunk to fit 128 x 128 here, so the server only stores a few KB. undefined = unchanged, "" = removed.
@@ -2131,13 +2256,15 @@ VIEWS.apps = (arg, first) => {
         <div class="card"><h3>Upload app (.apk)</h3><form class="pad row" id="aForm">
           <input type="file" id="aFile" accept=".apk" required><input id="aLabel" placeholder="Name (e.g. VMS v2.1)">
           <textarea id="aNotes" rows="3" maxlength="2000" style="width:100%" placeholder="Release notes (optional): what's new / fixed in this version"></textarea>
+          <label class="meta" style="width:100%">Release notes PDF (optional) <input type="file" id="aPdf" accept="application/pdf,.pdf"></label>
           <button class="btn primary">Upload</button></form></div>
         <div class="card"><h3>Upload file</h3><form class="pad row" id="fForm">
           <input type="file" id="fFile" required><button class="btn primary">Upload</button></form></div>
       </div>
-      <div class="card"><h3>Apps<span class="grow"></span><button class="btn" data-dlall="apps">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Release notes</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
+      <div class="card"><h3>Apps<span class="grow"></span><button class="btn" data-dlall="apps">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>App</th><th>Version</th><th>Release notes</th><th>Size</th><th>Uploaded</th><th>Enrollment</th><th></th></tr></thead><tbody id="aRows"></tbody></table></div></div>
       <div class="card"><h3>Files<span class="grow"></span><button class="btn" data-dlall="files">⬇ Download all</button></h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody id="fRows"></tbody></table></div></div>`;
-    $("aForm").onsubmit = e => { e.preventDefault(); const f = $("aFile").files[0]; toast("Uploading…"); act(() => upload("app", f, $("aLabel").value, $("aNotes").value.trim()).then(() => e.target.reset()), "App uploaded"); };
+    $("aForm").onsubmit = e => { e.preventDefault(); const f = $("aFile").files[0]; toast("Uploading…"); const pdf = $("aPdf").files[0];
+      act(() => upload("app", f, $("aLabel").value, $("aNotes").value.trim()).then(r => pdf && notesPdf(r.id, pdf)).then(() => e.target.reset()), "App uploaded"); };
     $("fForm").onsubmit = e => { e.preventDefault(); const f = $("fFile").files[0]; toast("Uploading…"); act(() => upload("file", f).then(() => e.target.reset()), "File uploaded"); };
     $("view").onclick = e => {
       const all = e.target.closest("[data-dlall]")?.dataset.dlall;
@@ -2148,22 +2275,86 @@ VIEWS.apps = (arg, first) => {
       const [kind, id] = [b.dataset.kind, b.dataset.id];
       if (b.dataset.x === "send") chooseDevices(kind === "apps" ? "install" : "file", list => command(list, kind === "apps" ? "install" : "file", kind === "apps" ? { appId: id } : { fileId: id }));
       if (b.dataset.x === "notes") appNotes(id);
+      if (b.dataset.x === "who") location.hash = "#/app/" + encodeURIComponent(id);
       if (b.dataset.x === "kiosk") act(() => api(`/api/apps/${id}/kiosk`, {}), "Used for QR enrollment");
       if (b.dataset.x === "del" && confirm("Delete this upload?")) act(() => api(`/api/${kind}/${id}/delete`, {}), "Deleted");
     };
   }
-  $("aRows").innerHTML = S.apps.slice().reverse().map(a => `<tr><td class="name">${esc(a.label)}</td>
-      <td class="click" data-x="notes" data-id="${a.id}" title="View / edit the release notes" style="max-width:260px;min-width:160px;white-space:normal;overflow-wrap:anywhere">${a.notes ? esc(a.notes.split("\n")[0].slice(0, 70)) + (a.notes.length > 70 || a.notes.includes("\n") ? "…" : "") : `<span class="meta">+ Add notes</span>`}
-        ${a.by ? `<div class="meta">by ${esc(a.by)}</div>` : ""}</td><td>${fmtSize(a.size)}</td><td class="meta">${ago(a.at)}</td>
       <td>${S.kioskApp === a.id ? `<span class="pill ok">Used for QR enrollment</span>` : `<button class="btn ghost" data-x="kiosk" data-kind="apps" data-id="${a.id}">Use for QR</button>`}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="apps" data-id="${a.id}">Install on devices…</button>
       <a class="btn" href="/download/app/${a.id}.apk" download>⬇ Download</a>
-      <button class="btn ghost" data-x="del" data-kind="apps" data-id="${a.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No apps uploaded</td></tr>`;
+      <button class="btn ghost" data-x="del" data-kind="apps" data-id="${a.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="7" class="empty">No apps uploaded</td></tr>`;
   $("fRows").innerHTML = S.files.slice().reverse().map(f => `<tr><td class="name">${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td class="meta">${ago(f.at)}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="files" data-id="${f.id}">Send to devices…</button>
       <a class="btn" href="/download/file/${f.id}" download>⬇ Download</a>
       <button class="btn ghost" data-x="del" data-kind="files" data-id="${f.id}">Delete</button></div></td></tr>`).join("") || `<tr><td colspan="4" class="empty">No files uploaded</td></tr>`;
 };
+
+// Tablets running this kiosk app version (they report appVersion); null for other apps, whose version tablets don't report.
+const appDevices = a => /kiosk/i.test(a.label) && verOf(a.label) ? S.devices.filter(d => d.type === "android-kiosk" && d.appVersion === verOf(a.label)) : null;
+// Attach / replace the release notes PDF of an uploaded app.
+async function notesPdf(id, file) {
+  if (file.size > 20 * 1024 * 1024) throw new Error("The PDF is over 20 MB");
+  const r = await fetch(`/api/apps/${id}/notes.pdf?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+}
+// When and how a tablet got this version: a portal install leaves "Installed <app>" (and "install <app> queued by X") in the
+// log; anything else (USB, setup) only shows as a version change the server saw (appSince / appFrom).
+let appEvents = [], appSig = "";
+function appHow(a, d) {
+  const mine = appEvents.filter(e => e.deviceId === d.id);
+  const done = mine.find(e => e.text === "Installed " + a.label);
+  if (done) {
+    const by = mine.find(e => e.at <= done.at && e.text.startsWith("install " + a.label + " queued by"));
+    return [done.at, "Portal update" + (by ? ", sent by " + /queued by (\S+)/.exec(by.text)[1] : "")];
+  }
+  if (d.appSince) return [d.appSince, d.appFrom ? `Updated on the tablet from ${d.appFrom} (USB / manual)` : "Installed at setup"];
+  return [null, "Before install dates were recorded"];
+}
+VIEWS.app = async (id, first) => {
+  const a = S.apps.find(x => x.id === id);
+  if (!a) { $("view").innerHTML = `<p class="empty">This app is no longer on Apps & files. <a href="#/apps">Back</a></p>`; return; }
+  if (first) appEvents = (await api("/api/events?all=1")).events || [];
+  if (location.hash.split("/")[2] !== encodeURIComponent(id)) return; // left the page while loading
+  const on = appDevices(a);
+  const sig = JSON.stringify([a, (on || []).map(d => [d.id, d.site, d.name, isOnline(d), d.appSince])]);
+  if (!first && sig === appSig) return;
+  appSig = sig;
+  const rows = (on || []).map(d => [d, ...appHow(a, d)])
+    .sort((x, y) => (x[0].site || "~").localeCompare(y[0].site || "~") || label(x[0]).localeCompare(label(y[0])))
+    .map(([d, at, how]) => `<tr><td>${esc(d.site || "No site")}</td><td><a href="#/device/${encodeURIComponent(d.id)}">${esc(label(d))}</a></td>
+      <td>${statusPill(d)}</td><td>${at ? `${new Date(at).toLocaleString()}<div class="meta">${ago(at)}</div>` : "–"}</td><td class="meta">${esc(how)}</td></tr>`).join("");
+  const sites = new Set((on || []).map(d => d.site || "No site")).size;
+  $("view").innerHTML = `<p><a href="#/apps">← Apps & files</a></p><h2>${esc(a.label)}</h2>
+    <p class="lead">Version <b>${esc(verOf(a.label) || "–")}</b> · ${fmtSize(a.size)} · uploaded ${new Date(a.at).toLocaleString()}${a.by ? " by " + esc(a.by) : ""}</p>
+    <div class="card"><h3>Release notes</h3>
+      ${a.notes ? `<div class="pad" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(a.notes)}</div>` : ""}
+      <div class="pad row">${a.notesPdf ? `<a class="btn" href="/api/apps/${a.id}/notes.pdf" target="_blank" rel="noopener">📄 ${esc(a.notesPdf.name)}</a>
+          <span class="meta">${fmtSize(a.notesPdf.size)} · ${ago(a.notesPdf.at)}${a.notesPdf.by ? " by " + esc(a.notesPdf.by) : ""}</span>` : !a.notes ? `<span class="meta">No release notes yet.</span>` : ""}
+        <span class="grow"></span>
+        <button class="btn ghost" id="apNotes">✏️ Edit notes</button>
+        <label class="btn ghost">${a.notesPdf ? "Replace PDF" : "📎 Attach PDF"}<input type="file" id="apPdf" accept="application/pdf,.pdf" hidden></label>
+        ${a.notesPdf ? `<button class="btn ghost" id="apPdfDel">Remove PDF</button>` : ""}</div></div>
+    <div class="card"><h3>${on ? `${on.length} ${on.length === 1 ? "device" : "devices"} on this version${on.length ? ` · ${sites} ${sites === 1 ? "site" : "sites"}` : ""}` : "Devices"}</h3>
+      ${!on ? `<p class="empty">Tablets only report the version of the kiosk app, so devices can't be listed for this app.</p>`
+        : rows ? `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Device</th><th>Status</th><th>Installed / updated on</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<p class="empty">No device is on this version.</p>`}</div>`;
+  $("apNotes").onclick = () => appNotes(a.id);
+  $("apPdf").onchange = e => e.target.files[0] && act(() => notesPdf(a.id, e.target.files[0]), "Release notes PDF saved");
+  if ($("apPdfDel")) $("apPdfDel").onclick = () => confirm("Remove the release notes PDF?") && act(() => api(`/api/apps/${a.id}/notes.pdf?remove=1`, {}), "PDF removed");
+};
+
+// Change my password (header: click your name). The server signs out this account's other sessions.
+function myPassword() {
+  dialog(`<h2>Change password</h2><p class="meta">Signed in as <b>${esc(S.me.username)}</b>. Other places where you're signed in will be signed out.</p>
+    <label>Current password</label><input type="password" id="mpOld" autocomplete="current-password" required>
+    <label>New password (at least 8 characters)</label><input type="password" id="mpNew" autocomplete="new-password" minlength="8" required>
+    <label>New password again</label><input type="password" id="mpNew2" autocomplete="new-password" minlength="8" required>`,
+    "Change password", async () => {
+      if ($("mpNew").value !== $("mpNew2").value) return toast("The new passwords don't match", true);
+      act(() => api("/api/me/password", { current: $("mpOld").value, password: $("mpNew").value }), "Password changed");
+    });
+}
 
 // Release notes of an uploaded app: shown and edited in one box (optional, kept as a record).
 function appNotes(id) {
@@ -2323,9 +2514,23 @@ const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc
   ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
 // Who did it: the log texts say "(by <name>)" at the end (tickets) or "by <username>" (commands, settings...); everything else is the system.
 const evBy = e => (/\(by (.+)\)$/.exec(e.text) || /\bby ([\w.@-]+)(?=$|\)|\s\(|,)/.exec(e.text) || [])[1] || "system";
+// Readable names of the event kinds (Activity column and type filter).
+const EV_NAME = { site: "Site change", enroll: "Device enrolled", online: "Came online", offline: "Went offline", command: "Command sent", delivered: "Command done",
+  alert: "Alert", resolved: "Alert resolved", logs: "Logs", task: "Scheduled task", upload: "Upload", removed: "Device removed", device: "Device report",
+  screenshot: "Screenshot", announcement: "Announcement", config: "Configuration", relay: "Door relay", result: "Command result", vpn: "VPN", barrier: "Barrier", ticket: "Ticket", team: "Technical team", assistant: "Max (AI)",
+  whatsapp: "WhatsApp", maintenance: "Maintenance", user: "User account", ssh: "Remote access" };
+const evName = k => EV_NAME[k] || (k ? k[0].toUpperCase() + k.slice(1) : "Other");
+// Who: the person named in the text; otherwise the device itself (things it reported) or the system (timers, alerts).
+const evWho = e => { const b = evBy(e); return b !== "system" ? b : e.deviceId && /^(online|offline|delivered|device|logs|screenshot)$/.test(e.kind) ? "Device" : "System"; };
+const activityRow = e => { const d = dev(e.deviceId), who = evWho(e), person = who !== "Device" && who !== "System";
+  return `<tr><td style="white-space:nowrap">${new Date(e.at).toLocaleDateString()} <b>${new Date(e.at).toLocaleTimeString()}</b><div class="meta">${ago(e.at)}</div></td>
+    <td>${person ? `👤 <b>${esc(who)}</b>` : `<span class="meta">${who === "Device" ? "📱 Device" : "⚙️ System"}</span>`}</td>
+    <td style="white-space:nowrap">${EV[e.kind] || "•"} ${esc(evName(e.kind))}</td>
+    <td>${d ? `<a href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(d))}</a><div class="meta">${esc(d.site || d.group || "No site")}</div>` : `<span class="meta">–</span>`}</td>
+    <td class="wrap" style="min-width:260px;white-space:normal">${esc(e.text)}</td></tr>`; };
 const evShown = list => {
   const q = $("evQ").value.toLowerCase(), k = $("evKind").value, who = $("evUser").value;
-  return list.filter(e => (!k || e.kind === k) && (!who || evBy(e) === who) && (!q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)));
+  return list.filter(e => (!k || e.kind === k) && (!who || evWho(e) === who) && (!q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)));
 };
 // Rows to CSV text; a cell starting with = + - @ gets a ' so a spreadsheet doesn't run it as a formula.
 const csvOf = rows => rows.map(r => r.map(v => {
@@ -2341,23 +2546,26 @@ const saveText = (name, text, type = "text/csv") => {
 VIEWS.activity = async (arg, first) => {
   if (first) {
     $("view").innerHTML = `<h2>Activity log</h2><p class="lead">Everything that happened: devices coming online and offline, commands sent and delivered, alerts, uploads, tasks.</p>
-    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Filter…"><select id="evKind"></select><select id="evUser"></select>
-      <button class="btn" id="evCsv">⬇ CSV</button></div><div class="table-wrap"><table><tbody id="evRows"></tbody></table></div></div>`;
+    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Search text or device…"><select id="evKind"></select><select id="evUser"></select>
+      <span class="meta" id="evCount"></span><span class="grow"></span><button class="btn" id="evCsv">⬇ CSV</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Activity</th><th>Device / site</th><th>Details</th></tr></thead><tbody id="evRows"></tbody></table></div></div>`;
     $("evQ").oninput = $("evKind").onchange = $("evUser").onchange = () => VIEWS.activity();
     // the export takes the whole log (up to 5000 entries), not just the 1000 on screen
     $("evCsv").onclick = () => act(async () => {
       const list = evShown((await api("/api/events?all=1")).events);
-      saveText(`activity-${new Date().toISOString().slice(0, 10)}.csv`, csvOf([["Time", "Type", "User", "Device", "Device ID", "Site", "What happened"],
-        ...list.map(e => { const d = dev(e.deviceId); return [new Date(e.at).toLocaleString(), e.kind, evBy(e), d ? label(d) : "", d?.code || "", d?.group || "", e.text]; })]));
+      saveText(`activity-${new Date().toISOString().slice(0, 10)}.csv`, csvOf([["Time", "User", "Activity", "Device", "Device ID", "Site", "Details"],
+        ...list.map(e => { const d = dev(e.deviceId); return [new Date(e.at).toLocaleString(), evWho(e), evName(e.kind), d ? label(d) : "", d?.code || "", d?.site || d?.group || "", e.text]; })]));
       return list.length;
     }, n => `${n} entries exported`);
   }
   const r = await api("/api/events").catch(() => ({ events: [] }));
   if (!$("evRows")) return;
-  const fill = (id, all, list) => { if (document.activeElement !== $(id)) { const v = $(id).value; $(id).innerHTML = options([["", all], ...list.map(x => [x, x])], v); } };
-  fill("evKind", "All types", [...new Set(r.events.map(e => e.kind))].sort());
-  fill("evUser", "All users", [...new Set(r.events.map(evBy))].sort());
-  $("evRows").innerHTML = evShown(r.events).slice(0, 500).map(eventRow).join("") || `<tr><td class="empty">Nothing matches</td></tr>`;
+  const fill = (id, all, list) => { if (document.activeElement !== $(id)) { const v = $(id).value; $(id).innerHTML = options([["", all], ...list], v); } };
+  fill("evKind", "All activities", [...new Set(r.events.map(e => e.kind))].map(k => [k, evName(k)]).sort((a, b) => a[1].localeCompare(b[1])));
+  fill("evUser", "All users", [...new Set(r.events.map(evWho))].sort((a, b) => (/^(Device|System)$/.test(a) - /^(Device|System)$/.test(b)) || a.localeCompare(b)).map(x => [x, x]));
+  const shown = evShown(r.events);
+  $("evCount").textContent = `${shown.length} ${shown.length === 1 ? "entry" : "entries"}${shown.length > 500 ? " (newest 500 shown)" : ""}`;
+  $("evRows").innerHTML = shown.slice(0, 500).map(activityRow).join("") || `<tr><td colspan="5" class="empty">Nothing matches</td></tr>`;
 };
 
 // Reports: monthly uptime, alerts and tickets per site. CSV, a printable page and (admins) a WhatsApp summary.
@@ -3215,6 +3423,18 @@ function baseLayers() {
   return { default: onemap, all: { "OneMap (SG)": onemap, Satellite: sat } };
 }
 let map, markers = {}, fitted = false;
+// A device's recent path and its site's geofence circle, shown when the map is opened for one device.
+let trailLayer;
+async function drawTrail(d) {
+  trailLayer?.remove();
+  trailLayer = L.layerGroup().addTo(map);
+  const site = siteOf(d.group || "");
+  if (site.lat != null && site.geofence) L.circle([site.lat, site.lng], { radius: site.geofence, color: "#f28c00", weight: 1, fillOpacity: .05 }).addTo(trailLayer);
+  try {
+    const { trail } = await api(`/api/devices/${encodeURIComponent(d.id)}/trail`);
+    if (trail?.length > 1) L.polyline(trail.map(p => [p[1], p[2]]), { color: "#4078ff", weight: 3, opacity: .7, dashArray: "4 4" }).addTo(trailLayer);
+  } catch {}
+}
 function drawMap() {
   if (!map) {
     map = L.map("map").setView([1.3521, 103.8198], 11);
@@ -3267,6 +3487,7 @@ $("mapQ").oninput = () => { drawMap(); fitMap(); };
 function openMap(d) {
   fillMapSites();
   $("mapSite").value = ""; $("mapQ").value = ""; // the dialog always opens on all devices
+  trailLayer?.remove(); trailLayer = null;
   $("mapDlg").showModal();
   drawMap();
   map.invalidateSize();
@@ -3280,6 +3501,7 @@ function openMap(d) {
     if (!markers[d.id]) return toast("No location from this device yet", true);
     map.setView(markers[d.id].getLatLng(), 18);
     markers[d.id].openPopup();
+    drawTrail(d);
   }
 }
 $("mapBtn").onclick = () => openMap();

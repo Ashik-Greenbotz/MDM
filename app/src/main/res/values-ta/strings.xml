@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lost_title">தொலைந்த சாதனம்</string>
+    <string name="lost_default">இந்த சாதனம் தொலைந்துவிட்டது. தயவுசெய்து திருப்பித் தரவும்.</string>
+    <string name="opening_app">📌 %s திறக்கிறது…</string>
+</resources>

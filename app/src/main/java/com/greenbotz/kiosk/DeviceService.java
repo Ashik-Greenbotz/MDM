@@ -39,6 +39,7 @@ import android.provider.Settings;
 import android.util.Log;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -69,6 +70,9 @@ public class DeviceService extends Service {
     static final String PREF_TOKEN = "token";
     static final String PREF_CODE = "code";
     static final String PREF_MAINTENANCE = "maintenance";
+    static final String PREF_LOST = "lost"; // JSON {message, phone}; empty = not lost
+    static final String PREF_SIGNAGE = "signage"; // JSON {urls, seconds, idleMin, enabled}; empty = off
+    static final String PREF_LANG = "language"; // BCP-47 tag (en, zh-CN, ms, ta); empty = device default
     static final String PREF_MAINT_IMG = "maint_img"; // version (portal time) of files/maintenance.jpg; 0 = built-in image
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
@@ -355,6 +359,9 @@ public class DeviceService extends Service {
             d.put("kioskLocked", !monitor && System.currentTimeMillis() >= unlockUntil);
             d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+            putUsage(d);
+            d.put("lost", LostActivity.on(this));
+            d.put("adbWifi", adbWifiPort()); // >0 = adb over Wi-Fi is on (that port); 0 = off/not rooted
             Location loc = lastLocation;
             if (loc != null) {
                 d.put("lat", loc.getLatitude());
@@ -373,6 +380,8 @@ public class DeviceService extends Service {
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
             applyConfig(prefs, reply, configDirty, sentModel, sentUsage);
             if (reply.has("settings")) applySettings(reply.optJSONObject("settings"));
+            if (reply.has("signage")) getSharedPreferences("kiosk", MODE_PRIVATE).edit()
+                    .putString(KioskActivity.PREF_SIGNAGE_KEY, reply.isNull("signage") ? "" : reply.optJSONObject("signage").toString()).apply();
             flushTechOutbox();
             boolean maint = reply.optBoolean("maintenance");
             if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) {
@@ -385,6 +394,11 @@ public class DeviceService extends Service {
             if (img != prefs.getLong(PREF_MAINT_IMG, 0) && !fetchingMaintImage) {
                 fetchingMaintImage = true;
                 new Thread(() -> fetchMaintImage(img)).start();
+            }
+            // Keep the lost-device screen up if lost mode is on (priority over everything).
+            if (LostActivity.on(this) && !KioskActivity.monitorOnly(this)) {
+                handler.post(() -> startActivity(new Intent(this, LostActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
             }
             // Keep the maintenance screen up (also covers reboots and an app coming to the front).
             if (maint && !maintenanceShowing && !KioskActivity.monitorOnly(this)) {
@@ -445,6 +459,13 @@ public class DeviceService extends Service {
                 dpm.setSystemUpdatePolicy(admin, u.equals("auto") ? android.app.admin.SystemUpdatePolicy.createAutomaticInstallPolicy()
                         : u.equals("night") ? android.app.admin.SystemUpdatePolicy.createWindowedInstallPolicy(60, 300)
                         : u.equals("postpone") ? android.app.admin.SystemUpdatePolicy.createPostponeInstallPolicy() : null);
+                String lang = s.optString("language");
+                SharedPreferences sp = getSharedPreferences("kiosk", MODE_PRIVATE);
+                if (!lang.equals(sp.getString(PREF_LANG, ""))) {
+                    sp.edit().putString(PREF_LANG, lang).commit();
+                    if (!KioskActivity.monitorOnly(this)) handler.post(() -> startActivity(new Intent(this, KioskActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+                }
                 if (!first) event(this, "Tablet settings applied");
             } catch (SecurityException e) {
                 event(this, "Tablet settings need device owner");
@@ -915,6 +936,31 @@ public class DeviceService extends Service {
         if (type.equals("term")) startTerm();
         if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
+        if (type.equals("wifi")) addWifi(cmd.optString("ssid"), cmd.optString("password"));
+        if (type.equals("adbwifi")) new Thread(() -> adbWifi(cmd.optBoolean("on", true)), "adbwifi").start();
+        if (type.equals("browse")) new Thread(() -> browse(cmd.optString("path", "/sdcard")), "browse").start();
+        if (type.equals("pull")) new Thread(() -> pullFile(cmd.optString("path")), "pull").start();
+        if (type.equals("lost") || type.equals("found")) {
+            String json = "";
+            if (type.equals("lost")) {
+                try {
+                    json = new JSONObject().put("message", cmd.optString("message")).put("phone", cmd.optString("phone")).toString();
+                } catch (JSONException e) {
+                    json = "{}";
+                }
+            }
+            getSharedPreferences("kiosk", MODE_PRIVATE).edit().putString(KioskActivity.PREF_LOST_KEY, json).commit();
+            event(this, type.equals("lost") ? "Lost mode on" : "Lost mode off");
+            if (type.equals("lost") && !KioskActivity.monitorOnly(this)) startActivity(new Intent(this, LostActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        }
+        if (type.equals("wipe")) {
+            try {
+                event(this, "Factory reset started from the portal");
+                dpm.wipeData(0);
+            } catch (SecurityException e) {
+                event(this, "Wipe failed: app is not device owner");
+            }
+        }
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
             new Thread(() -> {
@@ -1522,6 +1568,180 @@ public class DeviceService extends Service {
     }
 
     // "Find my device": alarm sound at full volume for 20 seconds.
+    // Push a Wi-Fi network (device owner): add it and connect. WPA2 if a password is given, else open.
+    private void addWifi(String ssid, String password) {
+        if (ssid == null || ssid.isEmpty()) return;
+        try {
+            WifiManager wm = getApplicationContext().getSystemService(WifiManager.class);
+            if (!wm.isWifiEnabled()) wm.setWifiEnabled(true);
+            @SuppressWarnings("deprecation") android.net.wifi.WifiConfiguration c = new android.net.wifi.WifiConfiguration();
+            c.SSID = "\"" + ssid + "\"";
+            if (password == null || password.isEmpty()) {
+                c.allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.NONE);
+            } else {
+                c.preSharedKey = "\"" + password + "\"";
+                c.allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.WPA_PSK);
+            }
+            int id = wm.addNetwork(c);
+            if (id < 0) { event(this, "Wi-Fi \"" + ssid + "\" could not be added"); return; }
+            wm.enableNetwork(id, true);
+            wm.reconnect();
+            event(this, "Wi-Fi network \"" + ssid + "\" added");
+        } catch (Exception e) {
+            event(this, "Wi-Fi setup failed: " + e.getMessage());
+        }
+    }
+
+    // App usage (top apps by foreground time, last 24 h) and data use (Wi-Fi + mobile today). Both need the
+    // GET_USAGE_STATS appop (set at setup on non-rooted tablets); without it they are simply left out.
+    private void putUsage(JSONObject d) {
+        try {
+            android.app.AppOpsManager ops = getSystemService(android.app.AppOpsManager.class);
+            int mode = ops.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName());
+            if (mode != android.app.AppOpsManager.MODE_ALLOWED) return;
+            long end = System.currentTimeMillis(), start = end - 24L * 3600 * 1000;
+            android.app.usage.UsageStatsManager usm = getSystemService(android.app.usage.UsageStatsManager.class);
+            java.util.List<android.app.usage.UsageStats> list = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end);
+            if (list != null && !list.isEmpty()) {
+                java.util.Map<String, Long> total = new java.util.HashMap<>();
+                for (android.app.usage.UsageStats u : list) if (u.getTotalTimeInForeground() > 0)
+                    total.merge(u.getPackageName(), u.getTotalTimeInForeground(), Long::sum);
+                java.util.List<java.util.Map.Entry<String, Long>> top = new java.util.ArrayList<>(total.entrySet());
+                top.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+                JSONArray usage = new JSONArray();
+                for (int i = 0; i < Math.min(8, top.size()); i++) {
+                    usage.put(new JSONArray().put(appLabel(top.get(i).getKey())).put(Math.round(top.get(i).getValue() / 60000.0))); // minutes
+                }
+                if (usage.length() > 0) d.put("usage", usage);
+            }
+            // Data today (local midnight -> now), total across Wi-Fi + mobile, in MB.
+            android.app.usage.NetworkStatsManager nsm = getSystemService(android.app.usage.NetworkStatsManager.class);
+            java.util.Calendar c = java.util.Calendar.getInstance();
+            c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0);
+            long midnight = c.getTimeInMillis();
+            long wifi = bucketBytes(nsm, android.net.NetworkCapabilities.TRANSPORT_WIFI, midnight, end);
+            long mobile = bucketBytes(nsm, android.net.NetworkCapabilities.TRANSPORT_CELLULAR, midnight, end);
+            if (wifi >= 0 || mobile >= 0) d.put("data", new JSONObject()
+                    .put("wifi", Math.round(Math.max(0, wifi) / 1e6)).put("mobile", Math.round(Math.max(0, mobile) / 1e6)));
+        } catch (Exception e) {
+            Log.w(TAG, "usage stats unavailable", e);
+        }
+    }
+
+    private String appLabel(String pkg) {
+        try {
+            return getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0)).toString();
+        } catch (Exception e) {
+            return pkg;
+        }
+    }
+
+    private static long bucketBytes(android.app.usage.NetworkStatsManager nsm, int transport, long start, long end) {
+        try {
+            android.app.usage.NetworkStats.Bucket b = nsm.querySummaryForDevice(
+                    transport == android.net.NetworkCapabilities.TRANSPORT_WIFI ? android.net.ConnectivityManager.TYPE_WIFI : android.net.ConnectivityManager.TYPE_MOBILE,
+                    null, start, end);
+            return b == null ? -1 : b.getRxBytes() + b.getTxBytes();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    // File browser (admins, via the portal). Listing uses `ls` (root on rooted tablets, so any path); a download
+    // streams the file straight to the server with no size cap.
+    private boolean rooted() {
+        return new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
+    }
+
+    private String[] sh(String cmd) {
+        return rooted() ? new String[]{"su", "0", "sh", "-c", cmd} : new String[]{"sh", "-c", cmd};
+    }
+
+    private void browse(String path) {
+        JSONArray entries = new JSONArray();
+        String error = null;
+        try {
+            // -1 one per line, -A almost-all, -p mark directories with a trailing slash.
+            Process p = new ProcessBuilder(sh("ls -1Ap \"" + path.replace("\"", "") + "\"")).redirectErrorStream(true).start();
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+            for (String line; (line = r.readLine()) != null && entries.length() < 2000; ) {
+                if (line.isEmpty()) continue;
+                boolean dir = line.endsWith("/");
+                String nm = dir ? line.substring(0, line.length() - 1) : line;
+                entries.put(new JSONObject().put("name", nm).put("dir", dir));
+            }
+            p.waitFor();
+        } catch (Exception e) {
+            error = e.getMessage();
+        }
+        try {
+            techCall(this, "POST", "/api/browse-result", new JSONObject().put("path", path).put("entries", entries).put("error", error));
+        } catch (Exception e) {
+            Log.w(TAG, "browse post failed", e);
+        }
+    }
+
+    private void pullFile(String path) {
+        if (path == null || path.isEmpty()) return;
+        try {
+            Process proc = new ProcessBuilder(sh("cat \"" + path.replace("\"", "") + "\"")).start();
+            HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/pull").openConnection();
+            try {
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(120000);
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setChunkedStreamingMode(0);
+                c.setRequestProperty("Content-Type", "application/octet-stream");
+                c.setRequestProperty("X-Device-Key", key(this));
+                c.setRequestProperty("X-Device-Id", deviceId());
+                c.setRequestProperty("X-Path", path);
+                try (InputStream in = proc.getInputStream(); OutputStream o = c.getOutputStream()) {
+                    byte[] b = new byte[64 * 1024];
+                    for (int n; (n = in.read(b)) > 0; ) o.write(b, 0, n);
+                }
+                if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+                event(this, "File sent to the portal: " + path);
+            } finally {
+                c.disconnect();
+                proc.destroy();
+            }
+        } catch (Exception e) {
+            event(this, "Download failed for " + path + ": " + e.getMessage());
+        }
+    }
+
+    // ADB over Wi-Fi: on rooted tablets the app turns network adb on/off itself (no cable, no prompt), giving the
+    // same full control as `adb connect <ip>:5555`. Non-rooted tablets (e.g. Samsung) need a one-time USB step.
+    private int adbWifiPort() {
+        try {
+            Process p = new ProcessBuilder("getprop", "service.adb.tcp.port").redirectErrorStream(true).start();
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+            String v = r.readLine();
+            p.waitFor();
+            return v == null || v.trim().isEmpty() ? 0 : Math.max(0, Integer.parseInt(v.trim()));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void adbWifi(boolean on) {
+        boolean root = new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
+        if (!root) {
+            event(this, "ADB over Wi-Fi needs root or a one-time USB step: adb tcpip 5555");
+            return;
+        }
+        try {
+            String cmd = on ? "setprop service.adb.tcp.port 5555; setprop persist.adb.tcp.port 5555; stop adbd; start adbd"
+                    : "setprop service.adb.tcp.port -1; setprop persist.adb.tcp.port \"\"; stop adbd; start adbd";
+            Process p = new ProcessBuilder("su", "0", "sh", "-c", cmd).redirectErrorStream(true).start();
+            p.waitFor();
+            event(this, on ? "ADB over Wi-Fi ON (port 5555)" : "ADB over Wi-Fi OFF");
+        } catch (Exception e) {
+            event(this, "ADB over Wi-Fi failed: " + e.getMessage());
+        }
+    }
+
     private void ring() {
         AudioManager am = getSystemService(AudioManager.class);
         am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);

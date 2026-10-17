@@ -76,7 +76,7 @@ async function termSave(id, T) {
   dirty = true;
 }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "browse", "pull", "adbwifi", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -137,7 +137,7 @@ const store = {
 const MAINT_DEFAULT = path.join(__dirname, "maintenance-default.jpg"), MAINT_DEFAULT_AT = 1;
 const maintVersion = () => portal.maintImage?.at || (fs.existsSync(MAINT_DEFAULT) ? MAINT_DEFAULT_AT : 0);
 const maintImg = async () => portal.maintImage ? store.read("uploads/maintenance.jpg") : fs.promises.readFile(MAINT_DEFAULT).catch(() => null);
-const appKey = id => `uploads/apps/${id}.apk`, fileKey = id => `uploads/files/${id}`, histKey = id => `history/${id}.json`;
+const appKey = id => `uploads/apps/${id}.apk`, notesKey = id => `uploads/apps/${id}-notes.pdf`, fileKey = id => `uploads/files/${id}`, histKey = id => `history/${id}.json`;
 if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs", "history"]) fs.mkdirSync(local(dir), { recursive: true });
 
 let devices = {};
@@ -197,6 +197,9 @@ const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enr
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
+// The main admin's password: the one changed in the portal (portal.adminHash) once set, else ADMIN_PASSWORD.
+// Forgotten? Delete "adminHash" from portal.json and restart: ADMIN_PASSWORD works again.
+const rootPw = pw => portal.adminHash ? checkPw(pw, portal.adminHash) : same(pw, ADMIN_PASSWORD);
 const allSites = u => u.admin || (u.sites || []).includes("*");
 const sees = (u, d) => !!d && (allSites(u) || (u.sites || []).includes(d.group || "")); // "No site" devices: all-sites accounts only
 const siteOk = (u, g) => allSites(u) || (!!g && (u.sites || []).includes(g));
@@ -239,7 +242,7 @@ function whoIs(req) {
   const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
   if (!m) return null;
   const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":");
-  return same(user, ADMIN_USER) && same(rest.join(":"), ADMIN_PASSWORD) ? ROOT : null;
+  return same(user, ADMIN_USER) && rootPw(rest.join(":")) ? ROOT : null;
 }
 // AGENT_KEY: a second key for PC agents (Windows / Linux), so the tablets' key (built into the app) stays private.
 // Not set in the environment: the server makes one on first start and keeps it in portal.json.
@@ -381,7 +384,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "patch", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess", "usage", "data", "lost", "adbWifi"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 // Health score 0-100 from the hourly averages (historyH rows: [time, ...HEALTH]) with warnings that look ahead:
 // storage filling up, running hotter than last week, battery running flat, RAM / CPU busy all day. Worked out once an hour.
@@ -453,12 +456,20 @@ function pick(target = {}) {
 }
 
 // Tablet settings (brightness %, volume %, night screen off/on, system updates). null / "" = leave as it is.
-const SETTING_KEYS = ["brightness", "volume", "screenOff", "screenOn", "updates"];
+const SETTING_KEYS = ["brightness", "volume", "screenOff", "screenOn", "updates", "language"];
 function cleanSettings(b = {}) {
   const pct = v => v === null || v === undefined || v === "" ? null : Math.min(100, Math.max(0, Math.round(Number(v)) || 0));
   const hm = v => /^\d\d:\d\d$/.test(v || "") ? v : "";
   return { brightness: pct(b.brightness), volume: pct(b.volume), screenOff: hm(b.screenOff), screenOn: hm(b.screenOn),
-    updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "" };
+    updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "",
+    language: ["en", "zh-CN", "ms", "ta"].includes(b.language) ? b.language : "" };
+}
+// Digital signage for a device: its site's playlist, as image URLs, when enabled.
+function signageOf(d) {
+  const sg = portal.sites.find(x => x.name === d.group)?.signage;
+  if (!sg || !sg.enabled || !(sg.images || []).length) return null;
+  const urls = sg.images.map(id => portal.files.find(f => f.id === id) && `/download/file/${id}`).filter(Boolean);
+  return urls.length ? { urls, seconds: sg.seconds || 10, idleMin: sg.idleMin || 2, enabled: true } : null;
 }
 // What a tablet uses: its own values, else its site's.
 function settingsOf(d) {
@@ -490,6 +501,31 @@ function commandFrom(body) {
     const script = String(body.script || "").trim();
     if (!script || script.length > 8000) throw new Error("type a command (up to 8000 characters)");
     return { type, script, name: script.split("\n")[0].slice(0, 60) };
+  }
+  if (type === "lost") {
+    const message = String(body.message || "").slice(0, 300).trim();
+    const phone = String(body.phone || "").slice(0, 40).trim();
+    if (!message && !phone) throw new Error("type a message or a phone number");
+    return { type, message, phone, name: "on" };
+  }
+  if (type === "found") return { type, name: "off" };
+  if (type === "adbwifi") return { type, on: body.on !== false, name: body.on !== false ? "on" : "off" };
+  if (type === "browse") return { type, path: String(body.path || "/sdcard").slice(0, 500), name: "list" };
+  if (type === "pull") {
+    const path = String(body.path || "");
+    if (!path) throw new Error("no file path");
+    return { type, path: path.slice(0, 500), name: path.split("/").pop() };
+  }
+  if (type === "wipe") {
+    if (String(body.confirm) !== "WIPE") throw new Error("type WIPE to confirm");
+    return { type, name: "factory reset" };
+  }
+  if (type === "wifi") {
+    const ssid = String(body.ssid || "").trim();
+    if (!ssid || ssid.length > 32) throw new Error("Wi-Fi name (1-32 characters)");
+    const password = String(body.password || "");
+    if (password && (password.length < 8 || password.length > 63)) throw new Error("Wi-Fi password must be 8-63 characters (or blank for an open network)");
+    return { type, ssid, password, name: ssid };
   }
   if (type === "singleapp") {
     const pkg = String(body.package || "");
@@ -543,6 +579,7 @@ function waPush(key, alertId, type, recipients, text) {
 }
 // Device alerts go to the alert numbers. The key is alert + type + reminder number.
 const waQueue = (type, d, a, n = 0) => waPush(`${a.id}:${type}:${n}`, a.id, type, portal.whatsapp, waText(type, d, a));
+// geofence alerts reuse the generic alert text (a.text / a.detail).
 // The API key for a number: an alert number, or a technician's own number (ticket messages).
 const waRecipient = phone => portal.whatsapp.find(r => r.phone === phone) || portal.technicians.find(t => t.phone === phone && t.apikey);
 async function callmebot(phone, apikey, text) {
@@ -762,6 +799,27 @@ const isOnline = d => Date.now() - d.lastSeen < ONLINE_MS;
 const num = v => ((typeof v === "number" || (typeof v === "string" && v.trim())) && Number.isFinite(+v) ? +v : null);
 const point = (lat, lng) => (num(lat) !== null && num(lng) !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat: +lat, lng: +lng } : null);
 // Great-circle distance in km (haversine).
+// Location trail (last 50 points, at least 3 min / 25 m apart) and a geofence alert when a tablet leaves its site.
+function checkLocation(d) {
+  if (d.lat == null || d.lng == null) return;
+  const at = { lat: d.lat, lng: d.lng }, trail = (d.trail ||= []), last = trail[trail.length - 1];
+  if (!last || (Date.now() - last[0] > 180000 && km(at, { lat: last[1], lng: last[2] }) > 0.025)) {
+    trail.push([Date.now(), d.lat, d.lng]);
+    if (trail.length > 50) trail.shift();
+  }
+  const site = portal.sites.find(x => x.name === d.group);
+  if (!site || site.lat == null || !site.geofence) { d.outsideSite = false; return; }
+  const away = km(at, { lat: site.lat, lng: site.lng }) * 1000; // metres
+  const outside = away > site.geofence;
+  if (outside && !d.outsideSite) {
+    portal.alerts.push({ id: rid(), deviceId: d.id, kind: "geofence", text: `${label(d)} left ${site.name}`, detail: `${Math.round(away)} m from the site (fence ${site.geofence} m)`, at: Date.now() });
+    waQueue("geofence", d, portal.alerts[portal.alerts.length - 1]);
+    log(d.id, "alert", `${label(d)} left its site (${Math.round(away)} m away)`);
+  }
+  if (!outside && d.outsideSite) log(d.id, "device", `${label(d)} is back inside ${site.name}`);
+  d.outsideSite = outside;
+}
+
 function km(a, b) {
   const r = x => (x * Math.PI) / 180, h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
   return 12742 * Math.asin(Math.sqrt(h));
@@ -1556,6 +1614,8 @@ async function handler(req, res) {
       const fresh = !devices[body.id];
       const d = devices[body.id] || (devices[body.id] = { id: body.id, firstSeen: Date.now() });
       const wasOnline = d.lastSeen && Date.now() - d.lastSeen < ONLINE_MS;
+      // when the app version changed and from what (Apps & files page: "installed / updated on" for each device)
+      if (body.appVersion && body.appVersion !== d.appVersion) { d.appFrom = d.appVersion || null; d.appSince = Date.now(); }
       for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
       // Windows remote access as the agent sees it (SSH server, RustDesk ID)
       if (body.remote && typeof body.remote === "object") {
@@ -1571,6 +1631,7 @@ async function handler(req, res) {
       // Technical team devices: their location is only kept when the technician agreed to share it.
       if (d.usage === "tech" && !techOf(d)?.shareLocation) for (const k of ["lat", "lng", "accuracy", "locationTime"]) delete d[k];
       d.lastSeen = Date.now();
+      checkLocation(d);
       d.ip = ipOf(req);
       if (!d.code) d.code = newCode();
       if (fresh) log(d.id, "enroll", `${label(d)} registered (${typeOf(d)}), Device ID ${d.code}`);
@@ -1635,7 +1696,7 @@ async function handler(req, res) {
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,
-        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false, settings: settingsOf(d) });
+        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false, settings: settingsOf(d), signage: signageOf(d) });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -1669,6 +1730,29 @@ async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
     // Result of a PC command (run, install, message …): kept on the device (shown on its page) and in its activity.
+    // File browser: the device posts a directory listing.
+    if (req.method === "POST" && p === "/api/browse-result") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const d = devices[String(req.headers["x-device-id"] || "")];
+      if (!d) return send(res, 404, { error: "unknown device" });
+      const body = await readJson(req);
+      d.browse = { path: String(body.path || "").slice(0, 500), entries: (Array.isArray(body.entries) ? body.entries : []).slice(0, 2000), error: body.error ? String(body.error).slice(0, 200) : null, at: Date.now() };
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
+    // File browser: the device uploads a pulled file (raw bytes, X-Path header).
+    if (req.method === "POST" && p === "/api/pull") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const d = devices[String(req.headers["x-device-id"] || "")];
+      if (!d) return send(res, 404, { error: "unknown device" });
+      const path = String(req.headers["x-path"] || "file");
+      const buf = await readBody(req, 200 * 1024 * 1024);
+      await store.write(`pull/${d.id}.bin`, buf);
+      d.pull = { path, name: path.split("/").pop(), size: buf.length, at: Date.now() };
+      log(d.id, "device", `Downloaded file ${path} (${Math.ceil(buf.length / 1024)} KB)`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
     if (req.method === "POST" && p === "/api/command-result") {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
       const d = devices[String(req.headers["x-device-id"] || "")];
@@ -1823,7 +1907,7 @@ async function handler(req, res) {
       const body = await readJson(req);
       const name = String(body.user || ""), pw = String(body.password || "");
       const acct = portal.users.find(u => u.username.toLowerCase() === name.toLowerCase());
-      const user = same(name, ADMIN_USER) && same(pw, ADMIN_PASSWORD) ? null
+      const user = same(name, ADMIN_USER) && rootPw(pw) ? null
         : acct && !acct.disabled && checkPw(pw, acct.hash) ? acct.username : undefined;
       if (user === undefined) {
         loginFailed(ip);
@@ -1864,8 +1948,21 @@ async function handler(req, res) {
     const u = whoIs(req);
     if (!u) return send(res, 401, { error: "login required" });
     const deny = (error = "Your account doesn't have access to this") => send(res, 403, { error });
+    // Change my own password (every account, view-only too): current password, then the new one. Signs out my other sessions.
+    if (req.method === "POST" && p === "/api/me/password") {
+      const body = await readJson(req), ip = ipOf(req), pw = String(body.password || "");
+      if (loginBlocked(ip)) return send(res, 429, { error: "Too many attempts, wait a minute" });
+      if (!(u.root ? rootPw(String(body.current || "")) : checkPw(String(body.current || ""), u.hash))) { loginFailed(ip); return send(res, 400, { error: "Current password is wrong" }); }
+      if (pw.length < 8 || pw.length > 200) return send(res, 400, { error: "New password: at least 8 characters" });
+      if (u.root) portal.adminHash = hashPw(pw); else u.hash = hashPw(pw);
+      const me = sessionId(req);
+      for (const [sid, s] of sessions) if (sid !== me && s.user === (u.root ? null : u.username)) sessions.delete(sid);
+      log(null, "user", `Password changed by ${u.username}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
     if (req.method === "POST" && u.readOnly) return deny("This account is view-only");
-    const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
+    const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/apps\/[a-f0-9]{16}\/notes\.pdf$/.test(p) || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
     const body = req.method === "POST" && !raw ? await readJson(req) : {};
     const ok = extra => { dirty = true; send(res, 200, { ok: true, ...extra }); };
     const mine = list => list.filter(d => sees(u, d));
@@ -2008,6 +2105,21 @@ async function handler(req, res) {
       }
     }
     // Remote shell, portal side (admins): GET ?from=<n> waits up to 10 s for output past n; POST { data } types into it.
+    // The last file pulled off a device (admins).
+    m = /^\/api\/devices\/([\w-]+)\/pull\/download$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]], buf = u.admin && d && d.pull && await store.read(`pull/${d.id}.bin`);
+      if (!buf) return send(res, 404, { error: "no file" });
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Disposition": disposition(d.pull.name) });
+      return res.end(buf);
+    }
+    // Location trail for the map (last points).
+    m = /^\/api\/devices\/([\w-]+)\/trail$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]];
+      if (!d || !can(u, "devices") || !sees(u, d)) return deny();
+      return send(res, 200, { trail: d.trail || [] });
+    }
     // A saved Remote SSH session (admins).
     m = /^\/api\/devices\/([\w-]+)\/shell\/(\d+)$/.exec(p);
     if (req.method === "GET" && m) {
@@ -2117,7 +2229,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
-        if ((body.type === "run" || body.type === "term") && !u.admin) return deny("Only admins can run commands on devices");
+        if ((body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "browse" || body.type === "pull" || body.type === "adbwifi") && !u.admin) return deny("Only admins can do this");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
@@ -2144,7 +2256,7 @@ async function handler(req, res) {
       if (!can(u, "devices", "sites")) return deny();
       const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
-      if (body.action === "command" && (body.type === "run" || body.type === "term") && !u.admin) return deny("Only admins can run commands on devices");
+      if (body.action === "command" && (body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "adbwifi") && !u.admin) return deny("Only admins can do this");
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");
@@ -2217,6 +2329,7 @@ async function handler(req, res) {
       const at = point(body.lat, body.lng);
       if (!at && (num(body.lat) !== null || num(body.lng) !== null)) return send(res, 400, { error: "Latitude -90..90 and longitude -180..180, or leave both empty" });
       Object.assign(fields, { lat: at?.lat ?? null, lng: at?.lng ?? null });
+      fields.geofence = body.geofence === "" || body.geofence == null ? null : Math.max(20, Math.min(50000, Math.round(Number(body.geofence)) || 0)) || null;
       // logo: a small image the portal already shrank to 128 px; "" removes it, left out keeps it.
       // ponytail: stored inline in portal.json and sent with every state refresh; fine for tens of sites
       if (body.logo === "") fields.logo = null;
@@ -2249,6 +2362,14 @@ async function handler(req, res) {
       if (!d || !can(u, "devices") || !sees(u, d)) return deny();
       d.settings = cleanSettings(body);
       log(d.id, "settings", `Tablet settings of ${label(d)} changed by ${by}`);
+      return ok();
+    }
+    if (req.method === "POST" && p === "/api/sites/signage") {
+      const site = portal.sites.find(x => x.name === body.name);
+      if (!site || !u.admin) return deny();
+      const images = (Array.isArray(body.images) ? body.images : []).map(String).filter(id => portal.files.some(f => f.id === id)).slice(0, 50);
+      site.signage = { images, seconds: Math.max(2, Math.min(600, Math.round(Number(body.seconds)) || 10)), idleMin: Math.max(1, Math.min(240, Math.round(Number(body.idleMin)) || 2)), enabled: !!body.enabled && images.length > 0 };
+      log(null, "site", `Signage of site "${site.name}" ${site.signage.enabled ? "on" : "off"} (${images.length} images) by ${by}`);
       return ok();
     }
     if (req.method === "POST" && p === "/api/sites/settings") {
@@ -2374,12 +2495,38 @@ async function handler(req, res) {
       log(null, "upload", `Release notes updated for "${a.label}" by ${u.username}`);
       return ok();
     }
+    // Release notes as a PDF (optional): GET opens it, POST (raw PDF body) attaches / replaces it, POST ?remove=1 removes it.
+    m = /^\/api\/apps\/([a-f0-9]{16})\/notes\.pdf$/.exec(p);
+    if (m) {
+      const a = portal.apps.find(x => x.id === m[1]);
+      if (req.method === "GET") {
+        const pdf = can(u, "apps", "devices", "tasks") && a?.notesPdf && await store.read(notesKey(a.id));
+        if (!pdf) return send(res, 404, { error: "no release notes PDF" });
+        res.setHeader("Content-Disposition", disposition(a.notesPdf.name).replace(/^attachment/, "inline"));
+        return send(res, 200, pdf, "application/pdf");
+      }
+      if (!can(u, "apps")) return deny();
+      if (!a) return send(res, 404, { error: "app not found" });
+      if (url.searchParams.get("remove")) {
+        store.remove(notesKey(a.id));
+        delete a.notesPdf;
+        log(null, "upload", `Release notes PDF removed from "${a.label}" by ${u.username}`);
+        return ok();
+      }
+      const pdf = await readBody(req, 20 * 1024 * 1024);
+      if (pdf.subarray(0, 5).toString() !== "%PDF-") return send(res, 400, { error: "send a PDF file" });
+      await store.write(notesKey(a.id), pdf);
+      a.notesPdf = { name: String(url.searchParams.get("name") || "release-notes.pdf").replace(/[^\w .()-]/g, "_").slice(0, 80), size: pdf.length, at: Date.now(), by: u.username };
+      log(null, "upload", `Release notes PDF "${a.notesPdf.name}" added to "${a.label}" by ${u.username}`);
+      return ok();
+    }
     m = /^\/api\/(apps|files)\/([a-f0-9]{16})\/(delete|kiosk)$/.exec(p);
     if (req.method === "POST" && m) {
       if (!can(u, "apps")) return deny();
       if (m[3] === "kiosk" && m[1] === "apps") { portal.kioskApp = m[2]; return ok(); }
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
+      if (m[1] === "apps") store.remove(notesKey(m[2])); // no-op when the app had no notes PDF
       return ok();
     }
     // Barrier MQTT broker (Configuration page, admins). The password is write-only: blank keeps the saved one.

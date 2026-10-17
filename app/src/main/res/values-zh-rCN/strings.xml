@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lost_title">设备丢失</string>
+    <string name="lost_default">此设备已丢失，请归还。</string>
+    <string name="opening_app">📌 正在打开 %s…</string>
+</resources>
