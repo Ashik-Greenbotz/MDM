@@ -375,7 +375,8 @@
   nav a .ico { width: 19px; height: 19px; color: var(--muted); transition: color .2s, transform .3s var(--ease); }
   nav a:hover .ico { color: var(--text); transform: scale(1.1); }
   nav a.on .ico { color: var(--accent); filter: drop-shadow(0 0 6px rgba(242,140,0,.45)); }
-  .who { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .who { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+  .who:hover { color: var(--text); }
   .who .ico { width: 16px; height: 16px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
@@ -651,7 +652,8 @@ async function refresh() {
   $("bellN").hidden = !n;
   $("bellN").textContent = n;
   $("who").innerHTML = S.me ? `${ico("user-round")}<span class="t">${esc(S.me.name || S.me.username)}</span>${S.me.readOnly ? `<span class="pill neutral">View only</span>` : ""}` : "";
-  $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}` : "";
+  $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}. Click to change your password` : "";
+  $("who").onclick = () => S.me && myPassword();
   renderNav();
   renderAlarm();
   watchAutoTickets();
@@ -2346,6 +2348,18 @@ VIEWS.app = async (id, first) => {
   if ($("apPdfDel")) $("apPdfDel").onclick = () => confirm("Remove the release notes PDF?") && act(() => api(`/api/apps/${a.id}/notes.pdf?remove=1`, {}), "PDF removed");
 };
 
+// Change my password (header: click your name). The server signs out this account's other sessions.
+function myPassword() {
+  dialog(`<h2>Change password</h2><p class="meta">Signed in as <b>${esc(S.me.username)}</b>. Other places where you're signed in will be signed out.</p>
+    <label>Current password</label><input type="password" id="mpOld" autocomplete="current-password" required>
+    <label>New password (at least 8 characters)</label><input type="password" id="mpNew" autocomplete="new-password" minlength="8" required>
+    <label>New password again</label><input type="password" id="mpNew2" autocomplete="new-password" minlength="8" required>`,
+    "Change password", async () => {
+      if ($("mpNew").value !== $("mpNew2").value) return toast("The new passwords don't match", true);
+      act(() => api("/api/me/password", { current: $("mpOld").value, password: $("mpNew").value }), "Password changed");
+    });
+}
+
 // Release notes of an uploaded app: shown and edited in one box (optional, kept as a record).
 function appNotes(id) {
   const a = S.apps.find(x => x.id === id);
@@ -2507,7 +2521,7 @@ const evBy = e => (/\(by (.+)\)$/.exec(e.text) || /\bby ([\w.@-]+)(?=$|\)|\s\(|,
 // Readable names of the event kinds (Activity column and type filter).
 const EV_NAME = { site: "Site change", enroll: "Device enrolled", online: "Came online", offline: "Went offline", command: "Command sent", delivered: "Command done",
   alert: "Alert", resolved: "Alert resolved", logs: "Logs", task: "Scheduled task", upload: "Upload", removed: "Device removed", device: "Device report",
-  screenshot: "Screenshot", announcement: "Announcement", config: "Settings", relay: "Door relay", ticket: "Ticket", team: "Technical team", assistant: "Max (AI)",
+  screenshot: "Screenshot", announcement: "Announcement", config: "Configuration", relay: "Door relay", result: "Command result", vpn: "VPN", barrier: "Barrier", ticket: "Ticket", team: "Technical team", assistant: "Max (AI)",
   whatsapp: "WhatsApp", maintenance: "Maintenance", user: "User account", ssh: "Remote access" };
 const evName = k => EV_NAME[k] || (k ? k[0].toUpperCase() + k.slice(1) : "Other");
 // Who: the person named in the text; otherwise the device itself (things it reported) or the system (timers, alerts).

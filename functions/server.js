@@ -197,6 +197,9 @@ const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enr
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
+// The main admin's password: the one changed in the portal (portal.adminHash) once set, else ADMIN_PASSWORD.
+// Forgotten? Delete "adminHash" from portal.json and restart: ADMIN_PASSWORD works again.
+const rootPw = pw => portal.adminHash ? checkPw(pw, portal.adminHash) : same(pw, ADMIN_PASSWORD);
 const allSites = u => u.admin || (u.sites || []).includes("*");
 const sees = (u, d) => !!d && (allSites(u) || (u.sites || []).includes(d.group || "")); // "No site" devices: all-sites accounts only
 const siteOk = (u, g) => allSites(u) || (!!g && (u.sites || []).includes(g));
@@ -239,7 +242,7 @@ function whoIs(req) {
   const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
   if (!m) return null;
   const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":");
-  return same(user, ADMIN_USER) && same(rest.join(":"), ADMIN_PASSWORD) ? ROOT : null;
+  return same(user, ADMIN_USER) && rootPw(rest.join(":")) ? ROOT : null;
 }
 // AGENT_KEY: a second key for PC agents (Windows / Linux), so the tablets' key (built into the app) stays private.
 // Not set in the environment: the server makes one on first start and keeps it in portal.json.
@@ -1904,7 +1907,7 @@ async function handler(req, res) {
       const body = await readJson(req);
       const name = String(body.user || ""), pw = String(body.password || "");
       const acct = portal.users.find(u => u.username.toLowerCase() === name.toLowerCase());
-      const user = same(name, ADMIN_USER) && same(pw, ADMIN_PASSWORD) ? null
+      const user = same(name, ADMIN_USER) && rootPw(pw) ? null
         : acct && !acct.disabled && checkPw(pw, acct.hash) ? acct.username : undefined;
       if (user === undefined) {
         loginFailed(ip);
@@ -1945,6 +1948,19 @@ async function handler(req, res) {
     const u = whoIs(req);
     if (!u) return send(res, 401, { error: "login required" });
     const deny = (error = "Your account doesn't have access to this") => send(res, 403, { error });
+    // Change my own password (every account, view-only too): current password, then the new one. Signs out my other sessions.
+    if (req.method === "POST" && p === "/api/me/password") {
+      const body = await readJson(req), ip = ipOf(req), pw = String(body.password || "");
+      if (loginBlocked(ip)) return send(res, 429, { error: "Too many attempts, wait a minute" });
+      if (!(u.root ? rootPw(String(body.current || "")) : checkPw(String(body.current || ""), u.hash))) { loginFailed(ip); return send(res, 400, { error: "Current password is wrong" }); }
+      if (pw.length < 8 || pw.length > 200) return send(res, 400, { error: "New password: at least 8 characters" });
+      if (u.root) portal.adminHash = hashPw(pw); else u.hash = hashPw(pw);
+      const me = sessionId(req);
+      for (const [sid, s] of sessions) if (sid !== me && s.user === (u.root ? null : u.username)) sessions.delete(sid);
+      log(null, "user", `Password changed by ${u.username}`);
+      dirty = true;
+      return send(res, 200, { ok: true });
+    }
     if (req.method === "POST" && u.readOnly) return deny("This account is view-only");
     const raw = p === "/api/upload" || p === "/api/config/maintenance-image" || /^\/api\/apps\/[a-f0-9]{16}\/notes\.pdf$/.test(p) || /^\/api\/tickets\/[a-f0-9]{16}\/files$/.test(p); // file bodies, read by their route
     const body = req.method === "POST" && !raw ? await readJson(req) : {};
