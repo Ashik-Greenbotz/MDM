@@ -355,6 +355,7 @@ public class DeviceService extends Service {
             d.put("kioskLocked", !monitor && System.currentTimeMillis() >= unlockUntil);
             d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+            putUsage(d);
             Location loc = lastLocation;
             if (loc != null) {
                 d.put("lat", loc.getLatitude());
@@ -915,6 +916,7 @@ public class DeviceService extends Service {
         if (type.equals("term")) startTerm();
         if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
+        if (type.equals("wifi")) addWifi(cmd.optString("ssid"), cmd.optString("password"));
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
             new Thread(() -> {
@@ -1522,6 +1524,85 @@ public class DeviceService extends Service {
     }
 
     // "Find my device": alarm sound at full volume for 20 seconds.
+    // Push a Wi-Fi network (device owner): add it and connect. WPA2 if a password is given, else open.
+    private void addWifi(String ssid, String password) {
+        if (ssid == null || ssid.isEmpty()) return;
+        try {
+            WifiManager wm = getApplicationContext().getSystemService(WifiManager.class);
+            if (!wm.isWifiEnabled()) wm.setWifiEnabled(true);
+            @SuppressWarnings("deprecation") android.net.wifi.WifiConfiguration c = new android.net.wifi.WifiConfiguration();
+            c.SSID = "\"" + ssid + "\"";
+            if (password == null || password.isEmpty()) {
+                c.allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.NONE);
+            } else {
+                c.preSharedKey = "\"" + password + "\"";
+                c.allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.WPA_PSK);
+            }
+            int id = wm.addNetwork(c);
+            if (id < 0) { event(this, "Wi-Fi \"" + ssid + "\" could not be added"); return; }
+            wm.enableNetwork(id, true);
+            wm.reconnect();
+            event(this, "Wi-Fi network \"" + ssid + "\" added");
+        } catch (Exception e) {
+            event(this, "Wi-Fi setup failed: " + e.getMessage());
+        }
+    }
+
+    // App usage (top apps by foreground time, last 24 h) and data use (Wi-Fi + mobile today). Both need the
+    // GET_USAGE_STATS appop (set at setup on non-rooted tablets); without it they are simply left out.
+    private void putUsage(JSONObject d) {
+        try {
+            android.app.AppOpsManager ops = getSystemService(android.app.AppOpsManager.class);
+            int mode = ops.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName());
+            if (mode != android.app.AppOpsManager.MODE_ALLOWED) return;
+            long end = System.currentTimeMillis(), start = end - 24L * 3600 * 1000;
+            android.app.usage.UsageStatsManager usm = getSystemService(android.app.usage.UsageStatsManager.class);
+            java.util.List<android.app.usage.UsageStats> list = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end);
+            if (list != null && !list.isEmpty()) {
+                java.util.Map<String, Long> total = new java.util.HashMap<>();
+                for (android.app.usage.UsageStats u : list) if (u.getTotalTimeInForeground() > 0)
+                    total.merge(u.getPackageName(), u.getTotalTimeInForeground(), Long::sum);
+                java.util.List<java.util.Map.Entry<String, Long>> top = new java.util.ArrayList<>(total.entrySet());
+                top.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+                JSONArray usage = new JSONArray();
+                for (int i = 0; i < Math.min(8, top.size()); i++) {
+                    usage.put(new JSONArray().put(appLabel(top.get(i).getKey())).put(Math.round(top.get(i).getValue() / 60000.0))); // minutes
+                }
+                if (usage.length() > 0) d.put("usage", usage);
+            }
+            // Data today (local midnight -> now), total across Wi-Fi + mobile, in MB.
+            android.app.usage.NetworkStatsManager nsm = getSystemService(android.app.usage.NetworkStatsManager.class);
+            java.util.Calendar c = java.util.Calendar.getInstance();
+            c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0);
+            long midnight = c.getTimeInMillis();
+            long wifi = bucketBytes(nsm, android.net.NetworkCapabilities.TRANSPORT_WIFI, midnight, end);
+            long mobile = bucketBytes(nsm, android.net.NetworkCapabilities.TRANSPORT_CELLULAR, midnight, end);
+            if (wifi >= 0 || mobile >= 0) d.put("data", new JSONObject()
+                    .put("wifi", Math.round(Math.max(0, wifi) / 1e6)).put("mobile", Math.round(Math.max(0, mobile) / 1e6)));
+        } catch (Exception e) {
+            Log.w(TAG, "usage stats unavailable", e);
+        }
+    }
+
+    private String appLabel(String pkg) {
+        try {
+            return getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0)).toString();
+        } catch (Exception e) {
+            return pkg;
+        }
+    }
+
+    private static long bucketBytes(android.app.usage.NetworkStatsManager nsm, int transport, long start, long end) {
+        try {
+            android.app.usage.NetworkStats.Bucket b = nsm.querySummaryForDevice(
+                    transport == android.net.NetworkCapabilities.TRANSPORT_WIFI ? android.net.ConnectivityManager.TYPE_WIFI : android.net.ConnectivityManager.TYPE_MOBILE,
+                    null, start, end);
+            return b == null ? -1 : b.getRxBytes() + b.getTxBytes();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     private void ring() {
         AudioManager am = getSystemService(AudioManager.class);
         am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);

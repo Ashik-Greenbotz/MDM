@@ -76,7 +76,7 @@ async function termSave(id, T) {
   dirty = true;
 }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -381,7 +381,7 @@ async function sendFile(res, key, name) {
 // Fields a device may set about itself.
 const REPORT_FIELDS = ["type", "patch", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
-  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess"];
+  "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess", "usage", "data"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
 // Health score 0-100 from the hourly averages (historyH rows: [time, ...HEALTH]) with warnings that look ahead:
 // storage filling up, running hotter than last week, battery running flat, RAM / CPU busy all day. Worked out once an hour.
@@ -490,6 +490,13 @@ function commandFrom(body) {
     const script = String(body.script || "").trim();
     if (!script || script.length > 8000) throw new Error("type a command (up to 8000 characters)");
     return { type, script, name: script.split("\n")[0].slice(0, 60) };
+  }
+  if (type === "wifi") {
+    const ssid = String(body.ssid || "").trim();
+    if (!ssid || ssid.length > 32) throw new Error("Wi-Fi name (1-32 characters)");
+    const password = String(body.password || "");
+    if (password && (password.length < 8 || password.length > 63)) throw new Error("Wi-Fi password must be 8-63 characters (or blank for an open network)");
+    return { type, ssid, password, name: ssid };
   }
   if (type === "singleapp") {
     const pkg = String(body.package || "");
