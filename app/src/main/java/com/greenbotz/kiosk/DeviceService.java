@@ -913,6 +913,7 @@ public class DeviceService extends Service {
         if (type.equals("screenshot")) screenshot();
         if (type.equals("live")) startLive();
         if (type.equals("term")) startTerm();
+        if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
@@ -1239,6 +1240,46 @@ public class DeviceService extends Service {
             }
         } catch (Exception e) {
             Log.w(TAG, "screenshot upload failed", e);
+        }
+    }
+
+    // ---- portal "Run command" (one device or many): one shell script, root on rooted tablets, output to the device page ----
+    private void runShell(JSONObject cmd) {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        boolean ok = false;
+        try {
+            boolean root = new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
+            String script = cmd.optString("script");
+            Process p = new ProcessBuilder(root ? new String[]{"su", "0", "sh", "-c", script} : new String[]{"sh", "-c", script})
+                    .redirectErrorStream(true).directory(new File("/")).start();
+            p.getOutputStream().close();
+            Thread reader = new Thread(() -> {
+                try (InputStream in = p.getInputStream()) {
+                    byte[] b = new byte[4096];
+                    for (int n; (n = in.read(b)) > 0; ) if (buf.size() < 100000) buf.write(b, 0, n);
+                } catch (Exception ignored) {
+                }
+            });
+            reader.start();
+            reader.join(30000);
+            if (reader.isAlive()) {
+                p.destroy();
+                buf.write("\n(stopped after 30 s)".getBytes(StandardCharsets.UTF_8));
+            } else {
+                int code = p.waitFor();
+                ok = code == 0;
+                if (code != 0) buf.write(("\n(exit code " + code + ")").getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Exception e) {
+            byte[] m = e.toString().getBytes(StandardCharsets.UTF_8);
+            buf.write(m, 0, m.length);
+        }
+        try {
+            JSONObject r = new JSONObject().put("type", "run").put("name", cmd.optString("name")).put("ok", ok)
+                    .put("output", buf.toString("UTF-8"));
+            techCall(this, "POST", "/api/command-result", r);
+        } catch (Exception e) {
+            Log.w(TAG, "run result upload failed", e);
         }
     }
 

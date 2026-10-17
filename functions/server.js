@@ -76,7 +76,7 @@ async function termSave(id, T) {
   dirty = true;
 }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -613,6 +613,10 @@ function monthStart(y, m) { // m is 0-based and may be 12
 function report(u, month) {
   const [y, mo] = month.split("-").map(Number), from = monthStart(y, mo - 1), to = Math.min(monthStart(y, mo), Date.now());
   const rows = new Map(), row = site => rows.get(site) || rows.set(site, { site, devices: 0, span: 0, down: 0, alerts: {}, opened: 0, resolved: 0, onTime: 0, open: 0 }).get(site);
+  // days of the month so far (ponytail: 24 h steps from the month start, off by an hour on DST days in zones that have them)
+  const days = [];
+  for (let t = from; t < to; t += 864e5) days.push({ at: t, span: 0, down: 0 });
+  const perDay = (s0, e0, k) => { for (const x of days) { const a = Math.max(s0, x.at), b = Math.min(e0, x.at + 864e5); if (b > a) x[k] += b - a; } };
   const offline = new Map();
   for (const a of portal.alerts) {
     const d = devices[a.deviceId];
@@ -625,7 +629,11 @@ function report(u, month) {
     r.devices++;
     if (start >= to) continue;
     r.span += to - start;
-    for (const a of offline.get(d.id) || []) r.down += Math.max(0, Math.min(to, a.resolvedAt || Date.now()) - Math.max(start, a.at - OFFLINE_ALERT_MS));
+    perDay(start, to, "span");
+    for (const a of offline.get(d.id) || []) {
+      const s0 = Math.max(start, a.at - OFFLINE_ALERT_MS), e0 = Math.min(to, a.resolvedAt || Date.now());
+      if (e0 > s0) { r.down += e0 - s0; perDay(s0, e0, "down"); }
+    }
   }
   for (const t of portal.tickets) {
     if (!(allSites(u) || siteOk(u, t.site))) continue;
@@ -642,7 +650,8 @@ function report(u, month) {
     for (const k of ["devices", "span", "down", "opened", "resolved", "onTime", "open"]) total[k] += r[k];
     for (const [k, n] of Object.entries(r.alerts)) total.alerts[k] = (total.alerts[k] || 0) + n;
   }
-  return { month, from, to, sites: sites.map(done), total: done(total) };
+  return { month, from, to, sites: sites.map(done), total: done(total),
+    days: days.map(x => ({ at: x.at, downH: Math.round(x.down / 36e5 * 10) / 10, uptime: x.span ? Math.round(1000 * (1 - Math.min(x.down, x.span) / x.span)) / 10 : null })) };
 }
 const reportText = r => `📊 MONTHLY REPORT ${r.month}\n\nUptime: ${r.total.uptime ?? "-"}% · Devices: ${r.total.devices} · Alerts: ${r.total.alertsTotal}\n\n` +
   `Tickets: ${r.total.opened} opened, ${r.total.resolved} resolved (${r.total.onTime} on time), ${r.total.open} open at month end\n\n` +
