@@ -55,6 +55,8 @@
   header h1 { font-size: 17px; font-weight: 700; margin: 0; white-space: nowrap; letter-spacing: -.02em;
     background: linear-gradient(90deg, var(--text), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   header .sub { color: var(--muted); font-size: 12px; }
+  header .appicon { flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 6px 18px rgba(242,140,0,.3); }
+  header .appicon svg { width: 22px; height: 22px; }
   header .grow { flex: 1; }
   .live { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
   .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: ping 2s var(--ease) infinite; }
@@ -75,15 +77,16 @@
     background: linear-gradient(var(--accent), var(--accent2)); box-shadow: 0 0 12px var(--accent); }
   nav a .c { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   nav a .c.bad { color: #fff; background: var(--bad); padding: 0 7px; border-radius: 10px; font-weight: 700; }
-  main { padding: 28px 32px 96px; max-width: 1500px; width: 100%; min-width: 0; display: flex; flex-direction: column; } /* bottom room for the Max button */
-  main > footer { margin-top: auto; } /* copyright line always at the bottom of the page */
+  main { padding: 28px 32px 12px; max-width: 1500px; width: 100%; min-width: 0; display: flex; flex-direction: column; }
+  #view { margin-bottom: 72px; } /* room for the Aux button above the copyright line */
+  main > footer { margin-top: auto; } /* copyright line always at the very bottom of the page */
   main h2 { margin: 0 0 4px; font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
   main .lead { color: var(--muted); margin: 0 0 22px; font-size: 15px; }
   @media (max-width: 800px) {
     .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
     nav { position: sticky; top: 59px; z-index: 900; height: auto; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--edge); padding: 6px; gap: 2px; }
     nav a { white-space: nowrap; padding: 7px 11px; margin: 0; } nav a .c, nav a.on::before { display: none; } nav a:hover { transform: none; }
-    main { padding: 18px 16px; } main h2 { font-size: 24px; } header { padding: 10px 16px; gap: 8px; } header .sub, #liveText { display: none; }
+    main { padding: 18px 16px 10px; } main h2 { font-size: 24px; } header { padding: 10px 16px; gap: 8px; } header .sub, #liveText { display: none; }
     header .btn { padding: 6px 10px; }
   }
 
@@ -181,7 +184,7 @@
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 14px 18px 18px; }
   .gauge { text-align: center; } .gauge svg { width: 100%; max-width: 170px; display: block; margin: 0 auto 4px; color: var(--text); }
   .gauge .l { font-weight: 600; font-size: 13px; } .gauge .meta { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-  .cd-grid { display: grid; grid-template-columns: minmax(170px, 1fr) 1.6fr; gap: 12px; width: min(680px, 82vw); margin: 10px 0 4px; }
+  .cd-grid { display: grid; grid-template-columns: minmax(170px, 1fr) 1.6fr; gap: 12px; margin: 10px 0 4px; }
   @media (max-width: 600px) { .cd-grid { grid-template-columns: 1fr; width: auto; } }
   .cd-list { border: 1px solid var(--line); border-radius: 12px; padding: 5px; max-height: 48vh; overflow: auto; }
   .cd-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 9px; cursor: pointer; }
@@ -369,6 +372,34 @@
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   }
   .theme-btn { min-width: 38px; }
+  /* day / night switch: sun on a blue sky with clouds rolls over to a moon on a starry sky */
+  .tsw { position: relative; flex: none; width: 52px; height: 28px; padding: 0; border: 0; border-radius: 99px; overflow: hidden; cursor: pointer;
+    background: linear-gradient(135deg, #ffd59e, #ffeadb 55%, #f1e8ff); box-shadow: inset 0 2px 6px rgba(120,60,0,.18), 0 1px 2px rgba(0,0,0,.08); transition: background .6s var(--ease); }
+  .tsw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tsw-knob { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #ffb340, #f28c00);
+    box-shadow: 0 0 10px 2px rgba(242,140,0,.6), inset -2px -3px 4px rgba(170,80,0,.35);
+    transition: transform .6s cubic-bezier(.45,1.55,.45,1), background .45s, box-shadow .45s; }
+  .tsw:hover .tsw-knob { box-shadow: 0 0 14px 4px rgba(242,140,0,.75), inset -2px -3px 4px rgba(170,80,0,.35); }
+  .tsw-knob::before, .tsw-knob::after { content: ""; position: absolute; border-radius: 50%; background: #e9cfa6; opacity: 0; transition: opacity .45s .15s; }
+  .tsw-knob::before { width: 6px; height: 6px; top: 4px; left: 10px; } .tsw-knob::after { width: 3.5px; height: 3.5px; top: 13px; left: 5px; }
+  .tsw-stars { position: absolute; inset: 0; opacity: 0; transform: translateY(-8px); transition: opacity .5s, transform .6s var(--ease);
+    background: radial-gradient(1.2px 1.2px at 9px 8px, #fff 99%, transparent), radial-gradient(1.6px 1.6px at 18px 19px, #fff 99%, transparent),
+      radial-gradient(1px 1px at 12px 22px, #fff 99%, transparent), radial-gradient(1.3px 1.3px at 24px 9px, #fff 99%, transparent),
+      radial-gradient(1px 1px at 5px 18px, #fff 99%, transparent); }
+  .tsw-clouds { position: absolute; right: -3px; bottom: -5px; width: 30px; height: 15px; transition: transform .6s var(--ease), opacity .4s;
+    background: radial-gradient(circle at 7px 9px, rgba(255,255,255,.9) 6px, transparent 6.5px), radial-gradient(circle at 16px 7px, rgba(255,255,255,.9) 7.5px, transparent 8px),
+      radial-gradient(circle at 25px 10px, rgba(255,255,255,.9) 6px, transparent 6.5px); }
+  :root[data-theme="dark"] .tsw { background: radial-gradient(circle at 15% 20%, rgba(242,140,0,.38), transparent 60%), #000; box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.12); }
+  :root[data-theme="dark"] .tsw-knob { transform: translateX(24px) rotate(-40deg); background: #fff1de;
+    box-shadow: 0 0 10px 2px rgba(255,179,64,.4), inset -3px -2px 0 #ecd2a8; }
+  :root[data-theme="dark"] .tsw-knob::before, :root[data-theme="dark"] .tsw-knob::after { opacity: 1; }
+  :root[data-theme="dark"] .tsw-stars { opacity: 1; transform: none; animation: twinkle 2.4s ease-in-out infinite alternate .6s; }
+  :root[data-theme="dark"] .tsw-clouds { transform: translateY(18px); opacity: 0; }
+  @keyframes twinkle { to { opacity: .45; } }
+  .tsw-stars::after { content: ""; position: absolute; top: 4px; left: 22px; width: 10px; height: 1.5px; border-radius: 2px; opacity: 0;
+    background: linear-gradient(90deg, #fff, rgba(255,214,150,.5), transparent); transform: rotate(-25deg); }
+  :root[data-theme="dark"] .tsw-stars::after { animation: tswShoot 3.6s ease-in 1.2s infinite; }
+  @keyframes tswShoot { 0%, 70% { opacity: 0; translate: 0 0; } 75% { opacity: 1; } 100% { opacity: 0; translate: -18px 10px; } }
   .ico { width: 18px; height: 18px; flex: none; stroke-width: 1.8; }
   header .btn { display: inline-flex; align-items: center; gap: 6px; } header .btn .ico { width: 16px; height: 16px; }
   nav a .ico { width: 19px; height: 19px; color: var(--muted); transition: color .2s, transform .3s var(--ease); }
@@ -376,7 +407,10 @@
   nav a.on .ico { color: var(--accent); filter: drop-shadow(0 0 6px rgba(242,140,0,.45)); }
   .who { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
   .who:hover { color: var(--text); }
-  .who .ico { width: 16px; height: 16px; }
+  .who > .ico { width: 34px; height: 34px; padding: 8px; border-radius: 50%; border: 1px solid var(--line); flex: none; }
+  /* just the profile icon; the name slides out on hover */
+  .who .t { max-width: 0; overflow: hidden; opacity: 0; transition: max-width .3s ease, opacity .2s ease; }
+  .who:hover .t, .who:focus-visible .t { max-width: 260px; opacity: 1; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
     background: var(--hover); font-size: 13px; transition: background .2s, border-color .2s, color .2s; user-select: none; }
@@ -387,7 +421,8 @@
   .ugrid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 12px 14px; align-items: center; }
   .ugrid > label { color: var(--muted); }
   @media (max-width: 600px) { .ugrid { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 800px) { .who .t, #logout .t { display: none; } }
+  @media (max-width: 800px) { .who .t, #logout .t, #mapBtn .t { display: none; } }
+  @media (max-width: 420px) { header { gap: 6px; padding: 10px 12px; } header h1 { font-size: 15px; } } /* the header fits a phone without sideways scroll */
   /* Technical Team */
   .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; }
   .thumbs { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -399,7 +434,7 @@
   .k-banner { margin: 0 0 12px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--warn); background: var(--warn-soft); }
   .k-banner.ok { border-color: var(--ok); background: var(--ok-soft); }
   .k-banner b.st { color: var(--warn); } .k-banner.ok b.st { color: var(--ok); }
-  /* Max, the assistant: floating robot button + chat panel */
+  /* Aux, the assistant: floating robot button + chat panel */
   #maxBtn { position: fixed; right: 20px; bottom: 20px; z-index: 1500; width: 64px; height: 64px; padding: 0; border-radius: 50%; border: 1px solid var(--edge);
     background: radial-gradient(circle at 50% 40%, #fff, #ffe9cc); box-shadow: 0 10px 30px rgba(242,140,0,.35); animation: bob 3.5s ease-in-out infinite; }
   #maxBtn img { width: 52px; height: 52px; object-fit: contain; display: block; margin: 0 auto; }
@@ -435,6 +470,155 @@
   @media (max-width: 600px) { #maxPanel { right: 8px; left: 8px; width: auto; bottom: 84px; height: calc(100vh - 110px); } #maxBtn { right: 12px; bottom: 12px; } }
   #maxBtn.gone { display: none !important; }
   #maxBot { position: fixed; left: 0; top: 0; z-index: 1700; pointer-events: none; will-change: transform; }
+  /* 🎬 Aux's video: particle stage under Aux (he presents), title cards over him, captions and Skip on top */
+  .mv { position: fixed; pointer-events: none; }
+  .mv-stage { inset: 0; z-index: 1650; overflow: hidden; color: #fff; background: #04050a; opacity: 0; transition: opacity 1.2s; }
+  .mv-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .mv-stage::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.75)); }
+  .mv-bar { left: 0; right: 0; height: 9vh; z-index: 1660; background: #000; transition: transform 1.3s cubic-bezier(.7,0,.2,1); }
+  .mv-bar.top { top: 0; transform: translateY(-100%); } .mv-bar.bot { bottom: 0; transform: translateY(100%); }
+  .mv-on .mv-stage { opacity: 1; } .mv-on .mv-bar { transform: none; }
+  .mv-flash { inset: 0; z-index: 1690; background: #fff; opacity: 0; }
+  .mv-flash.go { animation: mvFlash .9s ease-out; }
+  @keyframes mvFlash { 0% { opacity: 0; } 8% { opacity: .85; } 100% { opacity: 0; } }
+  .mv-wave { left: 50%; top: 50%; z-index: 1655; width: 40px; height: 40px; margin: -20px; border-radius: 50%; border: 2px solid rgba(255,190,90,.9); box-shadow: 0 0 40px rgba(255,159,10,.6), inset 0 0 30px rgba(255,159,10,.4); opacity: 0; }
+  .mv-wave.go { animation: mvWave 1.4s cubic-bezier(.1,.7,.3,1); }
+  @keyframes mvWave { 0% { opacity: 1; transform: scale(.2); } 100% { opacity: 0; transform: scale(60); border-width: 1px; } }
+  .mv-slide { position: absolute; inset: 9vh 0; display: grid; grid-template-columns: 1.05fr 1fr; align-items: center; gap: 4vw; padding: 0 6vw 0 15vw; perspective: 1400px; }
+  .mv-slide.solo { grid-template-columns: 1fr; text-align: center; padding: 0 6vw; }
+  .mv-slide.out { animation: mvOut .75s cubic-bezier(.6,0,.8,.4) both; }
+  @keyframes mvOut { to { opacity: 0; transform: scale(1.35); filter: blur(16px); } }
+  .mv-k { display: inline-flex; align-items: center; gap: 10px; color: var(--accent); letter-spacing: .38em; text-transform: uppercase; font-size: clamp(10px, 1.1vw, 13px); font-weight: 700; }
+  .mv-k::before { content: ""; width: 34px; height: 2px; background: currentColor; box-shadow: 0 0 12px currentColor; transform-origin: left; animation: mvLine .8s .1s both; }
+  .mv-h { font-size: clamp(30px, 4.9vw, 72px); font-weight: 800; letter-spacing: -.04em; line-height: 1.02; margin: 16px 0 18px; }
+  .mv-w { display: inline-block; overflow: hidden; vertical-align: bottom; padding: 0 .02em .08em; margin-bottom: -.08em; }
+  .mv-w > span { display: inline-block; animation: mvRise 1s cubic-bezier(.16,1,.3,1) both; animation-delay: var(--d, 0s); }
+  @keyframes mvRise { from { transform: translateY(115%) rotate(6deg); } }
+  .mv-h em, .mv-word em { font-style: normal; background: linear-gradient(100deg, var(--accent) 0%, #ffd60a 35%, #fff 50%, #ffd60a 65%, var(--accent) 100%); background-size: 250% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent; animation: mvShine 3.2s 1.2s ease-in-out infinite; }
+  @keyframes mvShine { 0% { background-position: 100% 0; } 60%, 100% { background-position: -50% 0; } }
+  .mv-s { color: rgba(255,255,255,.74); font-size: clamp(14px, 1.5vw, 19px); line-height: 1.55; max-width: 30em; margin: 0; }
+  .mv-in { animation: mvUp 1s cubic-bezier(.16,1,.3,1) both; animation-delay: var(--d, 0s); }
+  @keyframes mvUp { from { opacity: 0; transform: translateY(30px); filter: blur(8px); } }
+  .mv-pop { animation: mvPop .7s cubic-bezier(.3,1.7,.5,1) both; animation-delay: var(--d, 0s); }
+  @keyframes mvPop { from { opacity: 0; transform: scale(0); } }
+  .mv-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .mv-chip { padding: 8px 15px; border-radius: 999px; border: 1px solid rgba(255,255,255,.2); background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.03));
+    font-size: clamp(12px, 1.2vw, 15px); backdrop-filter: blur(8px); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  .mv-word { display: block; font-size: clamp(36px, 7.5vw, 104px); font-weight: 800; letter-spacing: -.045em; line-height: 1.04; }
+  /* the visual side: tilted in 3D, drifting slowly */
+  .mv-vis { position: relative; display: grid; place-items: center; transform-style: preserve-3d; animation: mvTilt 14s ease-in-out both; }
+  @keyframes mvTilt { from { transform: rotateY(-22deg) rotateX(10deg) translateZ(-120px); opacity: 0; } 12% { opacity: 1; } to { transform: rotateY(-6deg) rotateX(4deg) translateZ(0); } }
+  .mv-glass { border-radius: 24px; border: 1px solid rgba(255,255,255,.14); background: linear-gradient(160deg, rgba(255,255,255,.1), rgba(255,255,255,.02));
+    box-shadow: 0 40px 100px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.15); backdrop-filter: blur(14px); }
+  /* 1 command centre */
+  .mv-dash { width: min(470px, 39vw); padding: 22px; }
+  .mv-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+  .mv-stat { padding: 14px; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+  .mv-stat b { display: block; font-size: clamp(20px, 2.4vw, 34px); letter-spacing: -.03em; }
+  .mv-stat span { font-size: 11px; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .12em; }
+  .mv-dots { display: grid; grid-template-columns: repeat(16, 1fr); gap: 7px; }
+  .mv-dots i { aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.08); animation: mvDot .4s both; animation-delay: var(--d); }
+  .mv-dots i.w { animation-name: mvDotW; }
+  @keyframes mvDot { to { background: #30d158; box-shadow: 0 0 10px #30d158; } }
+  @keyframes mvDotW { to { background: #ffd60a; box-shadow: 0 0 10px #ffd60a; } }
+  /* 2 remote control */
+  .mv-tab { width: min(420px, 35vw); aspect-ratio: 4/3; border-radius: 28px; border: 10px solid #15161a; position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #1d2d50, #0b1020); box-shadow: 0 50px 110px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.1), 0 0 90px rgba(64,120,255,.25); }
+  .mv-tab .bar { height: 26px; background: rgba(255,255,255,.07); display: flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 10px; letter-spacing: .1em; }
+  .mv-live { background: #ff453a; color: #fff; padding: 2px 7px; border-radius: 6px; font-weight: 800; animation: mvBlink 1.2s steps(2) infinite; }
+  @keyframes mvBlink { 50% { opacity: .35; } }
+  .mv-tab .scr { position: absolute; inset: 40px 14px 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .mv-tab .scr b { border-radius: 12px; background: linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.03)); animation: mvPop .6s both; animation-delay: var(--d); }
+  .mv-tab .scr b.hit { animation: mvPop .6s both, mvHit .5s 3.1s; animation-delay: var(--d), 3.1s; }
+  @keyframes mvHit { 50% { background: rgba(255,159,10,.55); transform: scale(.92); } }
+  .mv-cur { position: absolute; left: 20%; top: 80%; font-size: 26px; filter: drop-shadow(0 4px 6px rgba(0,0,0,.6)); animation: mvCur 4s 1s cubic-bezier(.6,0,.3,1) both; z-index: 2; }
+  @keyframes mvCur { 0% { left: 20%; top: 85%; opacity: 0; } 15% { opacity: 1; } 55%, 100% { left: 52%; top: 50%; } }
+  .mv-tap { position: absolute; left: 52%; top: 50%; width: 44px; height: 44px; margin: -14px 0 0 -14px; border-radius: 50%; border: 3px solid #fff; opacity: 0; animation: mvTap 1.4s 3.1s ease-out infinite; }
+  @keyframes mvTap { from { transform: scale(.3); opacity: 1; } to { transform: scale(2.6); opacity: 0; } }
+  .mv-term { position: absolute; right: -8%; bottom: -14%; width: 64%; padding: 12px 14px; border-radius: 14px; background: rgba(8,10,16,.92); border: 1px solid rgba(255,255,255,.15);
+    font: 12px/1.6 ui-monospace, Consolas, monospace; color: #30d158; box-shadow: 0 24px 60px rgba(0,0,0,.6); transform: translateZ(60px); }
+  .mv-term div { overflow: hidden; white-space: nowrap; width: 0; animation: mvType 1.2s steps(24) both; animation-delay: var(--d); }
+  @keyframes mvType { to { width: 100%; } }
+  /* 3 alerts */
+  .mv-radar { position: absolute; width: min(420px, 34vw); aspect-ratio: 1; border-radius: 50%; border: 1px solid rgba(255,69,58,.25);
+    background: repeating-radial-gradient(circle, transparent 0 18%, rgba(255,69,58,.12) 18% 18.6%); opacity: .9; }
+  .mv-radar::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, rgba(255,69,58,.45), transparent 22%); animation: mvSpin 2.6s linear infinite; }
+  @keyframes mvSpin { to { transform: rotate(360deg); } }
+  .mv-alerts { position: relative; }
+  .mv-card { display: flex; gap: 12px; align-items: center; padding: 14px 18px; margin: 10px 0; font-size: clamp(13px, 1.3vw, 16px); width: min(400px, 34vw);
+    animation: mvSlideL .8s cubic-bezier(.16,1,.3,1) both; animation-delay: var(--d); }
+  @keyframes mvSlideL { from { opacity: 0; transform: translateX(80px) scale(.95); } }
+  .mv-card .lt { width: 12px; height: 12px; border-radius: 50%; background: #ff453a; flex: none; animation: mvPulse 1.2s infinite; }
+  .mv-card.ok { border-color: rgba(48,209,88,.5); box-shadow: 0 0 40px rgba(48,209,88,.25); }
+  .mv-card.ok .lt { background: #30d158; animation: none; box-shadow: 0 0 14px #30d158; }
+  .mv-card .t { margin-left: auto; color: rgba(255,255,255,.5); font-size: .85em; }
+  @keyframes mvPulse { 0% { box-shadow: 0 0 0 0 rgba(255,69,58,.8); } 100% { box-shadow: 0 0 0 16px rgba(255,69,58,0); } }
+  /* 4 flow */
+  .mv-flow { display: flex; align-items: center; width: min(560px, 42vw); }
+  .mv-node { display: grid; justify-items: center; gap: 10px; font-size: clamp(11px, 1.1vw, 14px); color: rgba(255,255,255,.82); }
+  .mv-node span { display: grid; place-items: center; width: clamp(50px, 5.2vw, 76px); aspect-ratio: 1; border-radius: 50%; font-size: clamp(22px, 2.4vw, 32px);
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.25), rgba(255,255,255,.04)); border: 1px solid rgba(255,255,255,.25); box-shadow: 0 0 40px rgba(255,159,10,.3); }
+  .mv-node.done span { box-shadow: 0 0 50px rgba(48,209,88,.6); border-color: rgba(48,209,88,.7); }
+  .mv-line { position: relative; flex: 1; height: 3px; margin: 0 6px 30px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #ffd60a); transform-origin: left; animation: mvLine .7s both; animation-delay: var(--d); }
+  .mv-line::after { content: ""; position: absolute; top: -4px; left: 0; width: 11px; height: 11px; border-radius: 50%; background: #fff; box-shadow: 0 0 16px 4px #ffd60a; animation: mvRun 1.6s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes mvRun { from { left: 0; opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } to { left: 100%; opacity: 0; } }
+  @keyframes mvLine { from { transform: scaleX(0); } }
+  /* 5 updates */
+  .mv-ring { position: relative; width: min(260px, 22vw); aspect-ratio: 1; }
+  .mv-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); filter: drop-shadow(0 0 18px rgba(255,159,10,.55)); }
+  .mv-ring circle { fill: none; stroke-width: 9; }
+  .mv-ring .p { stroke: url(#mvGrad); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; animation: mvRing 4s .6s cubic-bezier(.45,0,.2,1) both; }
+  @keyframes mvRing { to { stroke-dashoffset: 0; } }
+  .mv-ring b { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; font-size: clamp(30px, 3.6vw, 52px); letter-spacing: -.04em; }
+  .mv-ring b small { display: block; font-size: 11px; letter-spacing: .2em; color: rgba(255,255,255,.55); font-weight: 600; }
+  .mv-devs { display: flex; gap: 10px; margin-top: 22px; justify-content: center; }
+  .mv-devs span { width: 46px; height: 34px; border-radius: 8px; border: 2px solid rgba(255,255,255,.25); display: grid; place-items: center; font-size: 14px; color: transparent; animation: mvDone .4s both; animation-delay: var(--d); }
+  @keyframes mvDone { to { border-color: #30d158; color: #30d158; box-shadow: 0 0 16px rgba(48,209,88,.5); } }
+  /* 6 map */
+  .mv-map { position: relative; width: min(480px, 40vw); aspect-ratio: 16/11; overflow: hidden; }
+  .mv-map::before { content: ""; position: absolute; inset: 0; background-size: 32px 32px; background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px); }
+  .mv-map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .mv-map path { fill: none; stroke: url(#mvGrad2); stroke-width: .6; stroke-dasharray: 100; stroke-dashoffset: 100; animation: mvDraw 1.4s ease-out both; animation-delay: var(--d); filter: drop-shadow(0 0 2px #ffd60a); }
+  @keyframes mvDraw { to { stroke-dashoffset: 0; } }
+  .mv-pin { position: absolute; width: 14px; height: 14px; margin: -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 16px var(--accent); animation: mvPop .6s cubic-bezier(.3,1.7,.5,1) both; animation-delay: var(--d); }
+  .mv-pin::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--accent); animation: mvPing 1.8s ease-out infinite; animation-delay: var(--d); }
+  @keyframes mvPing { from { transform: scale(.6); opacity: 1; } to { transform: scale(3); opacity: 0; } }
+  /* 7 security */
+  .mv-shield { position: relative; font-size: clamp(110px, 14vw, 200px); line-height: 1; filter: drop-shadow(0 0 60px rgba(255,159,10,.5)); }
+  .mv-shield::after { content: ""; position: absolute; left: -10%; right: -10%; height: 4px; top: 10%; background: linear-gradient(90deg, transparent, #7cf, transparent); box-shadow: 0 0 20px 4px rgba(120,200,255,.7);
+    animation: mvScan 2.2s ease-in-out infinite alternate; }
+  @keyframes mvScan { to { top: 88%; } }
+  .mv-lock { position: absolute; right: -6%; bottom: 2%; font-size: .32em; animation: mvPop .6s 1.6s cubic-bezier(.3,1.7,.5,1) both; }
+  /* 8 max */
+  .mv-chat { width: min(420px, 36vw); padding: 18px; }
+  .mv-msg { padding: 12px 16px; border-radius: 18px; margin: 10px 0; width: fit-content; max-width: 85%; font-size: clamp(13px, 1.3vw, 16px); animation: mvUp .6s both; animation-delay: var(--d); }
+  .mv-msg.me { margin-left: auto; background: linear-gradient(135deg, var(--accent), #ffb340); color: #111; border-bottom-right-radius: 6px; font-weight: 600; }
+  .mv-msg.bot { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.14); border-bottom-left-radius: 6px; }
+  .mv-typing { display: flex; gap: 5px; padding: 14px 16px; width: fit-content; border-radius: 18px; background: rgba(255,255,255,.08); margin: 10px 0;
+    animation: mvUp .4s both, mvGone .2s both; animation-delay: var(--d), var(--e); }
+  .mv-typing i { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: mvBounce 1s infinite; }
+  .mv-typing i:nth-child(2) { animation-delay: .15s; } .mv-typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes mvBounce { 0%, 60%, 100% { transform: none; opacity: .4; } 30% { transform: translateY(-5px); opacity: 1; } }
+  @keyframes mvGone { to { opacity: 0; height: 0; padding: 0; margin: 0; } }
+  /* title cards, captions, skip */
+  .mv-title { inset: 0; z-index: 1800; display: grid; place-content: center; text-align: center; padding: 16px; background: #000; color: #fff; opacity: 0; transition: opacity 1.4s; }
+  .mv-title.show { opacity: 1; }
+  .mv-title h1 { margin: 0; font-size: clamp(32px, 7vw, 86px); font-weight: 800; letter-spacing: -.035em;
+    background: linear-gradient(100deg, #fff 0%, #fff 40%, #ffd60a 50%, #fff 60%, #fff 100%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .mv-title.show h1 { animation: mvIn 3s cubic-bezier(.2,.7,.2,1) both, mvShine 3s 1.4s ease-in-out infinite; }
+  .mv-title p { margin: 20px 0 0; color: var(--accent); letter-spacing: .45em; text-transform: uppercase; font-size: clamp(10px, 1.4vw, 14px); }
+  .mv-title.show p { animation: mvIn 3s .7s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes mvIn { from { opacity: 0; letter-spacing: .3em; filter: blur(16px); transform: scale(1.12); } }
+  .mv-ui { inset: 0; z-index: 1900; }
+  .mv-cap { position: absolute; left: 50%; bottom: 1.8vh; transform: translateX(-50%); width: min(1000px, calc(100vw - 32px)); text-align: center; color: #f5f5f7;
+    font-size: clamp(13px, 1.7vw, 18px); line-height: 1.4; text-shadow: 0 2px 10px #000; opacity: 0; transition: opacity .6s; }
+  .mv-cap.show { opacity: 1; }
+  .mv-skip { position: absolute; top: 2.2vh; right: 16px; pointer-events: auto; background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25); }
+  .mv-prog { position: absolute; left: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, var(--accent), #ffd60a); box-shadow: 0 0 10px var(--accent); width: 0; transition: width 1s linear; }
+  @media (max-width: 800px) { .mv-slide { grid-template-columns: 1fr; padding: 0 16px; gap: 18px; text-align: center; } .mv-s { margin: 0 auto; } .mv-chips { justify-content: center; }
+    .mv-dash, .mv-tab, .mv-card, .mv-flow, .mv-map, .mv-chat { width: min(420px, 88vw); } .mv-radar { width: 80vw; } .mv-ring { width: 46vw; } .mv-term { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .mv-vis, .mv-h em, .mv-shield::after, .mv-radar::before { animation: none; } }
   #maxBot[hidden] { display: none; }
   #maxBot canvas { display: block; pointer-events: auto; cursor: grab; touch-action: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.25)); }
   #maxBot canvas:active { cursor: grabbing; }
@@ -490,28 +674,228 @@
   .rp-tk dd { margin: 0; color: var(--muted); font-size: 14px; }
   .rp-more summary { cursor: pointer; padding: 14px 18px; font-weight: 600; }
   @media (max-width: 760px) { .rp-hero, .rp-tk { grid-template-columns: 1fr; } .rp-row { grid-template-columns: 1fr auto; } .rp-row .rp-track { grid-column: 1 / -1; grid-row: 2; } }
+  body.embed header, body.embed nav, body.embed main > footer, body.embed #maxBtn, body.embed #maxPanel, body.embed #maxBot, body.embed #alarmBar,
+    body.embed #apl3d { display: none !important; }
+  body.embed .layout { display: block; min-height: 0; } body.embed main { max-width: none; padding: 16px 22px; } body.embed #view { margin-bottom: 0; }
+  /* ---------------- Command Center: one full-screen wall view for the office TV (#/command) ---------------- */
+  body.cc header, body.cc nav { display: none !important; }
+  body.cc main > footer { position: fixed; left: 0; right: 0; bottom: 3px; padding: 0 !important; margin: 0; font-size: clamp(11px, .6vw, 20px); } /* copyright line on the screen's bottom edge */
+  body.cc .layout { display: block; min-height: 100vh; }
+  body.cc main { max-width: none; padding: 1.1vw 1.3vw 0; }
+  body.cc #view { margin-bottom: 0; }
+  .ccv { font-size: clamp(12px, .82vw, 34px); height: calc(100vh - 1.1vw - clamp(20px, 1.3vw, 38px)); display: grid; grid-template-rows: auto auto minmax(0, 1fr) minmax(0, .5fr); gap: .9em; }
+  .cc-top { display: flex; align-items: center; gap: 1em; }
+  .cc-logo { width: 3.4em; height: 3.4em; border-radius: .8em; display: grid; place-items: center; padding: .2em; background: #fff; box-shadow: var(--shadow); }
+  .cc-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .cc-title { font-size: 2.1em; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; } .cc-sub { color: var(--muted); font-size: .95em; }
+  .cc-live { display: inline-flex; align-items: center; gap: .45em; padding: .35em .9em; border-radius: 99px; background: var(--ok-soft); color: var(--ok); font-weight: 700; }
+  .cc-live i { width: .6em; height: .6em; border-radius: 50%; background: currentColor; animation: ccPulse 1.6s ease-in-out infinite; }
+  .cc-live.down { background: var(--bad-soft); color: var(--bad); }
+  @keyframes ccPulse { 50% { opacity: .25; transform: scale(.7); } }
+  .cc-clocks { margin-left: auto; display: flex; gap: 1.4em; align-items: flex-end; }
+  .cc-clock { text-align: right; line-height: 1.05; } .cc-clock span { color: var(--muted); font-size: .9em; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .cc-clock b { display: block; font-size: 2.3em; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .cc-date { color: var(--muted); text-align: right; font-size: .9em; }
+  .cc-top .btn { font-size: .95em; } .cc-top .tsw { align-self: center; margin-right: .3em; }
+  .cc-kpis { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: .8em; }
+  .cc-kpi, .cc-panel { background: var(--card); border: 1px solid var(--edge); border-radius: 1.1em; box-shadow: var(--shadow); }
+  .cc-kpi { padding: .8em 1.1em; } .cc-kpi .n { font-size: 3.1em; font-weight: 800; line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .cc-kpi .l { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: .8em; font-weight: 700; margin-top: .45em; }
+  .cc-kpi.ok .n { color: var(--ok); } .cc-kpi.bad .n { color: var(--bad); } .cc-kpi.warn .n { color: var(--warn); }
+  .cc-kpi.bad.hot { box-shadow: 0 0 0 2px var(--bad), 0 0 26px var(--bad-soft); animation: ccHot 1.4s ease-in-out infinite; }
+  @keyframes ccHot { 50% { box-shadow: 0 0 0 2px var(--bad), 0 0 6px transparent; } }
+  .cc-main, .cc-bottom { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: .9em; min-height: 0; }
+  .cc-bottom { grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, 1.1fr); }
+  .cc-main { grid-template-columns: auto minmax(0, 1fr); } /* the map panel's width follows the map's height (set in VIEWS.command) */
+  .cc-panel h3:has(.cc-legend) { flex-wrap: wrap; row-gap: .3em; } .cc-panel h3 .cc-legend { order: 9; flex-basis: 100%; }
+  .cc-pin { background: none; border: 0; } .cc-pin svg { display: block; filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); transition: transform .15s; }
+  .cc-pin:hover svg { transform: translateY(-3px) scale(1.08); }
+  .cc-fleet { position: relative; } .cc-fleet .donut-wrap { position: absolute; inset: 0; flex-wrap: nowrap; justify-content: center; gap: 2.2em; padding: .6em 1.2em; }
+  .cc-fleet .donut { height: 100%; width: auto; aspect-ratio: 1; min-width: 0; } .cc-fleet .legend2 { font-size: 1.2em; gap: .55em; }
+  /* two columns of near-square cards; 2.5 rows fit, so 4 whole cards and 2 half ones show and you know to scroll */
+  #ccSites { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: calc((100% - 1.4em) / 2.5); gap: .7em; padding: .7em .9em; overflow-y: auto; scrollbar-width: thin; }
+  .cc-scard { display: flex; flex-direction: column; justify-content: space-between; gap: .2em; min-width: 0; overflow: hidden; padding: .55em .75em; border-radius: .9em; cursor: pointer;
+    background: var(--hover); border: 1px solid var(--line); border-top: .3em solid var(--c); transition: transform .2s var(--ease), box-shadow .2s; }
+  .cc-scard:hover { transform: translateY(-2px); box-shadow: var(--shadow-hi); }
+  .cc-scard .nm { display: flex; align-items: center; gap: .5em; font-weight: 700; font-size: 1.05em; }
+  .cc-scard .nm span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cc-scard .nm i { flex: none; width: .65em; height: .65em; border-radius: 50%; background: var(--c); box-shadow: 0 0 .5em var(--c); }
+  .cc-scard .pc { font-size: 2.1em; font-weight: 800; line-height: 1; color: var(--c); font-variant-numeric: tabular-nums; }
+  .cc-scard .cc-bar { margin-top: .1em; }
+  .cc-scard .meta { font-size: .85em; }
+  .cc-tech2 { padding: .5em .4em; border-bottom: 1px solid var(--line); }
+  .cc-tech2 .h { display: grid; grid-template-columns: .8em minmax(0, 1fr) auto; gap: .6em; align-items: center; }
+  .cc-tech2 .h i { width: .7em; height: .7em; border-radius: 50%; background: var(--c); box-shadow: 0 0 .5em var(--c); }
+  .cc-tech2 .h b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.05em; } .cc-tech2 .h .meta { font-size: .85em; }
+  .cc-tech2 .t { margin: .2em 0 0 1.4em; font-size: .9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .cc-tech2 .t em { font-style: normal; font-weight: 700; color: var(--text); }
+  .cc-tech { display: grid; grid-template-columns: .8em minmax(0, 1fr) auto; gap: .6em; align-items: center; padding: .45em .3em; border-bottom: 1px solid var(--line); }
+  .cc-tech i { width: .7em; height: .7em; border-radius: 50%; background: var(--c); box-shadow: 0 0 .5em var(--c); }
+  .cc-tech b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cc-tech .meta { font-size: .85em; text-align: right; }
+  .cc-click, .cc-kpi { cursor: pointer; transition: transform .2s var(--ease), box-shadow .2s; } .cc-kpi:hover, .cc-click:hover { transform: translateY(-2px); box-shadow: var(--shadow-hi); }
+  .cc-row { cursor: pointer; border-radius: .5em; } .cc-row:hover { background: var(--hover); }
+  .cc-kpi.barrier { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: 0; } .cc-kpi.barrier .l { color: rgba(255,255,255,.85); }
+  .cc-fleet { flex: 1; min-height: 0; display: grid; overflow: hidden; }
+  .cc-ev { display: grid; grid-template-columns: 5.5em 1.6em minmax(0, 1fr); gap: .5em; align-items: center; padding: .45em .3em; border-bottom: 1px solid var(--line); }
+  .cc-ev span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cc-ev .meta { font-variant-numeric: tabular-nums; }
+  #ccDlg { width: min(94vw, 1500px); height: 90vh; max-width: none; padding: 0; display: none; flex-direction: column; overflow: hidden; }
+  #ccDlg[open] { display: flex; } #ccDlg .cc-dh { display: flex; align-items: center; gap: .6em; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  #ccDlg .cc-dh b { font-size: 18px; flex: 1; } #ccDlgBody { flex: 1; min-height: 0; overflow: auto; } #ccDlgBody iframe { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+  .cc-sites { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 18px; }
+  .cc-sites button { text-align: left; padding: 16px 18px; border-radius: 16px; border: 1px solid var(--edge); background: var(--card); color: var(--text); font: inherit; cursor: pointer; box-shadow: var(--shadow); }
+  .cc-sites button:hover { border-color: var(--accent); transform: translateY(-2px); } .cc-sites b { display: block; font-size: 17px; }
+  .cc-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .9em; min-height: 0; } /* open alerts and site health side by side */
+  .cc-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .cc-panel h3 { margin: 0; padding: .7em 1.1em; font-size: 1.15em; display: flex; align-items: center; gap: .5em; border-bottom: 1px solid var(--line); }
+  .cc-panel h3 .meta { margin-left: auto; font-weight: 500; font-size: .85em; }
+  #ccMap { flex: 1; min-height: 0; }
+  .cc-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: .2em 1.1em; }
+  #ccEvents { display: flex; flex-direction: column; } #ccEvents .cc-ev { flex: 0 0 25%; min-height: 2.4em; }
+  .cc-sitepin { background: none; border: 0; font-weight: 800; font-size: 13px; color: #1d2129; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px #fff; }
+  .cc-alert { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; gap: .6em; align-items: center; padding: .55em 0; border-bottom: 1px solid var(--line); font-size: 1.05em; }
+  .cc-alert span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cc-alert .meta { font-size: .85em; }
+  .cc-calm { display: grid; place-items: center; height: 100%; color: var(--ok); font-size: 1.4em; font-weight: 700; text-align: center; }
+  .cc-site { padding: .5em 0; border-bottom: 1px solid var(--line); }
+  .cc-site .row1 { display: flex; align-items: center; gap: .6em; font-size: 1.05em; } .cc-site .row1 b:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cc-bar { height: .45em; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: .35em; }
+  .cc-bar b { display: block; height: 100%; border-radius: inherit; background: var(--c); transition: width .8s var(--ease); }
+  .cc-wallp { max-height: 27vh; }
+  .cc-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(15em, 1fr)); gap: .55em; padding: .7em 1.1em; overflow: hidden; }
+  .cc-dev { min-width: 0; padding: .5em .75em; border-radius: .75em; background: var(--hover); border: 1px solid var(--line); border-left: .35em solid var(--c); }
+  .cc-dev b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cc-dev div { color: var(--muted); font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cc-dev.offline { animation: ccOff 2s ease-in-out infinite; } @keyframes ccOff { 50% { background: var(--bad-soft); } }
+  .cc-legend { display: flex; gap: 1em; font-size: .85em; color: var(--muted); } .cc-legend i { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .3em; background: var(--c); }
+  /* smaller windows: tiles wrap, then the panels stack and the page scrolls normally */
+  @media (max-width: 1500px) { .cc-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } .ccv { grid-template-rows: auto auto minmax(0, 1fr) minmax(0, .55fr); } }
+  @media (max-width: 1100px) {
+    body.cc main > footer { position: static; padding: 12px 0 8px !important; } /* the page scrolls here: footer at the end, not over the panels */
+    .ccv { height: auto; grid-template-rows: none; } .cc-top { flex-wrap: wrap; } .cc-clocks { margin-left: 0; }
+    .cc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .cc-main, .cc-bottom { grid-template-columns: 1fr; }
+    .cc-side { grid-template-columns: 1fr; } #ccMap { height: auto; aspect-ratio: 1; flex: none; } .cc-side .cc-panel, .cc-bottom .cc-panel { height: 42vh; } }
+  @media (max-width: 600px) { .cc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cc-title { font-size: 1.6em; } .cc-clock b { font-size: 1.7em; } }
+  /* ---------------- portal themes (Configuration > Theme): html[data-look] = classic | animated | embossed ---------------- */
+  /* Animated: apple.com feel - clean grey / black page, solid rounded cards that rise in as they scroll into view, Overview
+     numbers count up, filled menu pill, pages glide in. Reveal ends at transform: none, so menus inside cards keep working. */
+  html[data-look="animated"] { scroll-behavior: smooth; --apl-bg: #f5f5f7; --apl-card: #ffffff; }
+  html[data-look="animated"][data-theme="dark"] { --apl-bg: #000000; --apl-card: #1c1c1e; }
+  html[data-look="animated"] body { background: var(--apl-bg); }
+  html[data-look="animated"] body::before { display: none; }
+  html[data-look="animated"] header { background: color-mix(in srgb, var(--apl-bg) 72%, transparent); border-bottom: 1px solid var(--line); }
+  html[data-look="animated"] nav { background: transparent; }
+  html[data-look="animated"] nav a.on { background: var(--accent); color: #fff; box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent); }
+  html[data-look="animated"] nav a.on .ico { color: #fff; filter: none; } html[data-look="animated"] nav a.on::before { display: none; }
+  html[data-look="animated"] .card, html[data-look="animated"] .stat { background: var(--apl-card); border: 0; border-radius: 22px; backdrop-filter: none;
+    -webkit-backdrop-filter: none; box-shadow: 0 2px 14px rgba(0,0,0,.06); }
+  html[data-look="animated"][data-theme="dark"] .card, html[data-look="animated"][data-theme="dark"] .stat { box-shadow: none; }
+  html[data-look="animated"] main h2 { font-size: 44px; letter-spacing: -.05em; background: linear-gradient(90deg, var(--text) 30%, var(--accent));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  html[data-look="animated"] .stat .n { font-size: 44px; letter-spacing: -.05em; }
+  html[data-look="animated"] #view { animation: lookPage 1s cubic-bezier(.16,1,.3,1) backwards; }
+  @keyframes lookPage { from { opacity: 0; transform: translateY(40px); filter: blur(12px); } }
+  html[data-look="animated"] .rv { opacity: 0; transform: translateY(46px) scale(.96); transition: opacity 1s cubic-bezier(.16,1,.3,1), transform 1s cubic-bezier(.16,1,.3,1), box-shadow .5s; }
+  html[data-look="animated"] .rv.in { opacity: 1; transform: none; }
+  html[data-look="animated"] .stat:hover { transform: translateY(-6px) scale(1.03); box-shadow: 0 18px 40px rgba(0,0,0,.12); }
+  html[data-look="animated"] .card:hover { box-shadow: 0 14px 40px rgba(0,0,0,.1); }
+  html[data-look="animated"] .btn { transition: transform .4s cubic-bezier(.3,1.6,.5,1), background .25s, box-shadow .3s; }
+  html[data-look="animated"] .btn:hover { transform: translateY(-2px) scale(1.05); } html[data-look="animated"] .btn:active { transform: scale(.94); }
+  html[data-look="animated"] .btn.primary:hover { box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 45%, transparent); }
+  html[data-look="animated"] nav a { transition: transform .35s cubic-bezier(.3,1.6,.5,1), background .3s, color .3s; }
+  html[data-look="animated"] nav a:hover { transform: translateX(6px); }
+  html[data-look="animated"] dialog[open] { animation: lookPop .6s cubic-bezier(.16,1,.3,1); }
+  @keyframes lookPop { from { opacity: 0; transform: translateY(24px) scale(.94); } }
+  /* Animated 3D: floating shapes in three depth layers (move with the mouse and scroll at different speeds), cards tilt to the pointer */
+  #apl3d { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; perspective: 900px; display: none; }
+  html[data-look="animated"] #apl3d { display: block; }
+  #apl3d .lyr { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .8s cubic-bezier(.16,1,.3,1);
+    transform: translate3d(calc(var(--mx, 0) * var(--d) * 1px), calc((var(--my, 0) * var(--d) - var(--sy, 0) * var(--d) / 60) * 1px), 0); }
+  #apl3d .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .5; animation: aplDrift 16s ease-in-out infinite alternate; }
+  html[data-theme="dark"] #apl3d .blob { opacity: .35; }
+  @keyframes aplDrift { to { transform: translate(8vw, 6vh) scale(1.2); } }
+  #apl3d .ring { position: absolute; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 25%, transparent), inset 0 0 24px color-mix(in srgb, var(--accent) 15%, transparent);
+    transform: rotateX(68deg); animation: aplOrbit 20s linear infinite; }
+  @keyframes aplOrbit { to { transform: rotateX(68deg) rotateZ(360deg); } }
+  #apl3d .cube { position: absolute; width: var(--s); height: var(--s); transform-style: preserve-3d; animation: aplSpin var(--t, 18s) linear infinite; }
+  #apl3d .cube i { position: absolute; inset: 0; border: 1.5px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent); }
+  #apl3d .cube i:nth-child(1) { transform: translateZ(calc(var(--s) / 2)); } #apl3d .cube i:nth-child(2) { transform: rotateY(180deg) translateZ(calc(var(--s) / 2)); }
+  #apl3d .cube i:nth-child(3) { transform: rotateY(90deg) translateZ(calc(var(--s) / 2)); } #apl3d .cube i:nth-child(4) { transform: rotateY(-90deg) translateZ(calc(var(--s) / 2)); }
+  #apl3d .cube i:nth-child(5) { transform: rotateX(90deg) translateZ(calc(var(--s) / 2)); } #apl3d .cube i:nth-child(6) { transform: rotateX(-90deg) translateZ(calc(var(--s) / 2)); }
+  @keyframes aplSpin { from { transform: rotateX(-20deg) rotateY(0); } to { transform: rotateX(340deg) rotateY(720deg); } }
+  #apl3d .dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent);
+    animation: aplBob 5s ease-in-out infinite alternate; } @keyframes aplBob { to { transform: translateY(-26px); } }
+  html[data-look="animated"] .stat, html[data-look="animated"] .card { will-change: transform; }
+  html[data-look="animated"] .tilt { transition: transform .15s ease-out, box-shadow .3s !important; }
+  html[data-look="animated"] .stat::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s;
+    background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgba(255,255,255,.55), transparent 55%); mix-blend-mode: soft-light; }
+  html[data-look="animated"] .stat.tilt::before { opacity: 1; }
+  /* Embossed: one soft surface; raised parts cast a light + a dark shadow, fields and the open page are pressed in */
+  html[data-look="embossed"] { --neu: #e6e9ef; --nhi: #ffffff; --nlo: rgba(158,170,190,.6); }
+  html[data-look="embossed"][data-theme="dark"] { --neu: #1f2227; --nhi: rgba(255,255,255,.05); --nlo: rgba(0,0,0,.6); }
+  html[data-look="embossed"] body { background: var(--neu); }
+  html[data-look="embossed"] body::before { display: none; }
+  html[data-look="embossed"] header { background: var(--neu); backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 0; box-shadow: 0 6px 16px var(--nlo); }
+  html[data-look="embossed"] nav { background: transparent; border-right: 0; }
+  html[data-look="embossed"] nav a.on { background: var(--neu); box-shadow: inset 4px 4px 9px var(--nlo), inset -4px -4px 9px var(--nhi); }
+  html[data-look="embossed"] nav a.on::before { display: none; }
+  html[data-look="embossed"] .card, html[data-look="embossed"] .stat { background: var(--neu); border: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: 9px 9px 18px var(--nlo), -9px -9px 18px var(--nhi); }
+  html[data-look="embossed"] th { background: var(--neu); }
+  html[data-look="embossed"] .btn, html[data-look="embossed"] .chip { background: var(--neu); border: 0; box-shadow: 4px 4px 9px var(--nlo), -4px -4px 9px var(--nhi); }
+  html[data-look="embossed"] .btn:hover { background: var(--neu); box-shadow: 6px 6px 12px var(--nlo), -6px -6px 12px var(--nhi); }
+  html[data-look="embossed"] .btn:active { box-shadow: inset 3px 3px 7px var(--nlo), inset -3px -3px 7px var(--nhi); }
+  html[data-look="embossed"] .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+  html[data-look="embossed"] input:not([type=checkbox]):not([type=radio]):not([type=file]), html[data-look="embossed"] select, html[data-look="embossed"] textarea {
+    background: var(--neu); border: 0; box-shadow: inset 4px 4px 8px var(--nlo), inset -4px -4px 8px var(--nhi); }
+  html[data-look="embossed"] dialog { background: var(--neu); border: 0; box-shadow: 14px 14px 30px var(--nlo), -14px -14px 30px var(--nhi); }
+  /* theme picker tiles */
+  .themes { display: flex; flex-wrap: wrap; gap: 12px; }
+  .ttile { position: relative; display: flex; flex-direction: column; gap: 3px; width: 176px; padding: 10px; border: 2px solid var(--line); border-radius: 16px;
+    background: var(--card); color: var(--text); text-align: left; cursor: pointer; font: inherit; transition: border-color .2s, box-shadow .2s, transform .2s; }
+  .ttile:hover { transform: translateY(-2px); } .ttile.on { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .tdel { position: absolute; top: 6px; right: 8px; padding: 2px 6px; border-radius: 8px; background: var(--card); font-size: 12px; }
+  .tdel:hover { color: var(--bad); }
+  .tprev { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; height: 72px; padding: 8px; margin-bottom: 4px; border-radius: 10px;
+    background: linear-gradient(135deg, #e6eeff, #f1e8ff 50%, #ffeadb); }
+  .tprev i { border-radius: 6px; background: rgba(255,255,255,.75); border: 1px solid rgba(255,255,255,.9); }
+  .tprev i:first-child { grid-column: span 2; background: var(--a); border: 0; }
+  .tprev-animated i { animation: tFloat 2.4s ease-in-out infinite alternate; } .tprev-animated i:nth-child(3) { animation-delay: -1.2s; }
+  @keyframes tFloat { from { transform: translateY(3px); } to { transform: translateY(-3px); } }
+  .tprev-embossed { background: #e6e9ef; } .tprev-embossed i { background: #e6e9ef; border: 0; box-shadow: 3px 3px 6px rgba(158,170,190,.7), -3px -3px 6px #fff; }
 </style>
 <script>
   // Theme before first paint: "light" | "dark" | "auto" (follows the system).
   const themePref = () => { try { return localStorage.getItem("theme") || "auto"; } catch { return "auto"; } };
+  // auto theme follows the clock: light 6 am - 6 pm, dark 6 pm - 6 am
+  const dayTime = (h = new Date().getHours()) => h >= 6 && h < 18;
   const applyTheme = () => document.documentElement.dataset.theme =
-    themePref() === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : themePref();
+    themePref() === "auto" ? (dayTime() ? "light" : "dark") : themePref();
   applyTheme();
+  // portal theme (style + accent) before first paint, from the last one this browser saw; refresh() keeps it current
+  const setLook = (base, accent) => {
+    const h = document.documentElement;
+    h.dataset.look = base || "classic";
+    for (const [k, v] of [["--accent", accent], ["--accent2", accent && `color-mix(in srgb, ${accent} 65%, #fff)`], ["--accent-soft", accent && `color-mix(in srgb, ${accent} 15%, transparent)`]])
+      v ? h.style.setProperty(k, v) : h.style.removeProperty(k);
+  };
+  try { const L = JSON.parse(localStorage.getItem("look") || "null"); if (L) setLook(L.base, L.accent); } catch {}
 </script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22g%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23f28c00%22/%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23ffb340%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%228%22%20fill%3D%22url%28%23g%29%22/%3E%3Cg%20transform%3D%22translate%284%204%29%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%222.5%22%20width%3D%2211%22%20height%3D%2217%22%20rx%3D%222%22/%3E%3Cpath%20d%3D%22M7.5%2016.5h2%22/%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%2216%22%20r%3D%222.2%22/%3E%3Cpath%20d%3D%22M18%2011.8v1.4M18%2018.8v1.4M22.2%2016h-1.4M15.2%2016h-1.4M21%2013l-1%201M16%2018l-1%201M21%2019l-1-1M16%2014l-1-1%22/%3E%3C/g%3E%3C/svg%3E">
 </head>
 <body>
 <header>
+  <a class="appicon" href="#/" title="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="11" height="17" rx="2"/><path d="M7.5 16.5h2"/><circle cx="18" cy="16" r="2.2"/><path d="M18 11.8v1.4M18 18.8v1.4M22.2 16h-1.4M15.2 16h-1.4M21 13l-1 1M16 18l-1 1M21 19l-1-1M16 14l-1-1"/></svg></a>
   <div>
     <h1>Device Remote Management</h1>
     <div class="sub">Interlock Group · every device across all sites</div>
   </div>
   <div class="grow"></div>
   <span class="live" id="live"><i></i><span id="liveText">Connecting…</span></span>
-  <button class="btn theme-btn" id="themeBtn" aria-label="Change theme"></button>
+  <button class="tsw" id="themeBtn" type="button" role="switch" aria-label="Dark theme"><span class="tsw-stars"></span><span class="tsw-clouds"></span><span class="tsw-knob"></span></button>
   <button class="btn icon" id="soundBtn" title="Alarm sound when a device goes offline"></button>
-  <button class="btn" id="mapBtn" title="Live location of all devices"><span class="mapico"></span>Map</button>
+  <button class="btn" id="mapBtn" title="Live location of all devices"><span class="mapico"></span><span class="t">Map</span></button>
   <a class="btn bell" href="#/alerts" title="Open alerts"><span class="bellico"></span><b id="bellN" hidden></b></a>
-  <span class="who" id="who"></span><button class="btn" id="logout" title="Sign out"><span class="outico"></span><span class="t">Sign out</span></button>
+  <span class="who" id="who" tabindex="0" role="button"></span><button class="btn" id="logout" title="Sign out"><span class="outico"></span><span class="t">Sign out</span></button>
 </header>
 <div class="layout">
   <nav id="nav"></nav>
@@ -527,11 +911,11 @@
     <form method="dialog"><button class="btn">Close</button></form></div>
   <div id="map"></div>
 </dialog>
-<button id="maxBtn" hidden title="Ask Max, the portal assistant" aria-label="Open Max, the assistant"><img src="/max.png" alt=""></button>
-<section id="maxPanel" hidden aria-label="Max, the assistant">
-  <div class="max-head"><span class="max-face"><img src="/max.png" alt=""></span><div class="grow"><b>Max</b><span class="meta" id="maxSub">Your portal assistant</span></div>
+<button id="maxBtn" hidden title="Ask Aux, the portal assistant" aria-label="Open Aux, the assistant"><img src="/max.png" alt=""></button>
+<section id="maxPanel" hidden aria-label="Aux, the assistant">
+  <div class="max-head"><span class="max-face"><img src="/max.png" alt=""></span><div class="grow"><b>Aux</b><span class="meta" id="maxSub">Your portal assistant</span></div>
     <button class="btn ghost" id="maxStop" title="Stop speaking" hidden>■</button><button class="btn ghost" id="maxSpeak" title="Read answers aloud"></button>
-    <button class="btn ghost" id="maxSleep" title="Put Max to sleep: he wakes up only for alerts, or when you click him" hidden>🌙</button><button class="btn ghost" id="maxMove" title="Max flies around the page" hidden>✈</button><button class="btn ghost" id="maxClear" title="New conversation">↺</button><button class="btn ghost" id="maxMin" title="Minimise"></button></div>
+    <button class="btn ghost" id="maxSleep" title="Put Aux to sleep: he wakes up only for alerts, or when you click him" hidden>🌙</button><button class="btn ghost" id="maxMove" title="Aux flies around the page" hidden>✈</button><button class="btn ghost" id="maxClear" title="New conversation">↺</button><button class="btn ghost" id="maxMin" title="Minimise"></button></div>
   <div id="maxLog" aria-live="polite"></div>
   <form class="max-input" id="maxForm"><button type="button" class="btn ghost" id="maxMic" title="Speak"></button>
     <input id="maxIn" placeholder="Ask about devices, tickets, the team…" autocomplete="off" maxlength="1500"><button class="btn primary" id="maxSend" title="Send"></button></form>
@@ -545,6 +929,9 @@
 const ONLINE_MS = 90 * 1000;  // tablets check in every 10s, PCs and IoT agents every 30s
 const LOW_BATTERY = 20;
 const $ = id => document.getElementById(id);
+// ?embed: this page is shown inside a Command Center pop-up (iframe): page only, no header / menu / Aux / alarm sound
+const EMBED = new URLSearchParams(location.search).has("embed");
+if (EMBED) document.body.classList.add("embed");
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
@@ -562,16 +949,17 @@ Object.assign(ICONS, { settings: "<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 
   mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
   bug: "<path d=\"m8 2 1.88 1.88\"/><path d=\"M14.12 3.88 16 2\"/><path d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/><path d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/><path d=\"M12 20v-9\"/><path d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/><path d=\"M6 13H2\"/><path d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/><path d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/><path d=\"M22 13h-4\"/><path d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>",
   send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
+ICONS.monitor = "<rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\"/><path d=\"M8 21h8\"/><path d=\"M12 17v4\"/>";
 ICONS.chart = "<path d=\"M3 3v16a2 2 0 0 0 2 2h16\"/><path d=\"M18 17V9\"/><path d=\"M13 17V5\"/><path d=\"M8 17v-3\"/>";
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
-  ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["bugs", "bug", "Bug Finder"], ["team", "wrench", "Technical Team"],
+  ["overview", "layout-dashboard", "Overview"], ["command", "monitor", "Command Center"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["bugs", "bug", "Bug Finder"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
   ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["reports", "chart", "Reports"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
-const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team", bug: "bugs", app: "apps" }[page] || page);
+const canOpen = page => page === "users" || page === "announcements" || page === "config" ? me().admin : me().admin || me().modules.includes({ device: "devices", site: "sites", ticket: "team", bug: "bugs", app: "apps", command: "overview" }[page] || page);
 
 let S = { devices: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], commands: {}, technicians: [], models: [], statuses: {}, flow: {} };
 let skew = 0, picked = new Set(), filters = { q: "", type: "", group: "", status: "" };
@@ -582,6 +970,12 @@ const dev = id => S.devices.find(d => d.id === id);
 // Sites (stored as d.group): every saved site, plus "" (no site) if any device has none.
 const groups = () => [...new Set([...S.sites.map(x => x.name), ...S.devices.map(d => d.group || "")])].sort((a, b) => a ? b ? a.localeCompare(b) : -1 : 1);
 const openAlerts = () => S.alerts.filter(a => !a.resolvedAt && !a.ackAt);
+// Copy to the clipboard. On plain http (http://192.168.x.x:8080) the browser has no clipboard API: fall back to a hidden textarea.
+function copyText(text) {
+  const old = () => { const t = Object.assign(document.createElement("textarea"), { value: text }); t.style.cssText = "position:fixed;opacity:0"; document.body.append(t); t.select();
+    const ok = document.execCommand("copy"); t.remove(); return ok ? Promise.resolve() : Promise.reject(); };
+  (navigator.clipboard?.writeText(text) || Promise.reject()).catch(old).then(() => toast("Copied"), () => toast("Couldn't copy: select the text and press Ctrl+C", true));
+}
 const ago = t => {
   if (!t) return "never";
   const s = Math.max(0, Math.round((now() - t) / 1000));
@@ -638,6 +1032,7 @@ async function refresh() {
     skew = r.now - Date.now();
     r.devices.sort((a, b) => label(a).localeCompare(label(b)));
     S = r;
+    applyLook();
     $("live").classList.remove("down");
     $("liveText").textContent = "Live · " + new Date().toLocaleTimeString();
   } catch (e) {
@@ -652,6 +1047,7 @@ async function refresh() {
   $("who").innerHTML = S.me ? `${ico("user-round")}<span class="t">${esc(S.me.name || S.me.username)}</span>${S.me.readOnly ? `<span class="pill neutral">View only</span>` : ""}` : "";
   $("who").title = S.me ? `Signed in as ${S.me.username}${S.me.admin ? " (administrator)" : ""}. Click to change your password` : "";
   $("who").onclick = () => S.me && myPassword();
+  $("who").onkeydown = e => e.key === "Enter" && $("who").click();
   renderNav();
   renderAlarm();
   watchAutoTickets();
@@ -667,6 +1063,7 @@ async function refresh() {
 // after the user has clicked somewhere on the page once, so the first click (any click) unlocks it.
 let soundOn = true, siren = null;
 try { soundOn = localStorage.getItem("alarmSound") !== "off"; } catch {}
+if (EMBED) soundOn = false; // the Command Center itself plays the alarm
 const alarmAlerts = () => S.alerts.filter(a => !a.resolvedAt && !a.ackAt);
 // Alarm sound: mixkit "battleship alarm" (dashboard/alarm.wav), looped until stopSiren().
 // With seconds set, it stops by itself (the test burst when sound is turned on).
@@ -681,8 +1078,8 @@ function startSiren(seconds) {
   if (seconds) setTimeout(stopSiren, seconds * 1000);
 }
 function stopSiren() { if (siren) { siren.stop(); siren = null; } }
-// Max announces in the middle of the screen, one message at a time, and reads it aloud (unless the alarm sound is muted).
-// Without the 3D Max (no WebGL) the message is a toast.
+// Aux announces in the middle of the screen, one message at a time, and reads it aloud (unless the alarm sound is muted).
+// Without the 3D Aux (no WebGL) the message is a toast.
 let announceQ = Promise.resolve();
 function announce(text, { ms = 12000, ...opts } = {}) {
   announceQ = announceQ.then(() => new Promise(done => {
@@ -698,7 +1095,7 @@ function announceAlert(a) {
     : `If it stays offline for ${s.ticketAfterMin} minutes, I'll open a ticket${s.autoAssign ? " and assign the nearest available technician" : ""}.`;
   announce(`Alert: ${d ? label(d) + (d.code ? " (" + d.code + ")" : "") : "a device"}${where} is offline. ${next}`, { tone: "bad", onClick: () => (location.hash = "#/alerts") });
 }
-// Automatic tickets show up as a ticketId on the offline alert. Max says who got it, or asks someone to assign it.
+// Automatic tickets show up as a ticketId on the offline alert. Aux says who got it, or asks someone to assign it.
 let seenTickets = null;
 function watchAutoTickets() {
   const ids = [...new Set(S.alerts.filter(a => a.ticketId).map(a => a.ticketId))];
@@ -757,6 +1154,7 @@ function route(live) {
     $("view").innerHTML = `<p class="empty">Your account has no pages yet. Ask an administrator to give you access.</p>`; return;
   }
   const fn = VIEWS[page] || VIEWS.overview;
+  document.body.classList.toggle("cc", page === "command"); // Command Center: full screen, no header / menu
   if (!live || fresh) { renderNav(); $("view").innerHTML = ""; }
   fn(arg ? decodeURIComponent(arg) : undefined, !live || fresh);
   if (!live || fresh) enter();
@@ -831,7 +1229,7 @@ VIEWS.overview = () => {
   const pct = (a, b) => b ? Math.round(1000 * a / b) / 10 : 0;
   $("view").innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Device Fleet Overview</h2>
-      <span class="row"><button class="btn" id="mAllOn">🛠 Maintenance on all</button><button class="btn" id="mAllOff">Maintenance off all</button></span></div>
+      <span class="row">${S.showTour ? `<button class="btn primary" id="movieBtn" title="A 2-minute cinematic tour of the portal, narrated by Aux (sound on)">🎬 Watch the 2-min tour</button>` : ""}<button class="btn" id="mAllOn">🛠 Maintenance on all</button><button class="btn" id="mAllOff">Maintenance off all</button></span></div>
     <p class="lead">Monitor device health, connectivity and alerts across all sites, updated live.</p>
     <div class="stats">
       <a class="stat" href="#/sites"><div class="n">${sites.length}</div><div class="l">Total sites</div></a>
@@ -869,6 +1267,7 @@ VIEWS.overview = () => {
         || `<tr><td class="empty">All devices online 🎉</td></tr>`}</tbody></table></div>
     </div>`;
   $("view").onclick = e => {
+    if (e.target.id === "movieBtn") return maxMovie();
     if (e.target.id === "mAllOn") return maintenance({ all: true }, true, S.devices.length);
     if (e.target.id === "mAllOff") return maintenance({ all: true }, false);
     const dv = e.target.closest("[data-dev]");
@@ -1058,7 +1457,7 @@ function addDevice() {
     okBtn.textContent = t === "tablet" ? "Create Device ID" : "Done";
   };
   $("adType").onchange = show;
-  $("adSteps").onclick = e => { const b = e.target.closest("[data-copy]"); if (b) navigator.clipboard.writeText($(b.dataset.copy.slice(1)).textContent).then(() => toast("Copied")); };
+  $("adSteps").onclick = e => { const b = e.target.closest("[data-copy]"); if (b) copyText($(b.dataset.copy.slice(1)).textContent); };
   show();
 }
 
@@ -1100,7 +1499,7 @@ function deviceMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => !["unlock", "lock", "screenshot"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
+  m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => CMD[c] && !["unlock", "lock", "screenshot"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
     `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
      <button data-act="logs">Download logs</button><button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
@@ -1244,7 +1643,7 @@ async function screenshot(d, send = true) {
 const XTERM = "https://cdn.jsdelivr.net/npm/@xterm/";
 const loadScript = src => new Promise((ok, bad) => document.head.append(Object.assign(document.createElement("script"), { src, onload: ok, onerror: () => bad(new Error("Couldn't load the terminal (no internet?)")) })));
 const termFrom = {}; // device id -> where Clear was pressed, so reopening starts there
-const QUICK = [["IP address", "ip -4 addr show wlan0"], ["Battery", "dumpsys battery | head -12"], ["Disk", "df -h /data /sdcard"],
+const QUICK = [["📜 Live logs", "logcat -v threadtime"], ["IP address", "ip -4 addr show wlan0"], ["Battery", "dumpsys battery | head -12"], ["Disk", "df -h /data /sdcard"],
   ["Wi-Fi", "dumpsys wifi | grep -m 2 mWifiInfo"], ["Apps", "pm list packages -3"], ["Uptime", "uptime"], ["⟳ Reboot", "reboot"]];
 async function shellView(d) {
   const dl = $("shotDlg"), base = `/api/devices/${encodeURIComponent(d.id)}/term`;
@@ -1255,7 +1654,7 @@ async function shellView(d) {
     <input id="xtFind" type="search" placeholder="🔍 Search output (Enter = next, Shift+Enter = previous)" aria-label="Search the terminal output"></h2><div class="xt" id="xt"></div>
     <div class="row" style="margin-top:8px;gap:6px">${QUICK.map(([t, c]) => `<button class="btn" data-q="${esc(c)}" title="${esc(c)}">${t}</button>`).join("")}</div>
     <div class="foot"><span class="meta">Rooted tablets (Telpo) open as <b>root</b>, full system control. Others run with the kiosk app's rights only. Ctrl+C = fresh shell.</span>
-      <span class="grow"></span><button class="btn" data-k="clear">Clear</button><button class="btn" data-k="close">Close</button></div>`;
+      <span class="grow"></span><button class="btn" data-k="stop" title="Same as Ctrl+C: stops live logs or any running command">■ Stop</button><button class="btn" data-k="clear">Clear</button><button class="btn" data-k="close">Close</button></div>`;
   dl.classList.add("term");
   dl.onclose = () => { open = false; dl.classList.remove("term"); term?.dispose(); };
   dl.onclick = e => {
@@ -1267,7 +1666,8 @@ async function shellView(d) {
       api(base, { data: q + "\n" }).catch(err => toast(err.message, true));
       return term.focus();
     }
-    if (k === "clear") { term?.clear(); termFrom[d.id] = from; term?.focus(); } // stays cleared when reopened
+    if (k === "stop") { api(base, { data: "\u0003" }).catch(err => toast(err.message, true)); term?.focus(); }
+    else if (k === "clear") { term?.clear(); termFrom[d.id] = from; term?.focus(); } // stays cleared when reopened
     else if (k) dl.close();
   };
   if (!dl.open) dl.showModal();
@@ -1279,7 +1679,7 @@ async function shellView(d) {
     await api(`/api/devices/${d.id}/command`, { type: "term" });
   } catch (e) { toast(e.message, true); return dl.close(); }
   if (!open) return;
-  term = new Terminal({ convertEol: true, cursorBlink: true, allowProposedApi: true, fontSize: 14, fontFamily: "ui-monospace, Consolas, monospace", theme: { background: "#0c0c0c" } });
+  term = new Terminal({ convertEol: true, cursorBlink: true, scrollback: 20000, allowProposedApi: true, fontSize: 14, fontFamily: "ui-monospace, Consolas, monospace", theme: { background: "#0c0c0c" } });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   const find = new SearchAddon.SearchAddon(), look = { decorations: { matchOverviewRuler: "#888", activeMatchColorOverviewRuler: "#f28c00", matchBackground: "#5a4a00", activeMatchBackground: "#f28c00" } };
@@ -1647,7 +2047,8 @@ VIEWS.device = async (id, first) => {
     Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Security patch": d.patch, "Tablet settings": d.type === "android-kiosk" && settingsText(d.settings, siteOf(d.group)?.settings), "Device IP (LAN)": d.localIp, "Public IP": pubIp(d) || (d.ip && "Same network as the portal"),
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
     Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
-    Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
+    Location: d.lat != null ? `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`
+      : d.pin && `📍 Pinned ${d.pin.lat.toFixed(5)}, ${d.pin.lng.toFixed(5)} (±${d.pin.accuracy} m, by ${d.pin.by}, ${ago(d.pin.at)})`,
     ...(d.info || {}),
     "Data today": d.data && `${d.data.wifi} MB Wi-Fi · ${d.data.mobile} MB mobile`,
     "Top apps (24 h)": d.appUsage?.length && d.appUsage.map(([n, m]) => `${n} ${m < 60 ? m + " min" : (m / 60).toFixed(1) + " h"}`).join(", "),
@@ -1686,6 +2087,11 @@ VIEWS.device = async (id, first) => {
           <span class="meta">Rooted tablets (Telpo) switch network ADB on themselves — no cable. Then connect from a PC:</span></div>
           <div id="dAdbCmd" class="row" style="margin-top:8px" hidden><code style="user-select:all" id="dAdbConnect"></code><button class="btn ghost" data-copy="dAdbConnect">Copy</button></div>
           <p class="meta" id="dAdbNote" style="margin-bottom:0"></p></div></div>
+      <div class="card" id="dLocCard"><h3>Location<span class="grow"></span><span class="meta" id="dLocState"></span></h3>
+        <div class="pad"><div class="row"><button class="btn primary" id="dPin">📍 Pin here (this phone's location)</button>
+          <button class="btn" id="dGps" hidden>Turn on Google location on the tablet</button><button class="btn ghost" id="dPinClear" hidden>Clear pin</button></div>
+          <p class="meta" style="margin-bottom:0">Most tablets have no GPS chip. Stand next to the tablet, open this page on your phone and press Pin here: the map shows the tablet at that spot (any app version).
+          <b>Turn on Google location</b> (app 10.32+) opens Google's location screen on the tablet: turn on Google Location Accuracy / Agree, then go back.</p></div></div>
       <div class="card" id="dSshCard" hidden><h3>Remote SSH<span class="grow"></span><span id="dSshState"></span></h3>
         <div class="pad"><div class="row"><button class="btn primary" data-ssh="1">SSH ON</button><button class="btn" data-ssh="">SSH OFF</button>
           <span class="meta">The tablet opens a tunnel to the portal while SSH is ON. Turn it off when you are done.</span></div>
@@ -1711,8 +2117,12 @@ VIEWS.device = async (id, first) => {
       if (ab) return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`, { type: "adbwifi", on: !!ab.dataset.adb }), `ADB over Wi-Fi ${ab.dataset.adb ? "on" : "off"} sent`);
       const sb = e.target.closest("[data-ssh]");
       if (sb) return act(() => api(`/api/devices/${encodeURIComponent(id)}/ssh`, { on: !!sb.dataset.ssh }), `Remote SSH ${sb.dataset.ssh ? "on" : "off"}`);
+      if (e.target.id === "dPin") return pinHere(dev(id));
+      if (e.target.id === "dPinClear") return confirm("Clear the pinned location?") && act(() => api(`/api/devices/${encodeURIComponent(id)}/pin`, { clear: true }), "Pin cleared");
+      if (e.target.id === "dGps") return act(() => api(`/api/devices/${encodeURIComponent(id)}/command`, { type: "gpslocation" }),
+        "Sent: Google's location screen opens on the tablet. Turn it on there, then go back.");
       const cp = e.target.closest("[data-copy]");
-      if (cp) return navigator.clipboard.writeText($(cp.dataset.copy).textContent).then(() => toast("Copied"));
+      if (cp) return copyText($(cp.dataset.copy).textContent);
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
       if (b.dataset.a === "settings") return tabletSettings(dev(id));
@@ -1776,6 +2186,10 @@ VIEWS.device = async (id, first) => {
   $("dRelayKv").innerHTML = Object.entries(kv).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   $("dRelayNote").textContent = rp.relay === "unknown" ? "This model's relay hasn't been verified. Test it with someone at the door, then use Relay setup… to save the mapping that worked." : "";
   $("dRelayLink").checked = d.relayLink !== false;
+  $("dLocState").textContent = d.lat != null ? `GPS ±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}` : d.pin ? `📍 Pinned ${ago(d.pin.at)}`
+    : siteOf(d.group || "").lat != null ? "No GPS: shown at its site" : "No location yet";
+  $("dGps").hidden = !cmds.includes("gpslocation") || d.lat != null;
+  $("dPinClear").hidden = !d.pin;
   $("dAdbCard").hidden = d.type !== "android-kiosk" || !me().admin;
   const adbOn = d.adbWifi > 0;
   $("dAdbState").innerHTML = d.adbWifi == null ? `<span class="meta">Update the tablet app</span>` : adbOn ? `<span class="pill ok">ON · port ${d.adbWifi}</span>` : `<span class="pill">OFF</span>`;
@@ -1815,7 +2229,7 @@ VIEWS.device = async (id, first) => {
     ${S.sshReady ? `<p class="meta" style="margin:12px 0 4px">From anywhere (tunnel through the portal):</p>
       <div class="row"><button class="btn" data-ssh="1">Tunnel ON</button><button class="btn" data-ssh="">Tunnel OFF</button></div>
       ${d.ssh && d.sshCmd ? copyBox("dSshTunCmd", d.sshCmd) + `<p class="meta" style="margin:6px 0 0">Password 1: tunnel password${S.sshTunnelPass ? " " + esc(S.sshTunnelPass) : ""}. Password 2: the Windows password.</p>` : ""}` : ""}`;
-  $("dCmds").innerHTML = withUnpin(cmds).filter(c => !["remote", "sshon", "sshoff"].includes(c)).map(c => `<button class="btn ${c === "unlock" || c === "screenshot" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
+  $("dCmds").innerHTML = withUnpin(cmds).filter(c => CMD[c] && !["remote", "sshon", "sshoff"].includes(c)).map(c => `<button class="btn ${c === "unlock" || c === "screenshot" ? "primary" : ""}" data-cmd="${c}">${CMD[c]}</button>`).join("") || `<span class="meta">No remote actions for this type.</span>`;
   $("dResCard").hidden = !d.lastResult;
   if (d.lastResult) {
     const r = d.lastResult;
@@ -1941,7 +2355,7 @@ function healthChart(el, hist) {
       ${ticks.map(t => `<line x1="${f(x(t))}" x2="${f(x(t))}" y1="${T}" y2="${H - B}" stroke="${css("--line")}" stroke-dasharray="2 4"/><text class="ax" x="${f(x(t))}" y="${H - 7}" text-anchor="${x(t) > W - R - 30 ? "end" : x(t) < L + 30 ? "start" : "middle"}">${lab(t)}</text>`).join("")}
       ${paths}<g class="hover" visibility="hidden"><line y1="${T}" y2="${H - B}" stroke="${css("--muted")}" stroke-dasharray="3 3"/>${series.map(([, , c]) => `<circle r="3.5" fill="${c}" stroke="${css("--card")}" stroke-width="1.5"/>`).join("")}</g>
       <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip" hidden></div></div>
-    <table class="hlegend"><tr><th title="Click a row to show only that one">Name</th><th>Mean</th><th>Max</th><th>Last</th></tr>
+    <table class="hlegend"><tr><th title="Click a row to show only that one">Name</th><th>Mean</th><th>Aux</th><th>Last</th></tr>
       ${stats.map(([n, c, u, mean, max, last]) => `<tr data-s="${n}" class="${series.length === 1 && series[0][0] !== n ? "off" : ""}"><td><i style="background:${c}"></i>${n}</td><td>${r1(mean)}${u}</td><td>${r1(max)}${u}</td><td><b>${r1(last)}${u}</b></td></tr>`).join("")}</table>`;
   el.querySelector(".hlegend").onclick = e => {
     const n = e.target.closest("[data-s]")?.dataset.s;
@@ -2363,7 +2777,7 @@ function appNotes(id) {
   const a = S.apps.find(x => x.id === id);
   if (!a) return;
   dialog(`<h2>${esc(a.label)}</h2><p class="meta">Uploaded ${new Date(a.at).toLocaleString()}${a.by ? " by " + esc(a.by) : ""}</p>
-    <label class="meta">Release notes</label><textarea id="anText" rows="9" maxlength="2000" style="width:min(560px,80vw);display:block" placeholder="What's new / fixed in this version">${esc(a.notes || "")}</textarea>`,
+    <label class="meta">Release notes</label><textarea id="anText" rows="9" maxlength="2000" style="width:100%;box-sizing:border-box;display:block" placeholder="What's new / fixed in this version">${esc(a.notes || "")}</textarea>`,
     "Save", () => act(() => api(`/api/apps/${id}/notes`, { notes: $("anText").value.trim() }), "Release notes saved"));
 }
 
@@ -2380,6 +2794,8 @@ function chooseDevices(cmd, done) {
     <p class="meta">Point at a site to see its devices, then tick the ones you want. Only Android devices running the kiosk app can receive apps and files (${able.length} now).</p>
     <div class="cd-grid"><div class="cd-list" id="cdSites"></div><div class="cd-list" id="cdDevs"></div></div><p class="meta" id="cdN"></p>`,
     verb + " devices", () => { const list = able.filter(d => sel.has(d.id)); list.length ? done(list) : toast("Tick at least one device", true); });
+  $("dlg").classList.add("wide");
+  $("dlg").addEventListener("close", () => $("dlg").classList.remove("wide"), { once: true });
   const ok = $("dlg").querySelector('button[value="ok"]');
   const render = () => {
     $("cdSites").innerHTML = `<label class="cd-row" data-site="__all"><input type="checkbox" ${sel.size === able.length ? "checked" : ""}><b class="grow">All sites</b><span class="meta">${able.length}</span></label>`
@@ -2519,7 +2935,7 @@ const evBy = e => (/\(by (.+)\)$/.exec(e.text) || /\bby ([\w.@-]+)(?=$|\)|\s\(|,
 // Readable names of the event kinds (Activity column and type filter).
 const EV_NAME = { site: "Site change", enroll: "Device enrolled", online: "Came online", offline: "Went offline", command: "Command sent", delivered: "Command done",
   alert: "Alert", resolved: "Alert resolved", logs: "Logs", task: "Scheduled task", upload: "Upload", removed: "Device removed", device: "Device report",
-  screenshot: "Screenshot", announcement: "Announcement", config: "Configuration", relay: "Door relay", result: "Command result", vpn: "VPN", barrier: "Barrier", ticket: "Ticket", team: "Technical team", assistant: "Max (AI)",
+  screenshot: "Screenshot", announcement: "Announcement", config: "Configuration", relay: "Door relay", result: "Command result", vpn: "VPN", barrier: "Barrier", ticket: "Ticket", team: "Technical team", assistant: "Aux (AI)",
   whatsapp: "WhatsApp", maintenance: "Maintenance", user: "User account", ssh: "Remote access" };
 const evName = k => EV_NAME[k] || (k ? k[0].toUpperCase() + k.slice(1) : "Other");
 // Who: the person named in the text; otherwise the device itself (things it reported) or the system (timers, alerts).
@@ -2745,7 +3161,7 @@ VIEWS.bug = async (id, first) => {
 // Honest status of every feature on the roadmap.
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)", reports: "Reports" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Aux (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)", reports: "Reports" };
 // ---------------- Barrier control (Remote Command Centre): two live cameras and the open buttons of one site ----------------
 // The server holds the MQTT broker login and the camera addresses; the page only sees names, states and results.
 // Boom barrier: post, striped arm (.arm lifts on hover / while sending), base
@@ -2883,13 +3299,255 @@ async function barrierSetup(site) {
   $("dlg").onclick = e => { const b = e.target.closest("[data-rm]"); if (b) { b.closest(".cf-item").remove(); renumber(); } };
 }
 
-// ---------------- Configuration (admins): maintenance mode, Max, WhatsApp alerts, relay per device type ----------------
+// ---------------- Configuration (admins): maintenance mode, Aux, WhatsApp alerts, relay per device type ----------------
 const cfgMaint = () => {
   const on = S.devices.filter(d => d.maintenance);
   return `<b>${on.length}</b> of ${S.devices.length} device${S.devices.length === 1 ? "" : "s"} showing the maintenance screen
     ${on.length ? `<div class="chips" style="margin-top:6px">${on.map(d => `<a class="chip" href="#/device/${encodeURIComponent(d.id)}">${esc(label(d))} <span class="code">${esc(d.code || "")}</span></a>`).join("")}</div>` : ""}`;
 };
 const cfgWa = () => S.whatsapp?.length ? S.whatsapp.map(w => `<span class="chip">💬 ${esc(w.name || "")} ${esc(w.phone || "")}</span>`).join("") : `<span class="meta">No numbers yet.</span>`;
+// ---- Command Center (#/command): everything on one full-screen page for the office wall TV; live like every page.
+// Every card opens a pop-up on this page: our own lists, or the real portal page in an iframe (?embed) so all its buttons work.
+// site colour: green = every device online and nothing wrong, amber = something needs a look, red = most devices down
+// a map location pin (drop shape with a white dot) in a site's status colour; the tip sits on the site
+const ccPin = col => L.divIcon({ className: "cc-pin", iconSize: [34, 44], iconAnchor: [17, 43], tooltipAnchor: [0, 0],
+  html: `<svg width="34" height="44" viewBox="0 0 34 44"><path d="M17 1C8.2 1 1 8 1 16.8 1 28.6 17 43 17 43s16-14.4 16-26.2C33 8 25.8 1 17 1z" fill="${col}" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16.5" r="6" fill="#fff"/></svg>` });
+const CC_SITE = [["ok", "All OK", "#22c55e"], ["warn", "Attention", "#f59e0b"], ["bad", "Critical", "#ef4444"], ["none", "No devices", "#94a3b8"]];
+function ccSiteState(s) {
+  if (!s.list.length) return "none";
+  if (s.health < 50) return "bad";
+  return s.off || s.alerts || s.n.warning || s.n.maintenance ? "warn" : "ok";
+}
+const CC_COL = { online: "var(--ok)", warning: "var(--warn)", offline: "var(--bad)", maintenance: "var(--muted)" };
+let ccMap, ccMarkers = {}, ccEvents = [], ccEvAt = 0, ccStack = [], ccTickets = [];
+function ccDlg() {
+  if (!$("ccDlg")) {
+    document.body.insertAdjacentHTML("beforeend", `<dialog id="ccDlg"><div class="cc-dh"><button class="btn" id="ccBack" hidden>← Back</button><b id="ccDlgT"></b>
+      <button class="btn" id="ccDlgX">✕ Close</button></div><div id="ccDlgBody"></div></dialog>`);
+    $("ccDlgX").onclick = () => $("ccDlg").close();
+    $("ccDlg").addEventListener("close", () => { if ($("ccDlg").open) return; $("ccDlgBody").innerHTML = ""; ccStack = []; refresh(); }); // drop the iframe, show what changed (unless reopened already)
+    $("ccBack").onclick = () => { ccStack.pop(); ccShow(ccStack.pop()); };
+  }
+  return $("ccDlg");
+}
+// step = { title, html } or { title, hash }: html is ours, hash opens that portal page inside the pop-up
+function ccShow(step) {
+  const d = ccDlg();
+  if (!d.open) ccStack = [];
+  ccStack.push(step);
+  $("ccDlgT").textContent = step.title;
+  $("ccBack").hidden = ccStack.length < 2;
+  $("ccDlgBody").innerHTML = step.hash ? `<iframe src="/?embed=1${step.hash}" title="${esc(step.title)}"></iframe>` : step.html;
+  if (!d.open) d.showModal();
+}
+const ccDevPage = id => { const d = dev(id); ccShow({ title: d ? label(d) : "Device", hash: "#/device/" + encodeURIComponent(id) }); };
+function ccDevices(title, keep) {
+  const list = S.devices.filter(keep).sort((a, b) => label(a).localeCompare(label(b)));
+  ccShow({ title: `${title} (${list.length})`, html: `<div class="table-wrap"><table><thead><tr><th>Device</th><th>Site</th><th>Status</th><th>Battery</th><th>Last seen</th></tr></thead><tbody>
+    ${list.map(d => { const st = fleetState(d); return `<tr class="click" data-cc-dev="${esc(d.id)}"><td class="name">${esc(label(d))}</td><td>${esc(groupName(d.group))}</td>
+      <td><span class="pill ${{ online: "ok", warning: "warn", offline: "bad", maintenance: "neutral" }[st]}">${FLEET.find(f => f[0] === st)[1]}</span></td>
+      <td>${d.battery != null ? d.battery + "%" : "–"}</td><td class="meta">${ago(d.lastSeen)}</td></tr>`; }).join("") || `<tr><td colspan="5" class="empty">No devices</td></tr>`}</tbody></table></div>` });
+}
+function ccBarrier() {
+  const sites = groups().filter(Boolean);
+  ccShow({ title: "🚧 Barrier Control: pick a site", html: `<div class="cc-sites">${sites.map(g => { const s = siteStats(g);
+    return `<button data-cc-barrier="${esc(g)}"><b>${esc(g)}</b><span class="meta">${s.list.length} device${s.list.length === 1 ? "" : "s"} · ${s.on} online</span></button>`; }).join("")
+    || `<p class="empty">No sites yet</p>`}</div>` });
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-cc], [data-cc-dev], [data-cc-site], [data-cc-barrier], [data-cc-state]");
+  if (!t || !(t.closest(".ccv") || t.closest("#ccDlg"))) return;
+  if (t.dataset.ccDev) return ccDevPage(t.dataset.ccDev);
+  if (t.dataset.ccSite !== undefined) return ccShow({ title: groupName(t.dataset.ccSite), hash: "#/site/" + encodeURIComponent(t.dataset.ccSite) });
+  if (t.dataset.ccBarrier) return ccShow({ title: "🚧 Barrier Control · " + t.dataset.ccBarrier, hash: "#/barrier/" + encodeURIComponent(t.dataset.ccBarrier) });
+  if (t.dataset.ccState) return ccDevices(FLEET.find(f => f[0] === t.dataset.ccState)[1] + " devices", d => fleetState(d) === t.dataset.ccState);
+  const k = t.dataset.cc;
+  if (k === "all") return ccDevices("All devices", () => true);
+  if (k === "offline") return ccDevices("Offline devices", d => !isOnline(d));
+  if (k === "online") return ccDevices("Online devices", isOnline);
+  if (k === "alerts") return ccShow({ title: "🚨 Alerts", hash: "#/alerts" });
+  if (k === "tickets") return ccShow({ title: "🎫 Tickets", hash: "#/team/tickets" });
+  if (k === "activity") return ccShow({ title: "📜 Activity log", hash: "#/activity" });
+  if (k === "team") return ccShow({ title: "👷 Technical team", hash: "#/team" });
+  if (k === "sites") return ccShow({ title: "🏢 Sites", hash: "#/sites" });
+  if (k === "barrier") return ccBarrier();
+  if (k === "map") return openMap();
+});
+VIEWS.command = (arg, first) => {
+  if (first) {
+    $("view").innerHTML = `<div class="ccv">
+      <div class="cc-top"><span class="cc-logo"><img src="/logo.png" alt="Interlock Group"></span>
+        <div><div class="cc-title">Command Center</div><div class="cc-sub">Interlock Group · full system monitoring · every site, every device</div></div>
+        <span class="cc-live" id="ccLive"><i></i><span>LIVE</span></span>
+        <div class="cc-clocks"><div class="cc-clock"><span>🇮🇳 India</span><b id="ccTimeIN"></b></div><div class="cc-clock"><span>🇸🇬 Singapore</span><b id="ccTimeSG"></b></div></div>
+        <div><div class="cc-date" id="ccDate"></div><div class="row" style="justify-content:flex-end;margin-top:.3em">
+          <button class="tsw" id="ccTheme" type="button" role="switch" aria-label="Dark theme"><span class="tsw-stars"></span><span class="tsw-clouds"></span><span class="tsw-knob"></span></button>
+          <button class="btn" id="ccFull" title="Full screen (F11 works too)">⛶ Full screen</button><a class="btn" href="#/overview" title="Back to the portal">✕ Exit</a></div></div></div>
+      <div class="cc-kpis" id="ccKpis"></div>
+      <div class="cc-main">
+        <div class="cc-panel"><h3>🗺 Sites map<span class="cc-legend">${CC_SITE.map(([, t, c]) => `<span style="--c:${c}"><i></i>${t}</span>`).join("")}</span><span class="meta" id="ccNoLoc"></span>
+          <button class="btn" data-cc="map" style="margin-left:1em">⤢ Open map</button></h3><div id="ccMap"></div></div>
+        <div class="cc-side">
+          <div class="cc-panel"><h3>🏢 Site health<span class="meta" id="ccSiteN"></span><button class="btn" data-cc="sites" style="margin-left:.8em">View all</button></h3><div class="cc-list" id="ccSites"></div></div>
+          <div class="cc-panel"><h3 class="cc-click" data-cc="alerts">🚨 Open alerts<span class="meta" id="ccAlertN"></span></h3><div class="cc-list" id="ccAlerts"></div></div></div></div>
+      <div class="cc-bottom">
+        <div class="cc-panel"><h3 class="cc-click" data-cc="all">📊 Fleet status<span class="meta" id="ccFleetN"></span></h3><div class="cc-fleet" id="ccFleet"></div></div>
+        <div class="cc-panel"><h3>👷 Technical team<span class="meta" id="ccTechN"></span><button class="btn" data-cc="team" style="margin-left:.8em">View all</button></h3><div class="cc-list" id="ccTech"></div></div>
+        <div class="cc-panel"><h3 class="cc-click" data-cc="activity">📜 Recent activity log<span class="meta">newest first</span></h3><div class="cc-list" id="ccEvents"></div></div></div></div>`;
+    $("ccTheme").onclick = () => $("themeBtn").click(); // the header's day / night switch (hidden here); this one's look follows the theme
+    $("ccFull").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => toast("Press F11 for full screen", true));
+    ccMap?.remove(); ccMarkers = {}; ccEvAt = 0;
+    ccMap = L.map("ccMap", { zoomControl: false, attributionControl: false }).setView([1.3521, 103.8198], 11);
+    const layers = baseLayers();
+    layers.default.addTo(ccMap);
+    L.control.layers(layers.all, null, { position: "topright" }).addTo(ccMap); // OneMap / Satellite
+    // map size: on wide screens twice as wide as it is tall (at most 60% of the row); stacked (≤1100 px) CSS makes it square
+    const size = () => { const m = $("ccMap"); if (!m) return; const row = m.closest(".cc-main").clientWidth;
+      m.parentElement.style.width = innerWidth > 1100 ? Math.min(m.clientHeight * 2, row * 0.6) + 2 + "px" : ""; ccMap?.invalidateSize(); };
+    new ResizeObserver(size).observe($("ccMap"));
+  }
+  const ds = S.devices, on = ds.filter(isOnline).length, n = Object.fromEntries(FLEET.map(([k]) => [k, ds.filter(d => fleetState(d) === k).length]));
+  const alerts = openAlerts().slice().sort((a, b) => b.at - a.at), sites = groups(), pct = ds.length ? Math.round(1000 * on / ds.length) / 10 : 0;
+  $("ccLive").classList.toggle("down", $("live").classList.contains("down"));
+  $("ccLive").lastChild.textContent = $("live").classList.contains("down") ? "SERVER UNREACHABLE" : "LIVE";
+  const kpi = (v, l, k, cls = "") => `<div class="cc-kpi ${cls}" data-cc${k.startsWith("state:") ? "-state=\"" + k.slice(6) : "=\"" + k}" title="Open">
+    <div class="n">${v}</div><div class="l">${l}</div></div>`;
+  $("ccKpis").innerHTML = kpi(ds.length, "Total devices", "all") + kpi(on, "Online", "online", "ok") + kpi(ds.length - on, "Offline", "offline", ds.length - on ? "bad hot" : "bad")
+    + kpi(n.warning, "Warning", "state:warning", "warn") + kpi(alerts.length, "Open alerts", "alerts", alerts.length ? "bad hot" : "bad") + kpi(n.maintenance, "In maintenance", "state:maintenance")
+    + kpi(S.ticketCounts ? S.ticketCounts.open ?? 0 : "–", "Open tickets", "tickets") + kpi(pct + "%", "Fleet uptime", "all", pct >= 90 ? "ok" : pct >= 50 ? "warn" : "bad")
+    + kpi("🚧", "Barrier control", "barrier", "barrier");
+  $("ccAlertN").textContent = alerts.length ? alerts.length + " open" : "";
+  $("ccAlerts").innerHTML = alerts.slice(0, 14).map(a => `<div class="cc-alert cc-row" ${a.deviceId ? `data-cc-dev="${esc(a.deviceId)}"` : `data-cc="alerts"`}><span>${alertIcon(a)}</span><span>${esc(a.text)}</span><span class="meta">${ago(a.at)}</span></div>`).join("")
+    || `<div class="cc-calm">✅ All clear<br><span class="meta">No open alerts</span></div>`;
+  $("ccSiteN").textContent = sites.filter(Boolean).length + " sites";
+  // one card per site, same colours as the map (green all OK, amber attention, red critical, grey no devices)
+  $("ccSites").innerHTML = sites.map(g => {
+    const s = siteStats(g), [, word, c] = CC_SITE.find(x => x[0] === ccSiteState(s));
+    return `<div class="cc-scard" data-cc-site="${esc(g)}" style="--c:${c}"><div class="nm"><i></i><span>${esc(groupName(g))}</span></div>
+      <b class="pc">${s.health ?? "–"}${s.health != null ? "%" : ""}</b>
+      <div class="meta">${word}<br>${s.on}/${s.list.length} online${s.alerts ? ` · ${s.alerts} alert${s.alerts > 1 ? "s" : ""}` : ""}${s.n.warning ? ` · ${s.n.warning} warning` : ""}</div>
+      </div>`;
+  }).join("") || `<div class="cc-calm">No sites yet</div>`;
+  $("ccFleetN").textContent = `${ds.length} devices · ${on} online`;
+  ccTechDraw();
+  $("ccFleet").innerHTML = donut(n, ds.length);
+  $("ccFleet").querySelectorAll(".legend2 > div:not(.meta)").forEach((el, i) => { el.dataset.ccState = FLEET[i][0]; el.classList.add("cc-row"); }); // legend rows open that list
+  // activity: the log is big, so fetched every 15 s, not on every 5 s redraw
+  if (Date.now() - ccEvAt > 15000) {
+    ccEvAt = Date.now();
+    api("/api/events").then(r => { ccEvents = (r.events || []).slice().sort((a, b) => b.at - a.at).slice(0, 25); ccEvDraw(); }).catch(() => {});
+    if (S.ticketCounts) api("/api/tickets?status=open&size=100").then(r => { ccTickets = r.items || []; ccTechDraw(); }).catch(() => {});
+  } else ccEvDraw();
+  // map: one dot per site at its coordinates (else the middle of its located devices), labelled, coloured by ccSiteState
+  const pts = [], seen = new Set();
+  let noLoc = 0;
+  for (const g of sites.filter(Boolean)) {
+    const s = siteStats(g), site = siteOf(g);
+    let at = site.lat != null ? [site.lat, site.lng] : null;
+    if (!at) {
+      const p = s.list.map(d => d.lat != null ? [d.lat, d.lng] : d.pin ? [d.pin.lat, d.pin.lng] : null).filter(Boolean);
+      if (p.length) at = [p.reduce((x, q) => x + q[0], 0) / p.length, p.reduce((x, q) => x + q[1], 0) / p.length];
+    }
+    if (!at) { noLoc++; continue; }
+    const key = "site:" + g, col = CC_SITE.find(c => c[0] === ccSiteState(s))[2];
+    seen.add(key); pts.push(at);
+    if (!ccMarkers[key]) ccMarkers[key] = L.marker(at, { icon: ccPin(col) }).addTo(ccMap)
+      .bindTooltip(esc(g), { permanent: true, direction: "top", offset: [0, -40], className: "cc-sitepin" })
+      .on("click", () => ccShow({ title: g, hash: "#/site/" + encodeURIComponent(g) }));
+    if (ccMarkers[key].col !== col) { ccMarkers[key].col = col; ccMarkers[key].setIcon(ccPin(col)); }
+    ccMarkers[key].setLatLng(at);
+  }
+  for (const id in ccMarkers) if (!seen.has(id)) { ccMarkers[id].remove(); delete ccMarkers[id]; }
+  $("ccNoLoc").textContent = noLoc ? `${noLoc} site${noLoc > 1 ? "s" : ""} without a location` : "";
+  if (first) setTimeout(() => { ccMap.invalidateSize(); if (pts.length) ccMap.fitBounds(L.latLngBounds(pts).pad(.25), { maxZoom: 15 }); }, 60);
+};
+// each technician: availability light, the ticket they are on now and the next one in their queue (in progress first,
+// then by priority, then oldest)
+const CC_PRIO = { urgent: 0, high: 1, normal: 2, low: 3 };
+function ccTechDraw() {
+  if (!$("ccTech")) return;
+  const techs = (S.technicians || []).filter(t => t.active !== false);
+  const queue = t => ccTickets.filter(k => k.techId === t.id && !["new", "resolved", "closed", "cancelled"].includes(k.status))
+    .sort((a, b) => (b.status === "in_progress") - (a.status === "in_progress") || (CC_PRIO[a.priority] ?? 2) - (CC_PRIO[b.priority] ?? 2) || a.createdAt - b.createdAt);
+  const tk = k => k ? `<em>${esc(k.no)}</em> ${esc(k.title || k.category || "")}${k.site ? " · " + esc(k.site) : ""}` : "–";
+  $("ccTechN").textContent = techs.length ? `${techs.filter(t => t.connectivity === "online" && !queue(t).length).length} available · ${techs.length} total` : "";
+  $("ccTech").innerHTML = techs.slice().sort((a, b) => (b.connectivity === "online") - (a.connectivity === "online") || a.name.localeCompare(b.name)).map(t => {
+    const q = queue(t), [txt, c] = t.availability === "inactive" ? ["Inactive", "var(--muted)"] : t.connectivity !== "online" ? [t.connectivity === "offline" ? "Offline" : "Unknown", "var(--bad)"]
+      : q.length ? ["Busy", "var(--warn)"] : ["Available", "var(--ok)"];
+    return `<div class="cc-tech2 cc-row" data-cc="team" style="--c:${c}"><div class="h"><i></i><b>${esc(t.name)}</b><span class="meta">${txt}</span></div>
+      <div class="t">▶ Now: ${tk(q[0])}</div><div class="t">⏭ Next: ${tk(q[1])}</div></div>`;
+  }).join("") || `<div class="cc-calm">No technicians yet</div>`;
+}
+function ccEvDraw() {
+  if (!$("ccEvents")) return;
+  $("ccEvents").innerHTML = ccEvents.map(e => `<div class="cc-ev cc-row" ${e.deviceId && dev(e.deviceId) ? `data-cc-dev="${esc(e.deviceId)}"` : `data-cc="activity"`}>
+    <span class="meta">${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span>${EV[e.kind] || "•"}</span><span>${esc(e.text)}</span></div>`).join("")
+    || `<div class="cc-calm">No activity yet</div>`;
+}
+// the two clocks
+setInterval(() => {
+  if (!$("ccTimeSG")) return;
+  const d = new Date(), t = timeZone => d.toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
+  $("ccTimeIN").textContent = t("Asia/Kolkata");
+  $("ccTimeSG").textContent = t("Asia/Singapore");
+  $("ccDate").textContent = d.toLocaleDateString("en-GB", { timeZone: "Asia/Singapore", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}, 1000);
+// ---- portal themes (Configuration > Theme): built-in styles + admin-made ones (a style + an accent colour) ----
+const LOOK_NAMES = { classic: "Classic", animated: "Animated (Apple style)", embossed: "Embossed" };
+const allThemes = () => [...Object.entries(LOOK_NAMES).map(([id, name]) => ({ id, name, base: id })), ...(S.theme?.custom || []).map(t => ({ ...t, custom: true }))];
+function applyLook() {
+  const t = allThemes().find(x => x.id === S.theme?.current) || { base: "classic" };
+  setLook(t.base, t.accent);
+  try { localStorage.setItem("look", JSON.stringify({ base: t.base, accent: t.accent || "" })); } catch {}
+}
+// Animated theme: each time a page is built, it glides in, its cards rise in as they scroll into view and the Overview numbers
+// count up (live refreshes change the page in place, so they don't replay it)
+const revealIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); revealIO.unobserve(e.target); } }), { threshold: .1 });
+new MutationObserver(() => {
+  if (document.documentElement.dataset.look !== "animated") return;
+  const v = $("view");
+  v.style.animation = "none"; void v.offsetWidth; v.style.animation = "";
+  v.querySelectorAll(".card, .stat").forEach(el => { el.classList.add("rv"); revealIO.observe(el); });
+  v.querySelectorAll(".stat .n").forEach(el => {
+    const txt = el.textContent.trim(), end = Number(txt);
+    if (!/^\d+$/.test(txt) || !end) return;
+    const t0 = performance.now(), step = t => { const k = Math.min(1, (t - t0) / 1200); el.textContent = Math.round(end * (1 - (1 - k) ** 3)); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}).observe($("view"), { childList: true });
+// Animated 3D background (built once, shown only by the Animated theme's CSS) + mouse / scroll depth and card tilt
+document.body.insertAdjacentHTML("afterbegin", `<div id="apl3d" aria-hidden="true">
+  <div class="lyr" style="--d:-14"><i class="blob" style="width:42vw;height:42vw;left:-8vw;top:-10vh;background:var(--accent)"></i>
+    <i class="blob" style="width:36vw;height:36vw;right:-6vw;bottom:-12vh;background:#4078ff;animation-delay:-6s"></i>
+    <i class="blob" style="width:24vw;height:24vw;left:45vw;top:30vh;background:#be6eff;animation-delay:-11s"></i></div>
+  <div class="lyr" style="--d:22"><i class="ring" style="width:46vw;height:46vw;left:52vw;top:8vh"></i>
+    <div class="cube" style="--s:70px;left:12vw;top:62vh;--t:22s"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <i class="dot" style="left:30vw;top:20vh"></i><i class="dot" style="left:80vw;top:70vh;animation-delay:-2s"></i></div>
+  <div class="lyr" style="--d:48"><div class="cube" style="--s:110px;left:78vw;top:18vh"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <i class="ring" style="width:18vw;height:18vw;left:4vw;top:14vh;animation-duration:12s;animation-direction:reverse"></i>
+    <div class="cube" style="--s:44px;left:58vw;top:78vh;--t:12s"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <i class="dot" style="left:62vw;top:12vh;animation-delay:-3s"></i></div></div>`);
+let tilted = null;
+const untilt = () => { if (tilted) { tilted.style.transform = ""; tilted.classList.remove("tilt"); tilted = null; } };
+addEventListener("pointermove", e => {
+  const h = document.documentElement;
+  if (h.dataset.look !== "animated" || e.pointerType !== "mouse") return untilt();
+  h.style.setProperty("--mx", (e.clientX / innerWidth - .5).toFixed(3));
+  h.style.setProperty("--my", (e.clientY / innerHeight - .5).toFixed(3));
+  // ponytail: cards with tables (row menus) don't tilt, a transform there would shift their fixed-position menus
+  const c = e.target.closest?.("#view .stat, #view .card:not(:has(table))");
+  if (c !== tilted) untilt();
+  if (!c) return;
+  const r = c.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - .5, py = (e.clientY - r.top) / r.height - .5, max = c.classList.contains("stat") ? 14 : 5;
+  c.classList.add("tilt"); tilted = c;
+  c.style.transform = `perspective(900px) rotateX(${(-py * max).toFixed(2)}deg) rotateY(${(px * max).toFixed(2)}deg) translateZ(${c.classList.contains("stat") ? 14 : 0}px)`;
+  c.style.setProperty("--gx", (px + .5) * 100 + "%"); c.style.setProperty("--gy", (py + .5) * 100 + "%");
+}, { passive: true });
+addEventListener("scroll", () => document.documentElement.style.setProperty("--sy", Math.round(scrollY)), { passive: true });
+const themeTiles = () => allThemes().map(t => `<button type="button" class="ttile${t.id === (S.theme?.current || "classic") ? " on" : ""}" data-theme-id="${esc(t.id)}">
+  <span class="tprev tprev-${t.base}" style="--a:${t.accent || "#f28c00"}"><i></i><i></i><i></i></span><b>${esc(t.name)}</b><span class="meta">${t.custom ? LOOK_NAMES[t.base] + " · " + t.accent : "Built-in"}</span>
+  ${t.custom ? `<span class="tdel" data-del-theme="${esc(t.id)}" title="Delete this theme">✕</span>` : ""}</button>`).join("");
+const saveThemes = (current, custom, msg) => act(() => api("/api/config/theme", { current, custom }), msg).then(() => VIEWS.config(null, true));
 VIEWS.config = (arg, first) => {
   if (!first) { if ($("cfgMaint")) { $("cfgMaint").innerHTML = cfgMaint(); $("cfgWa").innerHTML = cfgWa(); } return; }
   const targets = [["all", "All devices"], ...groups().filter(Boolean).map(g => ["site:" + g, "Site: " + g]), ["site:", "Devices not in any site"]];
@@ -2922,6 +3580,20 @@ VIEWS.config = (arg, first) => {
       <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
       <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
         <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
+    <div class="card"><h3>🎨 Theme</h3><div class="pad">
+      <div class="themes" id="cfgThemes">${themeTiles()}</div>
+      <h4 style="margin:18px 0 8px">Add a theme</h4>
+      <div class="row"><input id="thName" placeholder="Theme name" maxlength="40" style="width:180px">
+        <select id="thBase">${options(Object.entries(LOOK_NAMES), "classic")}</select>
+        <label class="chip">Colour <input type="color" id="thAccent" value="#f28c00" style="width:34px;height:22px;border:0;padding:0;background:none"></label>
+        <button class="btn primary" id="thAdd">Add theme</button></div>
+      <p class="meta">Click a theme to use it for the whole portal (everyone sees it; its colour also goes on the login page). Light / dark still follows the clock or the switch.</p></div></div>
+    <div class="card"><h3>🔐 Login page</h3><div class="pad">
+      <label class="chip"><input type="checkbox" id="cfgYeti" ${S.yeti !== false ? "checked" : ""}>Show the Yeti on the login page (watches you type, covers his eyes for the password)</label>
+      <p class="meta">Off: the login card shows the app icon instead.</p></div></div>
+    <div class="card"><h3>🎬 Portal tour</h3><div class="pad">
+      <label class="chip"><input type="checkbox" id="cfgTour" ${S.showTour ? "checked" : ""}>Show the "Watch the 2-min tour" button on the Overview page</label>
+      <p class="meta">Off: the button is hidden for everyone. On: everyone sees it on the Overview page.</p></div></div>
     <div class="card"><h3>🎫 Offline auto-ticket</h3><div class="pad">
       <div class="row"><label class="chip"><input type="checkbox" id="cfgAuto" ${S.ticketSettings?.autoTickets ? "checked" : ""}>Create a Technical Team ticket when an onsite device stays offline</label>
         <span class="meta">for more than</span><input type="number" id="cfgAfter" min="0" max="1440" value="${esc(S.ticketSettings?.ticketAfterMin ?? 10)}" style="width:80px">
@@ -2930,20 +3602,44 @@ VIEWS.config = (arg, first) => {
     <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
       <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
         <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
-        <div class="card"><h3>Max, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
-      <div class="pad"><p class="meta" style="margin-top:0">Max answers from live portal data with each person's own access, and only proposes actions for them to confirm.
-        Accounts need the "Max" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Max reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Max runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
-        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Max is on</label>
+        <div class="card"><h3>Aux, the AI assistant<span class="grow"></span>${S.assistant?.configured ? `<span class="pill warn">Claude API (free-form questions)</span>` : `<span class="pill ok">Built-in: our own data only</span>`}</h3>
+      <div class="pad"><p class="meta" style="margin-top:0">Aux answers from live portal data with each person's own access, and only proposes actions for them to confirm.
+        Accounts need the "Aux" page ticked. ${S.assistant?.configured ? "A Claude API key is set, so questions and the data Aux reads are sent to Anthropic. Remove ANTHROPIC_API_KEY from the server .env to keep everything on this server." : "Aux runs on this server only: no data leaves it, no API key or cost. He answers the usual questions about devices, sites, alerts, tickets and the team."}</p>
+        <div class="row"><label class="chip"><input type="checkbox" id="maxOn" ${S.assistant?.enabled !== false ? "checked" : ""}>Aux is on</label>
           <span class="meta">Model</span><input id="maxModel" value="${esc(S.assistant?.model || "")}" style="width:190px">
           <span class="meta">Questions per person per day</span><input id="maxDaily" type="number" min="1" max="5000" value="${esc(S.assistant?.dailyLimit || 200)}" style="width:90px">
-          <button class="btn primary" id="maxSave">Save</button></div></div></div>`;
+          <button class="btn primary" id="maxSave">Save</button></div></div></div>
+    <div class="card"><h3>🧠 Aux training<span class="grow"></span><span class="meta" id="mtSum"></span></h3>
+      <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">Every question asked to Aux is saved on this server. Questions he didn't understand are listed here: pick the question he should answer instead and he learns it.
+        Every night at 23:30 he also learns by himself when someone got an answer by rewording a question within 2 minutes.</p></div>
+      <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Question</th><th>Answer it like</th></tr></thead><tbody id="mtRows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table></div>
+      <div class="pad"><h4 style="margin:0 0 8px">Learned wordings</h4><div class="chips" id="mtTeach"></div></div></div>
+    <datalist id="mtAs">${MAX_HINTS.filter(h => h !== "Show me around").map(h => `<option value="${esc(h)}">`).join("")}</datalist>`;
+  maxTraining();
   const target = () => { const v = $("cfgTarget").value; return v === "all" ? { all: true } : { group: v.slice(5) }; };
   const count = t => t.all ? S.devices.length : S.devices.filter(d => (d.group || "") === t.group).length;
   $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
   $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
   $("cfgWaEdit").onclick = () => whatsappForm();
+  $("cfgThemes").onclick = e => {
+    const custom = (S.theme?.custom || []).slice(), del = e.target.closest("[data-del-theme]")?.dataset.delTheme;
+    if (del) {
+      if (!confirm("Delete this theme?")) return;
+      return saveThemes(S.theme.current === del ? "classic" : S.theme.current, custom.filter(t => t.id !== del), "Theme deleted");
+    }
+    const id = e.target.closest("[data-theme-id]")?.dataset.themeId;
+    if (id) saveThemes(id, custom, "Theme changed for the whole portal");
+  };
+  $("thAdd").onclick = () => {
+    const name = $("thName").value.trim();
+    if (!name) return toast("Type a theme name", true);
+    const t = { id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) + "-" + Date.now().toString(36), name, base: $("thBase").value, accent: $("thAccent").value };
+    saveThemes(t.id, [...(S.theme?.custom || []), t], `Theme "${name}" added and turned on`);
+  };
+  $("cfgYeti").onchange = e => act(() => api("/api/config/yeti", { on: e.target.checked }), e.target.checked ? "Yeti shown on the login page" : "Yeti hidden: the login page shows the app icon");
+  $("cfgTour").onchange = e => act(() => api("/api/config/tour", { on: e.target.checked }), e.target.checked ? "Tour button shown on the Overview page" : "Tour button hidden");
   $("cfgAutoSave").onclick = () => act(() => api("/api/team-settings", { ...S.ticketSettings, autoTickets: $("cfgAuto").checked, ticketAfterMin: $("cfgAfter").value }), "Offline auto-ticket saved");
-  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
+  $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Aux settings saved");
   // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
   $("cfgImg").onchange = () => {
     const f = $("cfgImg").files[0];
@@ -2983,8 +3679,32 @@ VIEWS.config = (arg, first) => {
   };
 };
 
+// Configuration › Aux training: what Aux didn't understand (last 7 days), with the question to answer instead, and what he learned.
+async function maxTraining() {
+  let r;
+  try { r = await api("/api/max/questions?days=7"); } catch (e) { return $("mtRows") && ($("mtRows").innerHTML = `<tr><td colspan="4" class="empty">${esc(e.message)}</td></tr>`); }
+  if (!$("mtRows")) return;
+  const teach = r.teach || {}, norm = q => q.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
+  const missed = [], seen = new Set();
+  for (const e of r.questions) if (!e.ok && !teach[norm(e.q)] && !seen.has(norm(e.q))) { seen.add(norm(e.q)); missed.push(e); }
+  $("mtSum").textContent = `${r.total} question${r.total === 1 ? "" : "s"} in 7 days · ${r.missed} not understood`;
+  $("mtRows").innerHTML = missed.slice(0, 100).map(e => `<tr data-q="${esc(e.q)}"><td class="meta">${ago(e.at)}</td><td>${esc(e.user)}</td><td>${esc(e.q)}</td>
+      <td><div class="row"><input list="mtAs" placeholder="e.g. Which devices are offline?" style="min-width:240px" value="${esc(r.questions.find(x => x.rephrased === e.q)?.q || "")}">
+        <button class="btn primary" data-teach>Teach</button><button class="btn ghost" data-skip title="Not a portal question">Ignore</button></div></td></tr>`).join("")
+    || `<tr><td colspan="4" class="empty">Aux understood every question this week 🎉</td></tr>`;
+  $("mtTeach").innerHTML = Object.entries(teach).map(([k, v]) => `<span class="chip">"${esc(k)}" → ${esc(v)} <button class="btn ghost" data-forget="${esc(k)}" title="Forget">✕</button></span>`).join("")
+    || `<span class="meta">Nothing learned yet.</span>`;
+  $("mtRows").onclick = e => {
+    const tr = e.target.closest("tr[data-q]");
+    if (!tr) return;
+    if (e.target.closest("[data-teach]")) act(() => api("/api/max/teach", { q: tr.dataset.q, as: tr.querySelector("input").value }), "Aux learned it").then(maxTraining);
+    if (e.target.closest("[data-skip]")) act(() => api("/api/max/teach", { q: tr.dataset.q, as: "hello" }), "Ignored: he'll just say hi").then(maxTraining);
+  };
+  $("mtTeach").onclick = e => { const k = e.target.closest("[data-forget]")?.dataset.forget; if (k) act(() => api("/api/max/teach", { q: k, as: "" }), "Forgotten").then(maxTraining); };
+}
+
 VIEWS.users = (arg, first) => {
-  if (!first && document.activeElement?.closest("#view input")) return; // don't redraw under someone typing in the Max settings
+  if (!first && document.activeElement?.closest("#view input")) return; // don't redraw under someone typing in the Aux settings
   const users = S.users || [];
   const siteText = x => x.admin || (x.sites || []).includes("*") ? "All sites" : (x.sites || []).join(", ") || "No sites";
   const modText = x => x.admin ? "Everything" : (x.modules || []).map(m => MODULE_NAMES[m] || m).join(", ") || "Nothing";
@@ -3449,32 +4169,42 @@ function drawMap() {
   const site = $("mapSite").value, q = $("mapQ").value.trim().toLowerCase(), seen = new Set(), perPoint = {};
   const net = d => pubIp(d) || (d.localIp || "").split(".").slice(0, 3).join(".");
   const gpsNet = {};
-  for (const d of S.devices) if (d.lat != null && net(d)) gpsNet[net(d)] ||= d;
+  const spot = d => d.lat != null ? [d.lat, d.lng] : d.pin ? [d.pin.lat, d.pin.lng] : null;
+  for (const d of S.devices) if (spot(d) && net(d)) gpsNet[net(d)] ||= d;
   let guessed = 0;
   for (const d of S.devices) {
     if (site && (d.group || "") !== (site === "__none" ? "" : site)) continue;
     if (q && ![label(d), d.code, d.id].some(x => String(x || "").toLowerCase().includes(q))) continue;
-    const at = siteOf(d.group || ""), own = d.lat != null, mate = !own && at.lat == null && gpsNet[net(d)];
-    const base = own ? [d.lat, d.lng] : at.lat != null ? [at.lat, at.lng] : mate ? [mate.lat, mate.lng] : [1.3521, 103.8198];
+    const at = siteOf(d.group || ""), own = d.lat != null, pin = !own && d.pin, fixed = own || !!pin, mate = !fixed && at.lat == null && gpsNet[net(d)];
+    const base = own ? [d.lat, d.lng] : pin ? [pin.lat, pin.lng] : at.lat != null ? [at.lat, at.lng] : mate ? spot(mate) : [1.3521, 103.8198];
     const where = own ? `±${Math.round(d.accuracy || 0)} m · ${ago(d.locationTime)}`
+      : pin ? `📍 Pinned on site (±${pin.accuracy} m, ${ago(pin.at)})`
       : at.lat != null ? "Shown at the site's location (no GPS from this device)"
       : mate ? `Shown next to ${esc(label(mate))} (same network; no GPS or site location)`
       : "Location unknown: shown in the middle of Singapore. Give its site a location on the Sites page.";
-    if (!own && at.lat == null) guessed++;
+    if (!fixed && at.lat == null && !mate) guessed++;
     seen.add(d.id);
     // ponytail: devices sharing a point get a small spiral offset so each one can be clicked
-    const key = own ? d.id : base.join(","), k = own ? 0 : (perPoint[key] = (perPoint[key] || 0) + 1) - (mate ? 0 : 1);
+    const key = fixed ? d.id : base.join(","), k = fixed ? 0 : (perPoint[key] = (perPoint[key] || 0) + 1) - (mate ? 0 : 1);
     const ll = [base[0] + 0.00006 * Math.sqrt(k) * Math.cos(k * 2.4), base[1] + 0.00006 * Math.sqrt(k) * Math.sin(k * 2.4)];
     const popup = `<b>${esc(label(d))}</b>${d.code ? " · " + esc(d.code) : ""}<br>${esc(d.group || "No site")}<br>${isOnline(d) ? "Online" : "Offline"}${d.battery != null ? " · battery " + d.battery + "%" : ""}<br>
       <span class="meta">${where}</span><br><a href="#/device/${encodeURIComponent(d.id)}" onclick="$('mapDlg').close()">Open device →</a>`;
     markers[d.id] ||= L.circleMarker(ll, { radius: 9, weight: 3 }).addTo(map);
-    const col = !own && at.lat == null && !mate ? "#94a3b8" : isOnline(d) ? "#22c55e" : "#ef4444";
-    markers[d.id].setLatLng(ll).setStyle(own ? { color: "#fff", fillColor: col, fillOpacity: .95, dashArray: null } : { color: col, fillColor: "#fff", fillOpacity: .85, dashArray: mate || at.lat != null ? null : "3 3" }).bindPopup(popup);
+    const col = !fixed && at.lat == null && !mate ? "#94a3b8" : isOnline(d) ? "#22c55e" : "#ef4444";
+    markers[d.id].setLatLng(ll).setStyle(fixed ? { color: "#fff", fillColor: col, fillOpacity: .95, dashArray: null } : { color: col, fillColor: "#fff", fillOpacity: .85, dashArray: mate || at.lat != null ? null : "3 3" }).bindPopup(popup);
   }
   for (const id in markers) if (!seen.has(id)) { markers[id].remove(); delete markers[id]; }
   $("mapCount").textContent = `${seen.size} on map${guessed ? ` · ${guessed} without GPS or site location (approximate)` : ""}`;
   const pts = Object.values(markers).map(m => m.getLatLng());
   if (!fitted && pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 17 }); fitted = true; }
+}
+// Technician next to the tablet: this phone's GPS becomes the tablet's fixed map spot (browsers allow it on https only)
+function pinHere(d) {
+  if (!navigator.geolocation) return toast("This browser can't share its location", true);
+  toast("Getting this phone's location…");
+  navigator.geolocation.getCurrentPosition(p => act(() => api(`/api/devices/${encodeURIComponent(d.id)}/pin`,
+    { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }), `Pinned here (±${Math.round(p.coords.accuracy)} m)`),
+    e => toast("Couldn't get this phone's location: " + e.message, true), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
 }
 function fillMapSites() {
   const sel = $("mapSite"), v = sel.value;
@@ -3507,17 +4237,22 @@ function openMap(d) {
   }
 }
 $("mapBtn").onclick = () => openMap();
-const THEME_ICON = { auto: "sun-moon", light: "sun", dark: "moon" };
 function themeBtn(b, after) {
-  const show = () => { b.innerHTML = ico(THEME_ICON[themePref()]); b.title = "Theme: " + themePref() + " (click to change)"; };
+  const show = () => {
+    b.setAttribute("aria-checked", document.documentElement.dataset.theme === "dark");
+    b.title = (themePref() === "auto" ? "Theme: automatic (light 6 am - 6 pm, dark 6 pm - 6 am)" : "Theme: " + themePref() + " (switch back to follow the clock again)") + ". Click to switch.";
+  };
+  // flips light / dark; landing on what the clock says goes back to automatic
   b.onclick = () => {
-    const next = { auto: "light", light: "dark", dark: "auto" }[themePref()];
+    const want = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    const next = want === (dayTime() ? "light" : "dark") ? "auto" : want;
     try { localStorage.setItem("theme", next); } catch {}
     document.documentElement.classList.add("theming");
     applyTheme(); show(); after?.();
     setTimeout(() => document.documentElement.classList.remove("theming"), 500);
   };
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applyTheme(); after?.(); });
+  // switch over at 6 am / 6 pm while the page stays open
+  setInterval(() => { const was = document.documentElement.dataset.theme; applyTheme(); if (document.documentElement.dataset.theme !== was) { show(); after?.(); } }, 60000);
   show();
 }
 themeBtn($("themeBtn"), () => route(true));
@@ -3526,9 +4261,9 @@ document.querySelector(".bellico").outerHTML = ico("bell");
 $("logout").querySelector(".outico").outerHTML = ico("log-out"); // donut/chart colours are read from CSS at draw time
 $("logout").onclick = async () => { await fetch("/api/logout", { method: "POST" }); location.href = "/login"; };
 
-// ---------------- Max, the assistant ----------------
+// ---------------- Aux, the assistant ----------------
 // The conversation stays in this tab (sessionStorage) when the panel is minimised or the page reloads.
-// Max's answers come from the server, which reads live data with this account's access. Actions arrive as proposals:
+// Aux's answers come from the server, which reads live data with this account's access. Actions arrive as proposals:
 // nothing happens until the user presses Confirm, which calls the normal endpoint (same permission checks as the buttons).
 const MAX_HINTS = ["Show me around", "Which devices are offline?", "Devices offline for more than 1 hour", "Which sites have the most offline devices?", "Show the open tickets",
   "Who is available in the technical team?", "Tickets awaiting closure", "Summarise today's technical work"];
@@ -3557,17 +4292,17 @@ function maxMd(text) {
 }
 function maxRender() {
   const log = $("maxLog");
-  log.innerHTML = (maxChat.length ? "" : `<div class="mx max"><p>Hi, I'm <b>Max</b> 👋 Ask me about devices, sites, alerts, tickets or the technical team.</p>
+  log.innerHTML = (maxChat.length ? "" : `<div class="mx max"><p>Hi, I'm <b>Aux</b> 👋 Ask me about devices, sites, alerts, tickets or the technical team.</p>
       <div class="max-hints">${MAX_HINTS.map(h => `<button type="button" class="chip" data-hint="${esc(h)}">${esc(h)}</button>`).join("")}</div></div>`)
     + maxChat.map((m, i) => `<div class="mx ${m.role === "user" ? "me" : "max"} ${m.err ? "err" : ""}">${m.role === "user" ? esc(m.text) : maxMd(m.text)}
       ${(m.proposals || []).map((p, j) => `<div class="prop"><span>${esc(p.label)}</span>${p.done ? `<span class="meta">${esc(p.done)}</span>`
         : `<span class="row"><button type="button" class="btn primary" data-go="${i}:${j}">Confirm</button><button type="button" class="btn" data-no="${i}:${j}">Dismiss</button></span>`}</div>`).join("")}</div>`).join("")
-    + (maxBusy ? `<div class="mx max"><span class="meta">Max is looking…</span></div>` : "");
+    + (maxBusy ? `<div class="mx max"><span class="meta">Aux is looking…</span></div>` : "");
   log.scrollTop = log.scrollHeight;
   $("maxPanel").classList.toggle("thinking", maxBusy);
   $("maxSend").disabled = maxBusy;
 }
-// Max takes the user to the answer: opens the page, sets its filters, waits for it to draw, then flies to the element
+// Aux takes the user to the answer: opens the page, sets its filters, waits for it to draw, then flies to the element
 // and points at it while saying the short version. The full answer stays in the chat.
 async function maxGo(nav, text, proposals) {
   if (nav.devices) filters = { q: "", type: "", group: "", status: "", ...nav.devices };
@@ -3575,7 +4310,7 @@ async function maxGo(nav, text, proposals) {
   lastPage = ""; // redraw with the new filters even if this page is already open
   if (location.hash !== nav.hash) location.hash = nav.hash; else route(false);
   if (innerWidth < 900) maxOpen(false); // small screens: get the chat out of the way so the page shows
-  if (nav.confirm) return bot("answered", text, proposals); // an action: Max points at Confirm in the chat
+  if (nav.confirm) return bot("answered", text, proposals); // an action: Aux points at Confirm in the chat
   const find = () => typeof nav.target === "object" && nav.target
     ? [...document.querySelectorAll("#view .site-card")].find(c => c.querySelector("[data-open]")?.dataset.open === nav.target.site)
     : nav.target && document.querySelector(nav.target);
@@ -3614,6 +4349,7 @@ let rec = null;
 function maxListen() {
   if (!Rec) return toast("Voice input isn't supported in this browser; type instead (Chrome or Edge support it)", true);
   if (!window.isSecureContext) return toast("The microphone needs https (or localhost). On a plain http://IP address the browser blocks it", true);
+  if (isSaying()) sayStop(); // the mic button while he talks: he stops and listens
   if (useWhisper) return whisperListen();
   if (rec) return rec.stop();
   rec = new Rec();
@@ -3624,15 +4360,21 @@ function maxListen() {
   rec.onresult = e => {
     let interim = "";
     for (const r of e.results) (r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript));
+    if (final.trim()) rec?.stop(); // got the sentence: answer now
     $("maxIn").value = final || interim; // shows what was heard while speaking
   };
   rec.onerror = e => ["network", "service-not-allowed", "language-not-supported"].includes(e.error)
     ? (rec.onend = null, rec = null, useWhisper = true, whisperListen()) // the browser's speech service is unavailable here
     : e.error === "no-speech" && talking ? (talking = false) : e.error === "aborted" ? null : toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked: allow it in the browser's site settings"
     : e.error === "no-speech" ? "Didn't hear anything" : "Voice input stopped: " + e.error, e.error !== "no-speech");
-  rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); if (final.trim()) { $("maxIn").value = ""; maxAsk(final); } else talking = false; };
+  rec.onend = () => { rec = null; $("maxMic").classList.remove("rec"); $("maxIn").value = ""; heardText(final); };
   $("maxMic").classList.add("rec");
   try { rec.start(); } catch (e) { rec = null; $("maxMic").classList.remove("rec"); toast("Couldn't start the microphone: " + e.message, true); }
+}
+function heardText(t) {
+  t = (t || "").trim();
+  if (t && isEcho(t)) return talking && !$("maxPanel").hidden ? maxListen() : null; // his own voice: ignore it, keep listening
+  if (t) maxAsk(t); else talking = false;
 }
 // Fallback when the browser has no working speech service (Firefox, Brave, some Edge, blocked networks): record the mic
 // and transcribe in the browser with Whisper. The model (~40 MB) downloads once per laptop, then comes from the cache.
@@ -3640,12 +4382,12 @@ let useWhisper = !Rec, asr = null, recStop = null;
 async function whisperListen() {
   if (recStop) return recStop();
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
   catch (e) { talking = false; return toast("Microphone blocked: allow it in the browser's site settings", true); }
   if (!asr) {
     toast("Loading voice recognition (first time only)…");
     asr = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2")
-      .then(t => t.pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en"));
+      .then(t => t.pipeline("automatic-speech-recognition", "Xenova/whisper-tiny.en", navigator.gpu ? { device: "webgpu" } : {}));
   }
   const mr = new MediaRecorder(stream), chunks = [], ctx = new AudioContext(), an = ctx.createAnalyser();
   const buf = new Uint8Array(an.fftSize), t0 = Date.now();
@@ -3656,12 +4398,13 @@ async function whisperListen() {
     an.getByteTimeDomainData(buf);
     if (buf.some(v => Math.abs(v - 128) > 12)) { heard = true; quietSince = Date.now(); } // ponytail: fixed loudness threshold, tune 12 for noisy rooms
     const now = Date.now();
-    if ((heard && now - quietSince > 1500) || (!heard && now - t0 > 8000) || now - t0 > 15000) recStop?.();
+    if ((heard && now - quietSince > 900) || (!heard && now - t0 > 8000) || now - t0 > 15000) recStop?.();
   }, 100);
-  recStop = () => { recStop = null; clearInterval(tick); mr.stop(); stream.getTracks().forEach(t => t.stop()); ctx.close(); };
+  recStop = drop => { recStop = null; if (drop) heard = null; clearInterval(tick); mr.stop(); stream.getTracks().forEach(t => t.stop()); ctx.close(); };
   mr.ondataavailable = e => chunks.push(e.data);
   mr.onstop = async () => {
     $("maxMic").classList.remove("rec");
+    if (heard === null) return; // cut off because he started speaking
     if (!heard || $("maxPanel").hidden) { talking = false; return; } // nothing said, or the chat was closed
     $("maxIn").value = "…";
     try {
@@ -3670,38 +4413,89 @@ async function whisperListen() {
       ac.close();
       const text = (await (await asr)(audio)).text.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim(); // drops [BLANK_AUDIO], (music)
       $("maxIn").value = "";
-      if (text) maxAsk(text); else talking = false;
+      heardText(text);
     } catch (e) { $("maxIn").value = ""; talking = false; asr = null; toast("Voice input failed: " + e.message, true); }
   };
   bot("listen");
   $("maxMic").classList.add("rec");
   mr.start();
 }
-// Max's voice. maxSay: a chat answer, interrupts whatever he was saying. maxVoice: anything shown in his bubble (tips,
+// Aux's voice. maxSay: a chat answer, interrupts whatever he was saying. maxVoice: anything shown in his bubble (tips,
 // pointing, alerts, the tour), queued after what he is saying; skipped if he just said the same words.
-let lastSpoken = "", lastSpokenAt = 0;
+// The mic is always off while he speaks (else it hears his own voice) and opens again 0.35 s after he finished.
+let lastSpoken = "", lastSpokenAt = 0, sayQ = [], saying = false, sayGen = 0, sayAudio = null, saidAt = 0;
+const VOICES = ["Andrew", "Brian", "Guy", "Christopher", "Eric", "Ryan"]; // friendly male voices, best first
+let maxVoices = [];
+if ("speechSynthesis" in window) { const load = () => maxVoices = speechSynthesis.getVoices(); speechSynthesis.addEventListener("voiceschanged", load); load(); }
+function bestVoice() { // Edge's "Online (Natural)" voices sound human; Windows' desktop voices (David, Zira) sound like a machine
+  const v = (maxVoices.length ? maxVoices : speechSynthesis.getVoices()).filter(v => /^en/i.test(v.lang)), nat = v.filter(v => /Natural|Neural/i.test(v.name));
+  for (const n of VOICES) { const x = nat.find(v => v.name.includes(n)); if (x) return x; }
+  return nat[0] || v.find(v => /^Google (UK|US) English/.test(v.name)) || null;
+}
 function speakQueue(text) {
   lastSpoken = text; lastSpokenAt = Date.now();
-  const u = new SpeechSynthesisUtterance(text.replace(/\[\[(?:device|ticket):([^\]]+)\]\]/g, "$1").replace(/[*|#•]/g, " ").replace(/\s+/g, " ").slice(0, 1200));
-  u.onstart = () => { $("maxStop").hidden = false; };
-  u.onend = u.onerror = () => {
-    if (speechSynthesis.speaking || speechSynthesis.pending) return; // more to say
-    $("maxStop").hidden = true;
-    if (talking && !$("maxPanel").hidden) maxListen(); // talk mode: his turn is over, listen again
-  };
+  const t = text.replace(/\[\[(?:device|ticket):([^\]]+)\]\]/g, "$1").replace(/[*|#•]/g, " ").replace(/\s+/g, " ").trim().slice(0, 1200);
+  if (!t) return;
+  micOff();
+  // fetched straight away, so the next line is ready when this one ends
+  const audio = S.assistant?.tts ? fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) })
+    .then(r => r.ok ? r.blob() : null).then(b => b && URL.createObjectURL(b)).catch(() => null) : null;
+  sayQ.push({ t, audio });
+  if (!saying) sayNext();
+}
+async function sayNext() {
+  const gen = ++sayGen, item = sayQ.shift();
+  if (!item) {
+    saying = false; saidAt = Date.now(); $("maxStop").hidden = true;
+    setTimeout(() => { if (gen === sayGen && talking && !$("maxPanel").hidden && !window.speechSynthesis?.speaking) maxListen(); }, 350); // talk mode: his turn is over, listen again
+    return;
+  }
+  saying = true; $("maxStop").hidden = false;
+  const url = item.audio && await item.audio;
+  if (gen !== sayGen) return url && URL.revokeObjectURL(url); // stopped while it loaded
+  const next = () => { if (gen === sayGen) sayNext(); };
+  if (url) {
+    sayAudio = new Audio(url);
+    sayAudio.onended = sayAudio.onerror = () => { URL.revokeObjectURL(url); sayAudio = null; next(); };
+    return sayAudio.play().catch(sayAudio.onerror);
+  }
+  if (!("speechSynthesis" in window)) return next();
+  const u = new SpeechSynthesisUtterance(item.t);
+  u.voice = bestVoice(); u.rate = 1.03;
+  u.onend = u.onerror = next;
   speechSynthesis.speak(u);
 }
+const isSaying = () => saying || !!window.speechSynthesis?.speaking;
+function sayStop() {
+  sayGen++; sayQ = []; saying = false; saidAt = Date.now();
+  if (sayAudio) { sayAudio.onended = sayAudio.onerror = null; sayAudio.pause(); sayAudio = null; }
+  window.speechSynthesis?.cancel();
+  $("maxStop").hidden = true;
+}
+function micOff() { // stops listening without sending what was heard
+  if (rec) { rec.onend = rec.onerror = null; rec.abort(); rec = null; }
+  recStop?.(true);
+  $("maxMic").classList.remove("rec");
+}
+// His own words picked up by the mic anyway (loud speakers): most of the heard words are in what he just said
+function isEcho(text) {
+  if (Date.now() - saidAt > 4000 || !lastSpoken) return false;
+  const said = new Set(lastSpoken.toLowerCase().match(/[a-z0-9']+/g) || []), w = text.toLowerCase().match(/[a-z0-9']+/g) || [];
+  return w.length > 0 && w.filter(x => said.has(x)).length / w.length > 0.7;
+}
 function maxSay(text) {
-  if (!(maxSpeakOn || talking) || !("speechSynthesis" in window) || !text) return;
-  speechSynthesis.cancel();
-  speakQueue(text);
+  if (!(maxSpeakOn || talking) || !text) return;
+  sayStop();
+  // lists are for reading, not for hearing: he says the heading and points to the list
+  const head = text.trim().startsWith("|") ? "" : text.split(/\n\s*(?:[-*•]|\d+[.)]|\|)\s/)[0].replace(/\s*Try:\s*$/, "").replace(/[\s:]+$/, "");
+  speakQueue(head === text.trim() ? text : (head ? head + (/[.!?]$/.test(head) ? " " : ". ") : "") + "Please check the list.");
 }
 function maxVoice(text) {
-  if (!(maxSpeakOn || talking) || !("speechSynthesis" in window) || !text) return;
+  if (!(maxSpeakOn || talking) || !text || window.maxMovieOn) return; // the movie narrates itself
   if (text === lastSpoken && Date.now() - lastSpokenAt < 15000) return;
   speakQueue(text);
 }
-// Talk mode: clicking Max opens the chat, he says hello out loud and listens. Spoken questions get spoken answers and
+// Talk mode: clicking Aux opens the chat, he says hello out loud and listens. Spoken questions get spoken answers and
 // he listens again after each one, until nothing is heard, something is typed, or the chat is closed.
 
 function maxHello() {
@@ -3709,20 +4503,19 @@ function maxHello() {
   if (rec) { rec.onend = rec.onerror = null; rec.abort(); rec = null; $("maxMic").classList.remove("rec"); } // its end must not stop talk mode
   talking = true;
   const first = (S.me?.name || "").split(" ")[0];
-  const hi = `Hi${first ? " " + first : ""}, I'm Max. How can I help you?`;
+  const hi = `Hi${first ? " " + first : ""}, I'm Aux. How can I help you?`;
   maxSay(hi); // first: the bubble below then sees it was just said
   bot("say", hi, 5000);
   bot("greet");
-  if (!("speechSynthesis" in window)) maxListen();
 }
 function maxSpeakBtn() {
   $("maxSpeak").innerHTML = ico(maxSpeakOn ? "volume-2" : "volume-x");
-  $("maxSpeak").title = !("speechSynthesis" in window) ? "Speech isn't supported in this browser" : maxSpeakOn ? "Max speaks everything he says (click to mute)" : "Max is muted (click to let him speak)";
+  $("maxSpeak").title = maxSpeakOn ? "Aux speaks everything he says (click to mute)" : "Aux is muted (click to let him speak)";
 }
 function maxOpen(open) {
   $("maxPanel").hidden = !open;
   $("maxBtn").hidden = open || !S.assistant?.allowed;
-  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; window.speechSynthesis?.cancel(); rec?.stop(); recStop?.(); }
+  if (open) { maxRender(); $("maxIn").focus(); } else { talking = false; sayStop(); micOff(); }
   bot("dock");
 }
 $("maxBtn").onclick = () => { maxOpen(true); maxHello(); };
@@ -3733,18 +4526,17 @@ $("maxMic").onclick = maxListen;
 $("maxSend").innerHTML = ico("send");
 $("maxIn").addEventListener("input", () => { if ($("maxIn").value.length === 1) bot("listen"); });
 $("maxForm").onsubmit = e => { e.preventDefault(); talking = false; const t = $("maxIn").value; $("maxIn").value = ""; maxAsk(t); };
-$("maxClear").onclick = () => { maxChat = []; maxSave(); window.speechSynthesis?.cancel(); maxRender(); };
-$("maxStop").onclick = () => { speechSynthesis.cancel(); $("maxStop").hidden = true; };
+$("maxClear").onclick = () => { maxChat = []; maxSave(); sayStop(); maxRender(); };
+$("maxStop").onclick = () => { talking = false; sayStop(); };
 $("maxSpeak").onclick = () => {
-  if (!("speechSynthesis" in window)) return toast("Spoken answers aren't supported in this browser", true);
   maxSpeakOn = !maxSpeakOn;
   try { localStorage.setItem("maxSpeak", maxSpeakOn ? "on" : "off"); } catch {}
-  if (!maxSpeakOn) speechSynthesis.cancel();
+  if (!maxSpeakOn) sayStop();
   maxSpeakBtn();
 };
 maxSpeakBtn();
-// "Max moves around": off = he stays in his corner (still talks and points from there)
-const moveBtn = () => { $("maxMove").style.opacity = window.MaxBot?.moves ? 1 : 0.4; $("maxMove").title = window.MaxBot?.moves ? "Max flies around the page (click to keep him in the corner)" : "Max stays in the corner (click to let him fly around)"; };
+// "Aux moves around": off = he stays in his corner (still talks and points from there)
+const moveBtn = () => { $("maxMove").style.opacity = window.MaxBot?.moves ? 1 : 0.4; $("maxMove").title = window.MaxBot?.moves ? "Aux flies around the page (click to keep him in the corner)" : "Aux stays in the corner (click to let him fly around)"; };
 addEventListener("maxbot-ready", () => { $("maxMove").hidden = $("maxSleep").hidden = false; moveBtn(); });
 $("maxSleep").onclick = () => { maxOpen(false); window.MaxBot.sleeping = true; };
 $("maxMove").onclick = () => { window.MaxBot.moves = !window.MaxBot.moves; moveBtn(); };
@@ -3767,16 +4559,292 @@ $("maxLog").onclick = async e => {
   maxRender();
 };
 
-// ---- hooks for the 3D Max (module script below); all calls are safe before it has loaded ----
-const bot = (fn, ...a) => { try { window.MaxBot?.[fn]?.(...a); } catch (e) { console.warn("Max:", e); } };
-// A new sign-in (came here from the login page, not a reload): Max welcomes them once Max and the user are loaded.
-// window.maxJustIn: Max starts in the middle of the screen instead of his corner.
+// ---- hooks for the 3D Aux (module script below); all calls are safe before it has loaded ----
+const bot = (fn, ...a) => {
+  if (window.maxMovieOn && ["tip", "alert", "announce", "answered"].includes(fn)) return; // the movie is playing: no page tips in between
+  try { window.MaxBot?.[fn]?.(...a); } catch (e) { console.warn("Aux:", e); }
+};
+
+// ---- 🎬 Aux's movie: a 2-minute cinematic tour of the real portal pages (Overview button) ----
+// Aux flies through the pages and narrates; letterbox, title cards and subtitles; music and sound effects are made
+// here with Web Audio (no audio files). Skip button or Esc stops it.
+function movieAudio() {
+  const ac = new (window.AudioContext || window.webkitAudioContext)(), T = () => ac.currentTime;
+  const master = ac.createGain(), comp = ac.createDynamicsCompressor();
+  master.gain.value = 0.9; comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
+  master.connect(comp); comp.connect(ac.destination);
+  // hall reverb from a decaying noise impulse
+  const rev = ac.createConvolver(), len = ac.sampleRate * 3.4, ir = ac.createBuffer(2, len, ac.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.8); }
+  rev.buffer = ir; rev.connect(master);
+  const send = (node, wet) => { const g = ac.createGain(); g.gain.value = wet; node.connect(g); g.connect(rev); return node; };
+  const noise = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = noise.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const nsrc = (t, dur, loop) => { const s = ac.createBufferSource(); s.buffer = noise; s.loop = !!loop; s.start(t); s.stop(t + dur); return s; };
+  const env = (g, t, a, peak, r) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + r); return g; };
+  const m2f = n => 440 * 2 ** ((n - 69) / 12);
+  // music bus (ducked under Aux's voice), drums dry-ish, synths with reverb and a dotted-eighth echo
+  const music = ac.createGain(); music.gain.value = 0.85; music.connect(master); send(music, 0.22);
+  const echo = ac.createDelay(1), fb = ac.createGain(), echoG = ac.createGain();
+  echo.delayTime.value = 0.45; fb.gain.value = 0.32; echoG.gain.value = 0.28; echo.connect(fb); fb.connect(echo); echo.connect(echoG); echoG.connect(music);
+  // the pad: two detuned saws per note through a breathing low-pass
+  const padG = ac.createGain(), padF = ac.createBiquadFilter(), lfo = ac.createOscillator(), lfoG = ac.createGain();
+  padG.gain.value = 0; padF.type = "lowpass"; padF.frequency.value = 900; padF.Q.value = 0.7; padG.connect(padF); padF.connect(music); send(padF, 0.5);
+  lfo.frequency.value = 0.09; lfoG.gain.value = 500; lfo.connect(lfoG); lfoG.connect(padF.frequency); lfo.start();
+  const CH = [{ b: 45, n: [57, 60, 64, 69] }, { b: 41, n: [57, 60, 65, 69] }, { b: 48, n: [55, 60, 64, 67] }, { b: 43, n: [55, 59, 62, 67] }]; // Am F C G
+  const padOsc = CH[0].n.flatMap(n => [-8, 8].map(det => { const o = ac.createOscillator(), g = ac.createGain(); o.type = "sawtooth"; o.frequency.value = m2f(n); o.detune.value = det;
+    g.gain.value = 0.045; o.connect(g); g.connect(padG); o.start(); return o; }));
+  const subO = ac.createOscillator(), subG = ac.createGain(); subO.frequency.value = m2f(CH[0].b - 12); subG.gain.value = 0; subO.connect(subG); subG.connect(music); subO.start();
+  let chord = 0, level = 0, step = 0, next = T() + 0.1;
+  const setChord = (i, t) => { chord = i; CH[i].n.forEach((n, k) => [0, 1].forEach(j => padOsc[k * 2 + j].frequency.setTargetAtTime(m2f(n), t, 0.25))); subO.frequency.setTargetAtTime(m2f(CH[i].b - 12), t, 0.1); };
+  // instruments
+  const pluck = (t, f, v = 0.16) => { const o = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain(); o.type = "sawtooth"; o.frequency.value = f;
+    lp.type = "lowpass"; lp.Q.value = 6; lp.frequency.setValueAtTime(3800, t); lp.frequency.exponentialRampToValueAtTime(400, t + 0.22);
+    env(g, t, 0.004, v, 0.3); o.connect(lp); lp.connect(g); g.connect(music); g.connect(echo); o.start(t); o.stop(t + 0.4); };
+  const bass = (t, f) => { const o = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain(); o.type = "sawtooth"; o2.type = "sine"; o.frequency.value = f; o2.frequency.value = f / 2;
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(900, t); lp.frequency.exponentialRampToValueAtTime(180, t + 0.25); env(g, t, 0.006, 0.32, 0.28);
+    o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(music); o.start(t); o2.start(t); o.stop(t + 0.35); o2.stop(t + 0.35); };
+  const kick = (t, v = 1) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+    env(g, t, 0.002, 0.95 * v, 0.38); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.45); };
+  const clap = t => { const bp = ac.createBiquadFilter(), g = ac.createGain(); bp.type = "bandpass"; bp.frequency.value = 1600; bp.Q.value = 0.9;
+    [0, 0.012, 0.024].forEach(o => env(g, t + o, 0.001, 0.35, 0.09)); env(g, t + 0.036, 0.001, 0.4, 0.22); nsrc(t, 0.3).connect(bp); bp.connect(g); g.connect(master); send(g, 0.35); };
+  const hat = (t, v = 0.09) => { const hp = ac.createBiquadFilter(), g = ac.createGain(); hp.type = "highpass"; hp.frequency.value = 8000; env(g, t, 0.001, v, 0.045);
+    nsrc(t, 0.08).connect(hp); hp.connect(g); g.connect(music); };
+  // 100 bpm, 16 steps a bar, one chord a bar. level 0: pad only, 1: + arp and bass, 2: + drums
+  const SPB = 60 / 100 / 4, ARP = [0, 2, 1, 3, 2, 0, 3, 1];
+  const sched = setInterval(() => {
+    while (next < T() + 0.15) {
+      const s = step % 16, t = next;
+      if (s === 0) setChord((step / 16) % 4, t);
+      const c = CH[chord];
+      if (level >= 1) {
+        pluck(t, m2f(c.n[ARP[s % 8]] + 12), s % 4 === 0 ? 0.17 : 0.11);
+        if ([0, 3, 6, 8, 11, 14].includes(s)) bass(t, m2f(c.b));
+      }
+      if (level >= 2) {
+        if (s === 0 || s === 8 || s === 10) kick(t, s === 10 ? 0.7 : 1);
+        if (s === 4 || s === 12) clap(t);
+        if (s % 2 === 0) hat(t, s % 4 === 2 ? 0.11 : 0.06);
+      }
+      step++; next += SPB;
+    }
+  }, 25);
+  const pan = (node, from, to, t, dur) => { const p = ac.createStereoPanner(); p.pan.setValueAtTime(from, t); p.pan.linearRampToValueAtTime(to, t + dur); node.connect(p); return p; };
+  return {
+    start() { padG.gain.setTargetAtTime(1, T(), 2.5); subG.gain.setTargetAtTime(0.12, T(), 3); },
+    level(n) { level = n; },
+    duck(on) { music.gain.setTargetAtTime(on ? 0.42 : 0.85, T(), 0.35); },
+    whoosh() { const t = T(), bp = ac.createBiquadFilter(), g = ac.createGain(); bp.type = "bandpass"; bp.Q.value = 1.4;
+      bp.frequency.setValueAtTime(220, t); bp.frequency.exponentialRampToValueAtTime(5200, t + 0.5); bp.frequency.exponentialRampToValueAtTime(600, t + 1.1);
+      env(g, t, 0.38, 0.55, 0.8); nsrc(t, 1.3).connect(bp); bp.connect(g); pan(g, -0.9, 0.9, t, 1.1).connect(master); send(g, 0.4); },
+    impact() { const t = T(); kick(t, 1.2);
+      const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(24, t + 2.2); env(g, t, 0.01, 0.8, 2.6); o.connect(g); g.connect(master); o.start(t); o.stop(t + 3);
+      const lp = ac.createBiquadFilter(), g2 = ac.createGain(); lp.type = "lowpass"; lp.frequency.setValueAtTime(5000, t); lp.frequency.exponentialRampToValueAtTime(200, t + 1.5);
+      env(g2, t, 0.003, 0.55, 1.6); nsrc(t, 1.8).connect(lp); lp.connect(g2); g2.connect(master); send(g2, 0.9); },
+    swell(sec = 1.2) { const t = T(), hp = ac.createBiquadFilter(), g = ac.createGain(); hp.type = "highpass"; hp.frequency.setValueAtTime(400, t); hp.frequency.exponentialRampToValueAtTime(3000, t + sec);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + sec); g.gain.linearRampToValueAtTime(0, t + sec + 0.03); nsrc(t, sec + 0.1).connect(hp); hp.connect(g); g.connect(master); send(g, 0.6); },
+    riser(sec) { const t = T(), bp = ac.createBiquadFilter(), g = ac.createGain(), o = ac.createOscillator(), og = ac.createGain();
+      bp.type = "bandpass"; bp.Q.value = 2.5; bp.frequency.setValueAtTime(200, t); bp.frequency.exponentialRampToValueAtTime(7000, t + sec);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + sec); g.gain.linearRampToValueAtTime(0, t + sec + 0.05); nsrc(t, sec + 0.1, true).connect(bp); bp.connect(g); g.connect(master); send(g, 0.5);
+      o.type = "sawtooth"; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(880, t + sec); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.06, t + sec); og.gain.linearRampToValueAtTime(0, t + sec + 0.05);
+      o.connect(og); og.connect(music); o.start(t); o.stop(t + sec + 0.1); },
+    blip(i = 0) { const t = T(), o = ac.createOscillator(), g = ac.createGain(); o.type = "triangle"; o.frequency.setValueAtTime(m2f(84 + [0, 3, 7, 10, 12][i % 5]), t);
+      env(g, t, 0.003, 0.07, 0.12); o.connect(g); pan(g, -0.6 + (i % 5) * 0.3, -0.6 + (i % 5) * 0.3, t, 0.1).connect(master); send(g, 0.4); o.start(t); o.stop(t + 0.2); },
+    shimmer() { const t = T(); [88, 91, 95, 100].forEach((n, i) => { const o = ac.createOscillator(), g = ac.createGain(), at = t + i * 0.07; o.frequency.value = m2f(n);
+      env(g, at, 0.01, 0.045, 1.8); o.connect(g); g.connect(master); send(g, 0.9); o.start(at); o.stop(at + 2); }); },
+    end() { clearInterval(sched); master.gain.setTargetAtTime(0.0001, T(), 1); setTimeout(() => ac.close(), 4500); },
+  };
+}
+// The particle field behind the scenes: drifting points joined by lines, in the scene's colour. warp(): they rush outward.
+function movieField(canvas) {
+  const g = canvas.getContext("2d"), P = [], N = Math.min(110, Math.round(innerWidth * innerHeight / 14000));
+  let w, h, hue = [255, 159, 10], target = hue, warp = 0, alive = true;
+  const size = () => { w = canvas.width = innerWidth * devicePixelRatio; h = canvas.height = innerHeight * devicePixelRatio; };
+  size(); addEventListener("resize", size);
+  for (let i = 0; i < N; i++) P.push({ x: Math.random() * w, y: Math.random() * h, z: Math.random() * 0.8 + 0.2, a: Math.random() * 6.28 });
+  const frame = () => {
+    if (!alive) return;
+    hue = hue.map((c, i) => c + (target[i] - c) * 0.03);
+    warp *= 0.94;
+    g.fillStyle = `rgba(4,5,10,${0.35 - warp * 0.25})`; g.fillRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2, col = hue.map(Math.round).join(",");
+    for (const p of P) {
+      p.a += 0.002; p.x += Math.cos(p.a) * 0.3 * p.z + (p.x - cx) * warp * 0.06; p.y += Math.sin(p.a * 1.3) * 0.3 * p.z + (p.y - cy) * warp * 0.06;
+      if (p.x < -50 || p.x > w + 50 || p.y < -50 || p.y > h + 50) { p.x = cx + (Math.random() - 0.5) * w * 0.3; p.y = cy + (Math.random() - 0.5) * h * 0.3; }
+    }
+    g.lineWidth = devicePixelRatio;
+    for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+      const a = P[i], b = P[j], d = Math.hypot(a.x - b.x, a.y - b.y), max = 150 * devicePixelRatio;
+      if (d < max) { g.strokeStyle = `rgba(${col},${(1 - d / max) * 0.22 * a.z})`; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+    }
+    for (const p of P) { g.fillStyle = `rgba(${col},${0.5 + p.z * 0.5})`; g.beginPath(); g.arc(p.x, p.y, (1 + p.z * 2 + warp * 3) * devicePixelRatio, 0, 6.28); g.fill(); }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  return { color(c) { target = c; }, warp() { warp = 1; }, stop() { alive = false; removeEventListener("resize", size); } };
+}
+// Scene building blocks: a headline revealed word by word, chips, staggered delays
+const mvd = (i, step = 0.12, from = 0.4) => `--d:${(from + i * step).toFixed(2)}s`;
+const mvHead = (html, from = 0.25) => { let i = 0; return html.split("<br>").map(line => line.split(/(<em>.*?<\/em>)/).map(seg => {
+  const em = seg.startsWith("<em>");
+  return seg.replace(/<\/?em>/g, "").split(/\s+/).filter(Boolean).map(w => `<span class="mv-w"><span style="${mvd(i++, 0.09, from)}">${em ? `<em>${w}</em>` : w}</span></span>`).join(" ");
+}).join(" ")).join("<br>"); };
+const mvChips = list => `<div class="mv-chips">${list.map((c, i) => `<span class="mv-chip mv-pop" style="${mvd(i, 0.14, 1.6)}">${c}</span>`).join("")}</div>`;
+const mvSlide = (k, h, sub, list, vis) => `<div><div class="mv-k mv-in">${k}</div><div class="mv-h">${mvHead(h)}</div>
+  <p class="mv-s mv-in" style="--d:.9s">${sub}</p>${list ? mvChips(list) : ""}</div><div class="mv-vis">${vis}</div>`;
+const MV_GRAD = `<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="mvGrad"><stop offset="0" stop-color="#ff9f0a"/><stop offset="1" stop-color="#ffd60a"/></linearGradient>
+  <linearGradient id="mvGrad2"><stop offset="0" stop-color="#ff9f0a"/><stop offset="1" stop-color="#7cf"/></linearGradient></defs></svg>`;
+// each scene: colour of the field, the slide, the sounds of its items (blips at these seconds), what Aux says
+const MOVIE = [
+  { color: [255, 159, 10], blips: [1.6, 1.75, 1.9, 2.05],
+    html: mvSlide("Command centre", "Your entire fleet.<br><em>One screen.</em>", "Every tablet, terminal and PC, across every site, live.", ["Online", "Offline", "Warnings", "Maintenance"],
+      `<div class="mv-dash mv-glass"><div class="mv-stats">${[["1000", "+", "devices"], ["24", "/7", "watching"], ["1", "", "screen"]].map(([n, suf, l], i) =>
+        `<div class="mv-stat mv-pop" style="${mvd(i, 0.15, 0.6)}"><b data-count="${n}" data-suf="${suf}">0</b><span>${l}</span></div>`).join("")}</div>
+        <div class="mv-dots">${Array.from({ length: 96 }, (_, i) => `<i class="${i % 23 === 7 ? "w" : ""}" style="${mvd((i % 16) + Math.floor(i / 16), 0.07, 1)}"></i>`).join("")}</div></div>`),
+    say: "Every tablet, every terminal, every site, on one live screen. Online, offline, warnings, maintenance. Built to watch over a thousand devices, and to show you every change the second it happens." },
+  { color: [90, 150, 255], blips: [3.1],
+    html: mvSlide("Remote control", "Be there.<br><em>Without going there.</em>", "Open any device and you are standing right in front of it.", ["Live screen", "Tap to control", "Remote shell", "Logs", "Restart"],
+      `<div class="mv-tab"><div class="bar"><span class="mv-live">LIVE</span>LOBBY TABLET · 3093</div><div class="scr">${Array.from({ length: 6 }, (_, i) =>
+        `<b class="${i === 4 ? "hit" : ""}" style="${mvd(i, 0.1, 0.7)}"></b>`).join("")}</div><div class="mv-cur">👆</div><div class="mv-tap"></div></div>
+       <div class="mv-term mv-in" style="--d:4s">${["$ uptime", "up 12 days, load 0.42", "$ restart kiosk", "✓ restarted"].map((l, i) => `<div style="${mvd(i, 0.9, 4.4)}">${l}</div>`).join("")}</div>`),
+    say: "Open any device, and you're right there. See its screen live, and tap to control it. Open a remote shell, pull the logs, restart an app. From anywhere." },
+  { color: [255, 69, 58], blips: [0.8, 1.4, 2], ok: 3,
+    html: mvSlide("Alerts", "Know first.<br><em>Every time.</em>", "Offline, low battery, crashed apps: the alarm sounds and your team hears it.", ["Alarm", "WhatsApp", "Clears itself"],
+      `<div class="mv-radar"></div><div class="mv-alerts">${[["Lobby tablet went offline", "now"], ["Battery at 8% · Gate kiosk", "1 min"], ["App crashed · Block C", "2 min"]].map(([t, w], i) =>
+        `<div class="mv-card mv-glass" style="${mvd(i, 0.6, 0.8)}"><span class="lt"></span>${t}<span class="t">${w}</span></div>`).join("")}
+        <div class="mv-card mv-glass ok" style="--d:3s"><span class="lt"></span>Lobby tablet is back online<span class="t">✓</span></div></div>`),
+    say: "The moment something goes wrong, you know. A device drops offline, a battery runs low, an app crashes. The alarm sounds, your team gets a WhatsApp, and it all clears itself the moment the device recovers." },
+  { color: [255, 179, 64], blips: [0.7, 1.4, 2.1, 2.8],
+    html: mvSlide("Technical team", "From alert to fixed.<br><em>Automatically.</em>", "Problems turn into tickets, and every ticket finds the right technician.", ["Auto tickets", "Auto-assign", "Work tracking"],
+      `<div class="mv-flow">${[["🔔", "Alert"], ["🎫", "Ticket"], ["👷", "Technician"], ["✅", "Fixed"]].map(([e, t], i) => (i ? `<div class="mv-line" style="${mvd(i, 0.7, 0.35)}"></div>` : "")
+        + `<div class="mv-node mv-pop ${i === 3 ? "done" : ""}" style="${mvd(i, 0.7, 0.7)}"><span>${e}</span>${t}</div>`).join("")}</div>`),
+    say: "Problems turn into tickets on their own, and every ticket finds the right technician. Tracked from the first alert to the final fix, so nothing falls through the cracks." },
+  { color: [255, 214, 10], blips: [4.6, 4.75, 4.9, 5.05, 5.2], ok: 4.6,
+    html: mvSlide("Updates", "Update everything.<br><em>Silently.</em>", "Upload once. Every tablet updates at the same time, with zero downtime.", ["Apps", "Files", "Wi-Fi", "Settings"],
+      `<div><div class="mv-ring mv-pop" style="--d:.4s"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" stroke="rgba(255,255,255,.1)"/><circle class="p" cx="18" cy="18" r="15.9" pathLength="100"/></svg>
+        <b><span data-count="100" data-suf="%" data-ms="4000" data-at="600">0</span><small>V10.31</small></b></div>
+        <div class="mv-devs">${Array.from({ length: 5 }, (_, i) => `<span style="${mvd(i, 0.15, 4.6)}">✓</span>`).join("")}</div></div>`),
+    say: "Upload an app once, and roll it out to every tablet at the same time. Silently, with zero downtime, while people keep using them." },
+  { color: [120, 200, 255], blips: [0.8, 1.05, 1.3, 1.55, 1.8, 2.05],
+    html: mvSlide("Every site", "Every building.<br><em>On the map.</em>", "Doors, barriers, cameras and signage, organised site by site.", ["Map", "Door relay", "Barriers", "Signage"],
+      (() => { const pins = [[16, 30], [40, 18], [64, 38], [30, 64], [58, 72], [84, 24]];
+        return `<div class="mv-map mv-glass"><svg viewBox="0 0 100 68.75" preserveAspectRatio="none">${pins.slice(1).map(([x, y], i) => { const [px, py] = pins[i];
+          return `<path pathLength="100" style="${mvd(i, 0.3, 1.2)}" d="M${px} ${py * 0.6875} Q${(px + x) / 2} ${Math.min(py, y) * 0.6875 - 12} ${x} ${y * 0.6875}"/>`; }).join("")}</svg>
+          ${pins.map(([x, y], i) => `<span class="mv-pin" style="left:${x}%;top:${y}%;${mvd(i, 0.25, 0.8)}"></span>`).join("")}</div>`; })()),
+    say: "Every building, on the map. Doors, barriers, cameras and signage, organised site by site, so you always know exactly where you stand." },
+  { color: [140, 120, 255], blips: [1.6, 1.75, 1.9, 2.05, 2.2],
+    html: mvSlide("Security", "Secure<br><em>by design.</em>", "The right people see the right things, and everything is on record.", ["Two-factor sign-in", "Roles & access", "Lost mode", "Remote wipe", "Activity log"],
+      `<div class="mv-shield mv-pop" style="--d:.5s">🛡️<span class="mv-lock">🔒</span></div>`),
+    say: "Two-factor sign-in. Roles that decide who sees what. Lost mode and remote wipe for any tablet. And every action, by every person, recorded." },
+  { color: [255, 159, 10], blips: [0.9, 3, 3.9, 6], max: true,
+    html: mvSlide("Meet Aux", "Just<br><em>ask.</em>", "Your assistant knows your whole fleet and takes you straight to the answer.", null,
+      `<div class="mv-chat mv-glass"><div class="mv-msg me" style="--d:.9s">Which devices are offline?</div>
+        <div class="mv-typing" style="--d:1.6s;--e:2.9s"><i></i><i></i><i></i></div><div class="mv-msg bot" style="--d:3s">All 1,000 devices are online 🎉</div>
+        <div class="mv-msg me" style="--d:3.9s">Open Adam Park</div><div class="mv-typing" style="--d:4.6s;--e:5.9s"><i></i><i></i><i></i></div><div class="mv-msg bot" style="--d:6s">Opening Adam Park… 📍</div></div>`),
+    say: "And me? I'm Aux, your assistant. Ask me anything about your fleet. I'll answer, and take you straight there." },
+];
+async function maxMovie() {
+  if (window.maxMovieOn) return;
+  window.maxMovieOn = true;
+  maxOpen(false); bot("stopTour"); sayStop(); bot("present", true);
+  const A = movieAudio(), wait = ms => new Promise(r => setTimeout(r, ms)), timers = [];
+  const later = (s, fn) => timers.push(setTimeout(() => !stopped && fn(), s * 1000));
+  const add = (cls, html = "") => { const e = document.createElement("div"); e.className = "mv " + cls; e.innerHTML = html; document.body.append(e); return e; };
+  const stage = add("mv-stage", "<canvas></canvas>" + MV_GRAD), F = movieField(stage.querySelector("canvas"));
+  const flash = add("mv-flash"), wave = add("mv-wave"), els = [stage, flash, wave, add("mv-bar top"), add("mv-bar bot")];
+  const title = add("mv-title", "<h1></h1><p></p>"), ui = add("mv-ui", `<div class="mv-cap"></div><button class="btn mv-skip">✕ Skip</button><div class="mv-prog"></div>`);
+  els.push(title, ui);
+  const cap = ui.querySelector(".mv-cap"), prog = ui.querySelector(".mv-prog");
+  const size = () => $("maxBot")?.getBoundingClientRect().width || 160;
+  const maxAt = (fx, fy) => bot("flyTo", innerWidth * fx - size() / 2, innerHeight * fy - size() / 2);
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true; window.maxMovieOn = false;
+    timers.forEach(clearTimeout); sayStop(); A.end(); removeEventListener("keydown", esc);
+    document.body.classList.remove("mv-on"); title.classList.remove("show"); cap.classList.remove("show");
+    setTimeout(() => { F.stop(); els.forEach(e => e.remove()); }, 1500);
+    bot("present", false);
+  };
+  const esc = e => e.key === "Escape" && stop();
+  addEventListener("keydown", esc);
+  ui.querySelector(".mv-skip").onclick = stop;
+  const hit = () => { A.impact(); F.warp(); for (const e of [flash, wave]) { e.classList.remove("go"); void e.offsetWidth; e.classList.add("go"); } };
+  // says it with subtitles; waits until he has finished (or long enough to read it, without a voice)
+  const narrate = async text => {
+    if (stopped) return;
+    cap.textContent = text; cap.classList.add("show"); A.duck(true);
+    speakQueue(text);
+    const t0 = Date.now(), min = 1500 + text.length * 45;
+    await wait(700);
+    while (!stopped && (isSaying() || Date.now() - t0 < min)) await wait(150);
+    A.duck(false); cap.classList.remove("show");
+    await wait(600);
+  };
+  const card = async (h, p, ms) => { title.querySelector("h1").textContent = h; title.querySelector("p").textContent = p; title.classList.add("show"); await wait(ms); };
+  // numbers count up from 0 (data-count, data-suf, data-ms, data-at)
+  const counters = root => root.querySelectorAll("[data-count]").forEach(el => {
+    const to = Number(el.dataset.count), ms = Number(el.dataset.ms) || 1600, t0 = performance.now() + (Number(el.dataset.at) || 700);
+    const tick = now => { if (stopped) return; const k = Math.min(1, Math.max(0, (now - t0) / ms)), e = 1 - Math.pow(2, -10 * k);
+      el.textContent = Math.round(to * (k >= 1 ? 1 : e)).toLocaleString() + el.dataset.suf; if (k < 1) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
+  const show = async (html, solo) => { // the old slide rushes past the camera, the new one builds in
+    const old = stage.querySelector(".mv-slide");
+    if (old) { old.classList.add("out"); F.warp(); await wait(650); old.remove(); }
+    const sl = document.createElement("div"); sl.className = "mv-slide" + (solo ? " solo" : ""); sl.innerHTML = html; stage.append(sl); counters(sl);
+  };
+  const progress = i => (prog.style.width = (100 * i / (MOVIE.length + 3)) + "%");
+
+  // 1. black, a swell into the title card, quiet music underneath
+  A.start(); A.swell(1.4);
+  await wait(1400); if (stopped) return;
+  A.impact(); A.shimmer();
+  await card("Device Remote Management", "Interlock Group presents", 3200);
+  if (stopped) return;
+  // 2. the hook: three lines over the particle field
+  document.body.classList.add("mv-on"); title.classList.remove("show");
+  maxAt(0.075, 0.56); bot("greet"); progress(1);
+  await show(["Every building.", "Every door.", "Every screen."].map((w, i) => `<span class="mv-word">${mvHead(w, 0.3 + i * 1.15)}</span>`).join(""), true);
+  [0.3, 1.45, 2.6].forEach(t => later(t, () => A.whoosh()));
+  await narrate("Every building. Every door. Every screen. What if you could see all of it, and control all of it, from one place?");
+  if (stopped) return;
+  // 3. the drop: beat in, then the features
+  A.swell(0.9); await wait(900); if (stopped) return;
+  hit(); A.level(2);
+  for (const [i, sc] of MOVIE.entries()) {
+    if (stopped) return;
+    progress(i + 2);
+    if (i) A.whoosh();
+    F.color(sc.color);
+    await show(sc.html);
+    maxAt(0.075, 0.56); if (sc.max) bot("greet");
+    later(1.1, () => A.shimmer());
+    sc.blips.forEach((t, k) => later(t, () => A.blip(k)));
+    if (sc.ok) later(sc.ok, () => A.shimmer());
+    await narrate(sc.say);
+  }
+  if (stopped) return;
+  // 4. finale: the music drops out under a riser, one last hit
+  progress(MOVIE.length + 2);
+  A.level(0); A.riser(3.2); F.color([255, 159, 10]);
+  await show(`<span class="mv-word">${mvHead("Your whole fleet.", 0.3)}</span><span class="mv-word">${mvHead("<em>Under control.</em>", 1.3)}</span>`, true);
+  later(3.2, hit);
+  await narrate("Device Remote Management. Your whole fleet, under control.");
+  if (stopped) return;
+  progress(MOVIE.length + 3);
+  A.shimmer();
+  await card("Device Remote Management", "Interlock Group · Under control", 5000);
+  stop();
+}
+// A new sign-in (came here from the login page, not a reload): Aux welcomes them once Aux and the user are loaded.
+// window.maxJustIn: Aux starts in the middle of the screen instead of his corner.
 if (window.maxJustIn = /^\/login(\.html)?$/.test(new URL(document.referrer || location.href).pathname) && performance.getEntriesByType("navigation")[0]?.type === "navigate") {
   let tries = 0;
   const w = () => window.MaxBot && S.me ? bot("welcome", (S.me.name || S.me.username || "").split(" ")[0]) : ++tries < 40 && setTimeout(w, 500);
   setTimeout(w, 800);
 }
-// Short tip per page, the first time it opens this session (Max flies to the heading and says it).
+// Short tip per page, the first time it opens this session (Aux flies to the heading and says it).
 function pageTip(page) {
   const off = S.devices.filter(d => !isOnline(d)).length, c = S.ticketCounts;
   return {
@@ -3791,7 +4859,7 @@ function pageTip(page) {
 refresh(); // draws the first page once the data is in (a device or site link opened before that showed "not found")
 setInterval(refresh, 5000);
 </script>
-<!-- Max in 3D (dashboard/max.glb, rigged, 48 animations). He lives on the whole page: docks bottom right, flies to what he
+<!-- Aux in 3D (dashboard/max.glb, rigged, 48 animations). He lives on the whole page: docks bottom right, flies to what he
      talks about, points at it, reacts to alerts, listens / thinks / talks with the chat. If WebGL or the model can't load,
      the flat robot button stays. -->
 <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -3803,18 +4871,18 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 const small = () => innerWidth < 600;
 const SIZE = small() ? 120 : 168;            // canvas size in CSS px
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let moves = true;                           // "Max moves around" (panel toggle), per browser
+let moves = true;                           // "Aux moves around" (panel toggle), per browser
 try { moves = localStorage.getItem("maxMoves") !== "off"; } catch {}
-let sleeping = false;                       // "Max sleeps" (panel 🌙), per browser: quiet until clicked; alerts still wake him
+let sleeping = false;                       // "Aux sleeps" (panel 🌙), per browser: quiet until clicked; alerts still wake him
 try { sleeping = localStorage.getItem("maxSleep") === "on"; } catch {}
 
 // ---- stage: a small transparent canvas that travels over the page (cheaper than a full-screen one) ----
 const el = document.createElement("div");
 el.id = "maxBot";
-el.innerHTML = `<div class="max-bubble" hidden></div><div class="max-bed"><i></i></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Max, the assistant: click to talk, drag to move"></canvas><div class="max-blanket"></div>`;
+el.innerHTML = `<div class="max-bubble" hidden></div><div class="max-bed"><i></i></div><canvas width="${SIZE}" height="${SIZE}" aria-label="Aux, the assistant: click to talk, drag to move"></canvas><div class="max-blanket"></div>`;
 const canvas = el.querySelector("canvas"), bubble = el.querySelector(".max-bubble");
 let renderer;
-try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); } catch { throw new Error("no WebGL, keeping the flat Max"); }
+try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); } catch { throw new Error("no WebGL, keeping the flat Aux"); }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(SIZE, SIZE);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -3828,7 +4896,7 @@ scene.add(sun);
 
 const gltf = await new GLTFLoader().loadAsync("/max.glb");
 const model = gltf.scene, holder = new THREE.Group();
-// The logo on Max's body comes cyan in the model: recolour its two textures to the company orange once, at load.
+// The logo on Aux's body comes cyan in the model: recolour its two textures to the company orange once, at load.
 const ORANGE = [247, 147, 30];
 function orangeTex(tex) {
   const c = document.createElement("canvas");
@@ -3862,7 +4930,7 @@ const LIE = { x: (body.min.y + body.max.y) / 2, y: BED_Y + (body.max.x - body.mi
 let lie = 0;
 const mixer = new THREE.AnimationMixer(model), clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
 document.body.append(el);
-document.getElementById("maxBtn").classList.add("gone"); // the 3D Max replaces the flat button
+document.getElementById("maxBtn").classList.add("gone"); // the 3D Aux replaces the flat button
 // Panel header avatar: a still of the 3D model.
 renderer.render(scene, camera);
 for (const img of document.querySelectorAll(".max-face img")) img.src = canvas.toDataURL();
@@ -3887,7 +4955,7 @@ function play(name, { once = false, fade = 0.35, then } = {}) {
 const loop = name => play(name);
 const pick = list => list[Math.floor(Math.random() * list.length)];
 
-// ---- where Max is: CSS position of the canvas (top-left), moved with a transform ----
+// ---- where Aux is: CSS position of the canvas (top-left), moved with a transform ----
 const pos = { x: 0, y: 0 };
 let flight = null, mode = "idle", dragged = null, homeOverride = null;
 const place = () => { el.style.transform = `translate3d(${Math.round(pos.x)}px, ${Math.round(pos.y)}px, 0)`; };
@@ -3920,7 +4988,7 @@ function say(text, ms = 6000, tone = "") {
   bubble.textContent = text;
   bubble.className = "max-bubble " + tone;
   bubble.hidden = false;
-  // above Max, or below him near the top of the screen; flipped to his left near the right edge
+  // above Aux, or below him near the top of the screen; flipped to his left near the right edge
   bubble.classList.toggle("below", pos.y < 110);
   bubble.classList.toggle("left", pos.x > innerWidth - 300);
   bubbleTimer = setTimeout(() => (bubble.hidden = true), ms);
@@ -3972,7 +5040,8 @@ let talkTimer;
 function greet() { play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") }); }
 
 // ---- sleep: dimmed in his corner with 💤 and quiet; an alert wakes him for its message, then he dozes off again ----
-function doze() { if (!sleeping) return; el.classList.add("asleep"); mixer.timeScale = 0.25; loop("Idle_Hover"); }
+let presenting = false; // the video is playing: he stays awake whatever "Aux sleeps" says
+function doze() { if (!sleeping || presenting) return; el.classList.add("asleep"); mixer.timeScale = 0.25; loop("Idle_Hover"); }
 function rouse() { el.classList.remove("asleep"); mixer.timeScale = 1; }
 function setSleep(v) {
   sleeping = v;
@@ -4054,14 +5123,14 @@ if (!window.maxJustIn) doze(); // asleep since last time (after a sign-in he wak
 requestAnimationFrame(frame);
 addEventListener("resize", () => { if (!flight && mode === "idle" && !homeOverride) { const h = home(); pos.x = h.x; pos.y = h.y; place(); } });
 
-// ---- the portal talks to Max through this ----
+// ---- the portal talks to Aux through this ----
 window.MaxBot = {
   listen, think, greet, say, goHome,
   talk(text) { talk(text); },
   // the panel opened / closed: dock next to it or back to the corner
   dock() { if (!homeOverride && !sleeping) goHome(); },
   // just signed in: he starts in the middle of the screen, salutes and says hello, then flies to his corner
-  // (dozes off there if "Max sleeps" is on)
+  // (dozes off there if "Aux sleeps" is on)
   welcome(name) {
     homeOverride = null; rouse();
     play("Greet_Salute", { once: true, then: () => loop("Idle_Hover") });
@@ -4091,8 +5160,9 @@ window.MaxBot = {
     });
   },
   pointAt, flyTo,
+  present(on) { presenting = on; if (on) { rouse(); play("Notice_User", { once: true, then: greet }); } else goHome(doze); },
   // Guided tour: Overview and every menu page (opened one by one), then the top bar last. The next step waits until he
-  // has finished speaking. Opening another page meanwhile: he explains that page, then resumes the tour. Clicking Max stops it.
+  // has finished speaking. Opening another page meanwhile: he explains that page, then resumes the tour. Clicking Aux stops it.
   tour() {
     T = { i: 0, expect: "", steps: [
       ...[...document.querySelectorAll("#nav a")].map(a => ({ href: a.getAttribute("href"), text: TOUR[a.getAttribute("href").slice(2)] })).filter(x => x.text),
@@ -4113,7 +5183,7 @@ function stopTour() { touring++; tourOn = false; T = null; }
 function tourWait(token, ms, then) {
   const t0 = Date.now();
   const tick = () => token !== touring ? null
-    : Date.now() - t0 < ms || window.speechSynthesis?.speaking || window.speechSynthesis?.pending ? setTimeout(tick, 300) : then();
+    : Date.now() - t0 < ms || isSaying() ? setTimeout(tick, 300) : then();
   setTimeout(tick, 800);
 }
 const tourMs = text => 1500 + text.length * 70;
@@ -4132,7 +5202,7 @@ function tourStep(intro = "") {
 addEventListener("hashchange", () => {
   if (!T || location.hash === T.expect) return;
   const token = ++touring, page = location.hash.slice(2).split("/")[0];
-  window.speechSynthesis?.cancel();
+  sayStop();
   T.expect = location.hash;
   const text = TOUR[page] ? "You opened this one. " + TOUR[page] : "";
   if (!text) return tourStep("Back to the tour. "); // a page without a tour text (a device, a ticket): carry on
@@ -4144,7 +5214,7 @@ addEventListener("hashchange", () => {
 });
 // top bar, explained last, in this order
 const TOUR_HEADER = [
-  ["#themeBtn", "Up here in the top bar: this button switches the theme between light, dark and automatic."],
+  ["#themeBtn", "Up here in the top bar: this switch flips between light and dark. By itself it follows the clock (light 6 am - 6 pm)."],
   ["#soundBtn", "The speaker turns the alarm sound on or off. The alarm plays while an alert is open."],
   ["#mapBtn", "The Map shows where every device is, with a filter for sites and a search for device names."],
   ["a.bell", "The bell shows how many alerts are open. Click it to go straight to the alerts."],
@@ -4165,5 +5235,6 @@ const TOUR = {
 };
 window.dispatchEvent(new Event("maxbot-ready"));
 </script>
+<script src="/stars.js"></script>
 </body>
 </html>

@@ -130,6 +130,7 @@ public class KioskActivity extends Activity {
     static Context themed(Context base) {
         String t = base.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_THEME, "auto");
         String lang = base.getSharedPreferences("kiosk", MODE_PRIVATE).getString(DeviceService.PREF_LANG, "");
+        if (lang.equals("null")) lang = ""; // saved by older versions from a JSON null
         if (t.equals("auto") && lang.isEmpty()) return base;
         android.content.res.Configuration c = new android.content.res.Configuration(base.getResources().getConfiguration());
         if (!t.equals("auto")) c.uiMode = (c.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK)

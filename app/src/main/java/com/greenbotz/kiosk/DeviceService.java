@@ -160,8 +160,12 @@ public class DeviceService extends Service {
         self = this;
         catchCrashes();
         grantLocation();
-        if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-        else startForeground(1, n);
+        try {
+            if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            else startForeground(1, n);
+        } catch (SecurityException e) { // Android 14+: location type needs the location permission (only granted as device owner)
+            Log.w(TAG, "foreground service without location permission", e);
+        }
         startLocation();
         handler.post(new Runnable() {
             @Override
@@ -263,6 +267,42 @@ public class DeviceService extends Service {
             dpm.setPermissionGrantState(admin, getPackageName(), p, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
         }
         enableLocation(dpm, admin);
+        // Telpo ships with only the GPS provider allowed, and most models have no GPS chip: allow Wi-Fi (network) location too.
+        if (rooted()) new Thread(() -> {
+            try {
+                Process p = new ProcessBuilder(sh("settings put secure location_providers_allowed +network")).redirectErrorStream(true).start();
+                if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) p.destroy();
+            } catch (Exception ignored) {
+            }
+        }, "netloc").start();
+    }
+
+    // Portal "Turn on Google location": Google's Wi-Fi location stays off until someone agrees on the tablet once.
+    // Lets Google's screen past the kiosk lock and opens it; the kiosk screen drops it again the next time it locks.
+    private void googleLocation() {
+        DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
+        ComponentName admin = new ComponentName(this, AdminReceiver.class);
+        Intent i = new Intent("com.google.android.gms.location.settings.LOCATION_ACCURACY");
+        if (i.resolveActivity(getPackageManager()) == null) i = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+        ComponentName screen = i.resolveActivity(getPackageManager());
+        if (screen == null) {
+            event(this, "Google location: this tablet has no location settings screen");
+            return;
+        }
+        try {
+            if (dpm.isDeviceOwnerApp(getPackageName())) {
+                enableLocation(dpm, admin);
+                java.util.Set<String> lock = new java.util.TreeSet<>(java.util.Arrays.asList(dpm.getLockTaskPackages(admin)));
+                if (!lock.isEmpty()) { // empty = not in kiosk mode, nothing to let through
+                    lock.add(screen.getPackageName());
+                    dpm.setLockTaskPackages(admin, lock.toArray(new String[0]));
+                }
+            }
+            startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            event(this, "Google location screen opened on the tablet: turn on Google Location Accuracy, then go back");
+        } catch (Exception e) {
+            event(this, "Google location screen failed: " + e.getMessage());
+        }
     }
 
     // setLocationEnabled() is Android 11+; older versions take the secure setting (allowed for device owners until 11).
@@ -459,7 +499,7 @@ public class DeviceService extends Service {
                 dpm.setSystemUpdatePolicy(admin, u.equals("auto") ? android.app.admin.SystemUpdatePolicy.createAutomaticInstallPolicy()
                         : u.equals("night") ? android.app.admin.SystemUpdatePolicy.createWindowedInstallPolicy(60, 300)
                         : u.equals("postpone") ? android.app.admin.SystemUpdatePolicy.createPostponeInstallPolicy() : null);
-                String lang = s.optString("language");
+                String lang = s.isNull("language") ? "" : s.optString("language");
                 SharedPreferences sp = getSharedPreferences("kiosk", MODE_PRIVATE);
                 if (!lang.equals(sp.getString(PREF_LANG, ""))) {
                     sp.edit().putString(PREF_LANG, lang).commit();
@@ -937,6 +977,7 @@ public class DeviceService extends Service {
         if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("wifi")) addWifi(cmd.optString("ssid"), cmd.optString("password"));
+        if (type.equals("gpslocation")) googleLocation();
         if (type.equals("adbwifi")) new Thread(() -> adbWifi(cmd.optBoolean("on", true)), "adbwifi").start();
         if (type.equals("browse")) new Thread(() -> browse(cmd.optString("path", "/sdcard")), "browse").start();
         if (type.equals("pull")) new Thread(() -> pullFile(cmd.optString("path")), "pull").start();
@@ -1152,10 +1193,19 @@ public class DeviceService extends Service {
         String crash = getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_CRASH, "");
         if (!crash.isEmpty()) sb.append("=== Last crash ===\n").append(crash).append("\n");
         sb.append("=== App log (newest last) ===\n");
-        Process proc = Runtime.getRuntime().exec(new String[]{"logcat", "-d", "-t", "3000", "-v", "time"});
+        Process proc = new ProcessBuilder(sh("logcat -d -t 3000 -v time")).redirectErrorStream(true).start();
+        new Thread(() -> { // logcat can wait forever on Android 13+'s log-access prompt (blocked by kiosk mode)
+            try {
+                if (!proc.waitFor(20, java.util.concurrent.TimeUnit.SECONDS)) proc.destroy();
+            } catch (InterruptedException ignored) {
+            }
+        }, "logcat-timeout").start();
+        int before = sb.length();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
             for (String line; (line = r.readLine()) != null; ) sb.append(line).append('\n');
         }
+        if (sb.length() == before) sb.append("(no system log: this tablet needs once, by USB: adb shell pm grant ").append(getPackageName())
+                .append(" android.permission.READ_LOGS)\n");
         HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/device-logs").openConnection();
         try {
             c.setConnectTimeout(10000);
@@ -1195,7 +1245,12 @@ public class DeviceService extends Service {
         ScreenshotService a = ScreenshotService.instance;
         if (Build.VERSION.SDK_INT >= 30) {
             if (a == null) {
-                screenshotFailed(this, "screenshot service is off on this device (run setup-tablet.bat once)");
+                if (rooted()) net.execute(() -> {
+                    android.graphics.Bitmap b = rootCapture();
+                    if (b != null) uploadScreenshot(b);
+                    else screenshotFailed(this, "screencap failed");
+                });
+                else screenshotFailed(this, "screenshot service is off on this device (run setup-tablet.bat once)");
                 return;
             }
             a.capture(bmp -> net.execute(() -> uploadScreenshot(bmp)), err -> screenshotFailed(this, err));
@@ -1653,6 +1708,10 @@ public class DeviceService extends Service {
         return new File("/system/bin/su").exists() || new File("/system/xbin/su").exists();
     }
 
+    private static String q(String s) {
+        return "'" + s.replace("'", "'\\''") + "'";
+    }
+
     private String[] sh(String cmd) {
         return rooted() ? new String[]{"su", "0", "sh", "-c", cmd} : new String[]{"sh", "-c", cmd};
     }
@@ -1662,7 +1721,7 @@ public class DeviceService extends Service {
         String error = null;
         try {
             // -1 one per line, -A almost-all, -p mark directories with a trailing slash.
-            Process p = new ProcessBuilder(sh("ls -1Ap \"" + path.replace("\"", "") + "\"")).redirectErrorStream(true).start();
+            Process p = new ProcessBuilder(sh("ls -1Ap " + q(path))).start();
             java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
             for (String line; (line = r.readLine()) != null && entries.length() < 2000; ) {
                 if (line.isEmpty()) continue;
@@ -1670,7 +1729,9 @@ public class DeviceService extends Service {
                 String nm = dir ? line.substring(0, line.length() - 1) : line;
                 entries.put(new JSONObject().put("name", nm).put("dir", dir));
             }
-            p.waitFor();
+            String err = new java.io.BufferedReader(new java.io.InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8)).readLine();
+            if (!p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) p.destroy();
+            else if (p.exitValue() != 0 && entries.length() == 0) error = err != null ? err.replaceFirst("^ls: ", "") : "can't open this folder";
         } catch (Exception e) {
             error = e.getMessage();
         }
@@ -1684,7 +1745,13 @@ public class DeviceService extends Service {
     private void pullFile(String path) {
         if (path == null || path.isEmpty()) return;
         try {
-            Process proc = new ProcessBuilder(sh("cat \"" + path.replace("\"", "") + "\"")).start();
+            Process check = new ProcessBuilder(sh("test -f " + q(path) + " && test -r " + q(path))).start();
+            if (!check.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) || check.exitValue() != 0) {
+                check.destroy();
+                event(this, "Download failed for " + path + ": not a file, missing or not readable");
+                return;
+            }
+            Process proc = new ProcessBuilder(sh("cat " + q(path))).start();
             HttpURLConnection c = (HttpURLConnection) new URL(serverUrl(this) + "/api/pull").openConnection();
             try {
                 c.setConnectTimeout(10000);

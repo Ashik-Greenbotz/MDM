@@ -23,8 +23,10 @@ const DASHBOARD_DIR = path.join(__dirname, "..", "dashboard");
 const STATIC = {
   "/": ["index.html", "text/html; charset=utf-8"], "/login": ["login.html", "text/html; charset=utf-8"],
   "/logo.png": ["logo.png", "image/png"], "/max.png": ["max.png", "image/png"], "/max.glb": ["max.glb", "model/gltf-binary"], "/alarm.wav": ["alarm.wav", "audio/wav"], "/manifest.json": ["manifest.json", "application/manifest+json"],
+  "/stars.js": ["stars.js", "text/javascript; charset=utf-8"],
 };
-const PUBLIC_PAGES = ["/login", "/logo.png", "/max.png", "/max.glb", "/manifest.json"];
+const LOOKS = ["classic", "animated", "embossed"]; // portal theme styles (Configuration > Theme)
+const PUBLIC_PAGES = ["/login", "/logo.png", "/max.png", "/max.glb", "/manifest.json", "/stars.js"];
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const ONLINE_MS = Number(process.env.ONLINE_MS || 90 * 1000);
 const OFFLINE_ALERT_MS = Number(process.env.OFFLINE_ALERT_MS || 2 * 60 * 1000); // a restart takes about a minute, so no alarm for that
@@ -48,7 +50,7 @@ const MAX_EVENTS = 5000, MAX_UPLOAD = 2048 * 1024 * 1024;
 const ANDROID = ["lockscreen", "reboot", "ring", "screenshot", "live", "install", "file", "logs"];
 // Live remote control (Android): kept in memory only. Pictures (device -> portal) and taps (portal -> device) are
 // long-polled, so each goes through the moment it exists. The device stops once nobody has watched for LIVE_IDLE_MS.
-const LIVE = {}, LIVE_IDLE_MS = 20000; // id -> { jpeg, at, w, h, seen, inputs, wait: { device: [], viewers: [] } }
+const LIVE = Object.create(null), LIVE_IDLE_MS = 20000; // id -> { jpeg, at, w, h, seen, inputs, wait: { device: [], viewers: [] } }
 const liveNew = () => ({ inputs: [], seen: Date.now(), wait: { device: [], viewers: [] } });
 // Resolves when liveWake(L, who) runs, after ms, or when the client hangs up.
 function liveWait(L, who, ms, res) {
@@ -62,7 +64,7 @@ function liveWait(L, who, ms, res) {
 const liveWake = (L, who) => L.wait[who].slice().forEach(f => f());
 // Remote shell (Android): same idea. The tablet's `sh` output piles up in `out` (last 100 KB; `base` = how much was
 // dropped before it), typed lines wait in `inputs`. Ends LIVE_IDLE_MS after the terminal window closes.
-const TERM = {}; // id -> { out, base, inputs, seen, wait, started, by }
+const TERM = Object.create(null); // id -> { out, base, inputs, seen, wait, started, by }
 // A finished session is saved as a text file listed on the device page (last 20), then forgotten.
 async function termSave(id, T) {
   if (!T || TERM[id] !== T) return;
@@ -76,7 +78,7 @@ async function termSave(id, T) {
   dirty = true;
 }
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "browse", "pull", "adbwifi", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "wifi", "lost", "found", "wipe", "browse", "pull", "adbwifi", "gpslocation", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -140,7 +142,7 @@ const maintImg = async () => portal.maintImage ? store.read("uploads/maintenance
 const appKey = id => `uploads/apps/${id}.apk`, notesKey = id => `uploads/apps/${id}-notes.pdf`, fileKey = id => `uploads/files/${id}`, histKey = id => `history/${id}.json`;
 if (!CLOUD) for (const dir of ["uploads/apps", "uploads/files", "logs", "history"]) fs.mkdirSync(local(dir), { recursive: true });
 
-let devices = {};
+let devices = Object.create(null); // keyed by the id a device sends: no prototype, so "__proto__" can't reach Object.prototype
 const portal = { events: [], alerts: [], tasks: [], tokens: [], apps: [], files: [], sites: [], pending: [], users: [], announcements: [], whatsapp: [], waOutbox: [], waHistory: [], kioskApp: null,
   technicians: [], tickets: [], ticketSeq: 0, ticketSettings: {}, assistant: {}, relayProfiles: {}, maintImage: null, barriers: {}, barrierLog: [] };
 // Every device has a 4-digit Device ID (d.code) shown on its screen. An admin can create one in the portal first
@@ -222,7 +224,8 @@ const totpOk = (secret, code, t = Date.now()) => [-1, 0, 1].some(k => same(totp(
 // The cookie must be called __session: Firebase Hosting drops every other cookie.
 const sessions = new Map();
 const sessionId = req => (/(?:^|;\s*)__session=([a-f0-9]{64})/.exec(req.headers.cookie || "") || [])[1];
-const cookie = (value, maxAge) => `__session=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${CLOUD ? "; Secure" : ""}`;
+// Secure whenever the browser reached us over https (the cloud, or Caddy in front of mdm.gbotz.site); plain http on the LAN must keep working.
+const cookie = (req, value, maxAge) => `__session=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${CLOUD || req.headers["x-forwarded-proto"] === "https" ? "; Secure" : ""}`;
 // Behind Firebase Hosting every request comes from Google's proxy; the client address is in these headers.
 // Behind the Cloudflare tunnel (start-server.bat) requests come from this PC itself, the client is in CF-Connecting-IP.
 // Only trusted from loopback, so a LAN device can't fake it.
@@ -241,8 +244,11 @@ function whoIs(req) {
   // Basic auth still accepted for scripts (curl -u admin:password), ADMIN_USER only.
   const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
   if (!m) return null;
-  const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":");
-  return same(user, ADMIN_USER) && rootPw(rest.join(":")) ? ROOT : null;
+  const [user, ...rest] = Buffer.from(m[1], "base64").toString().split(":"), ip = ipOf(req);
+  if (loginBlocked(ip)) return null; // same lockout as the sign-in page: 5 wrong tries, then a minute's wait
+  if (same(user, ADMIN_USER) && rootPw(rest.join(":"))) { failures.delete(ip); return ROOT; }
+  loginFailed(ip);
+  return null;
 }
 // AGENT_KEY: a second key for PC agents (Windows / Linux), so the tablets' key (built into the app) stays private.
 // Not set in the environment: the server makes one on first start and keeps it in portal.json.
@@ -272,22 +278,21 @@ function send(res, status, body, type = "application/json") {
   res.end(out);
 }
 
+// too big: a clear 413 answer instead of cutting the connection (the rest of the upload is read and dropped)
+const tooBig = limit => Object.assign(new Error(`too large (over ${Math.round(limit / 1024)} KB)`), { status: 413 });
 function readBody(req, limit = 64 * 1024) {
   // Cloud Functions has already read the body into req.rawBody.
-  if (req.rawBody) return req.rawBody.length > limit ? Promise.reject(new Error("too large")) : Promise.resolve(req.rawBody);
+  if (req.rawBody) return req.rawBody.length > limit ? Promise.reject(tooBig(limit)) : Promise.resolve(req.rawBody);
   if (CLOUD) return Promise.resolve(Buffer.alloc(0));
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
-    req.on("data", c => {
-      size += c.length;
-      if (size > limit) { reject(new Error("too large")); req.destroy(); } else chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("data", c => { size += c.length; if (size <= limit) chunks.push(c); else chunks.length = 0; });
+    req.on("end", () => size > limit ? reject(tooBig(limit)) : resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
 }
-const readJson = async (req, limit) => JSON.parse((await readBody(req, limit)).toString() || "{}");
+const readJson = async (req, limit) => { const v = JSON.parse((await readBody(req, limit)).toString() || "{}"); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; };
 
 const digestInfo = (size, hash) => {
   const digest = hash.digest();
@@ -447,6 +452,8 @@ function setSsh(d, on, by) {
 }
 
 // target: { ids: [...] } | { group: "x" } | { type: "telpo" } | { all: true }
+// Commands only administrators may send (shell, files, wipe, lost mode, ADB): single, bulk and scheduled alike.
+const ADMIN_ONLY = ["run", "term", "wipe", "lost", "found", "browse", "pull", "adbwifi"];
 function pick(target = {}) {
   const all = Object.values(devices);
   if (Array.isArray(target.ids)) return target.ids.map(id => devices[id]).filter(Boolean);
@@ -474,7 +481,8 @@ function signageOf(d) {
 // What a tablet uses: its own values, else its site's.
 function settingsOf(d) {
   const site = portal.sites.find(x => x.name === d.group)?.settings || {}, own = d.settings || {}, set = v => v === "" ? null : v;
-  return Object.fromEntries(SETTING_KEYS.map(k => [k, set(own[k]) ?? set(site[k]) ?? null]));
+  // language: "" = the tablet's own default (the app reads JSON null as the text "null" and set that as its locale)
+  return Object.fromEntries(SETTING_KEYS.map(k => [k, set(own[k]) ?? set(site[k]) ?? (k === "language" ? "" : null)]));
 }
 
 function commandFrom(body) {
@@ -1122,31 +1130,76 @@ async function tick() {
   pullLogs();
   waRemind();
   waSend().catch(e => console.error("whatsapp:", e.message));
+  maxLearnDaily();
   await flush();
 }
 
-// ---- Max, the portal assistant (Claude API) ----
-// The key stays on the server (ANTHROPIC_API_KEY); without it the portal works as before and Max says it isn't set up.
-// Max only reads, through the same site/module checks as the portal pages. For anything that changes something it can
+// ---- Aux learning (built-in Aux): every question is recorded in max-questions.jsonl. A wording he didn't understand
+// is taught the question that did work: by an admin (Configuration › Aux training) or at the end of each day, when the
+// same person got an answer by rewording it within 2 minutes. portal.maxTeach: normalised question -> question to answer.
+const MAX_LOG = path.join(DATA_DIR, "max-questions.jsonl");
+const maxNorm = q => String(q).toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
+const maxMissed = new Map(); // username -> the last question he didn't understand
+function maxRecord(u, q, r) {
+  const e = { at: Date.now(), user: u.username, q, ok: !r.unknown, ...(r.taught ? { taught: r.taught } : {}) };
+  const miss = maxMissed.get(u.username);
+  if (e.ok && miss && e.at - miss.at < 120000) e.rephrased = miss.q; // missed that one, then this wording worked
+  if (e.ok) maxMissed.delete(u.username); else maxMissed.set(u.username, e);
+  fs.appendFile(MAX_LOG, JSON.stringify(e) + "\n", () => {});
+}
+function maxReadLog(since) { // ponytail: reads the whole file; rotate it if it ever passes a few MB
+  try { return fs.readFileSync(MAX_LOG, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)).filter(e => e.at >= since); } catch { return []; }
+}
+// a taught wording: the same words, or all of them (one may be missing in 6+) plus at most 2 more ("is", "please")
+function maxTaught(q) {
+  const teach = portal.maxTeach || {}, n = maxNorm(q);
+  if (teach[n]) return teach[n];
+  const w = new Set(n.split(" "));
+  for (const [k, v] of Object.entries(teach)) {
+    const kw = k.split(" "), same = kw.filter(x => w.has(x)).length;
+    if (kw.length >= 3 && same >= kw.length - (kw.length >= 6 ? 1 : 0) && w.size - same <= 2) return v;
+  }
+  return null;
+}
+let maxLearnDay = "";
+function maxLearnDaily() {
+  const z = zoned(), day = z.toDateString();
+  if (z.getHours() < 23 || z.getMinutes() < 30 || maxLearnDay === day) return; // 23:30 every day
+  maxLearnDay = day;
+  const teach = (portal.maxTeach ||= {}), learned = [];
+  for (const e of maxReadLog(Date.now() - 24 * 3600000)) {
+    const k = maxNorm(e.rephrased || "");
+    if (k && !teach[k] && k !== maxNorm(e.q)) { teach[k] = e.taught || e.q; learned.push(`"${e.rephrased}" → "${teach[k]}"`); }
+  }
+  if (!learned.length) return;
+  dirty = true;
+  log(null, "assistant", `Aux learned ${learned.length} new wording${learned.length === 1 ? "" : "s"} today: ${learned.slice(0, 10).join("; ")}`);
+}
+
+// ---- Aux, the portal assistant (Claude API) ----
+// The key stays on the server (ANTHROPIC_API_KEY); without it the portal works as before and Aux says it isn't set up.
+// Aux only reads, through the same site/module checks as the portal pages. For anything that changes something it can
 // only propose an action: the portal shows a Confirm button that calls the normal endpoint, as the signed-in user.
 const ASSISTANT_KEY = process.env.ANTHROPIC_API_KEY || "";
 const ASSISTANT_URL = process.env.ANTHROPIC_URL || "https://api.anthropic.com/v1/messages";
 const assistantOn = () => portal.assistant.enabled !== false;
+// Aux's spoken voice: OpenAI's natural (ChatGPT) voices when OPENAI_API_KEY is set, else the browser's own voice.
+const TTS_KEY = process.env.OPENAI_API_KEY || "", TTS_VOICE = process.env.OPENAI_TTS_VOICE || "ash";
 const assistantModel = () => portal.assistant.model || process.env.ASSISTANT_MODEL || "claude-haiku-5-5";
-const ASSISTANT_PER_MIN = 10, assistantUse = new Map(); // per minute with the Claude API (costs money); the built-in Max allows 60/min and no daily cap. username -> { min, minN, day, dayN }
+const ASSISTANT_PER_MIN = 10, assistantUse = new Map(); // per minute with the Claude API (costs money); the built-in Aux allows 60/min and no daily cap. username -> { min, minN, day, dayN }
 function assistantAllowed(u) {
   const now = Date.now(), day = zoned().toDateString(), x = assistantUse.get(u.username) || { min: 0, minN: 0, day, dayN: 0 };
   if (now - x.min > 60000) Object.assign(x, { min: now, minN: 0 });
   if (x.day !== day) Object.assign(x, { day, dayN: 0 });
   const daily = Number(portal.assistant.dailyLimit) || 200;
-  if (x.minN >= (ASSISTANT_KEY ? ASSISTANT_PER_MIN : 60)) return "Max is getting a lot of questions; wait a minute.";
-  if (ASSISTANT_KEY && x.dayN >= daily) return `You've reached today's limit of ${daily} questions to Max.`;
+  if (x.minN >= (ASSISTANT_KEY ? ASSISTANT_PER_MIN : 60)) return "Aux is getting a lot of questions; wait a minute.";
+  if (ASSISTANT_KEY && x.dayN >= daily) return `You've reached today's limit of ${daily} questions to Aux.`;
   x.minN++;
   x.dayN++;
   assistantUse.set(u.username, x);
   return null;
 }
-const MAX_SYSTEM = `You are Max, the friendly assistant inside the Interlock device portal (an MDM for intercom and kiosk tablets at condominium and commercial sites in Singapore).
+const MAX_SYSTEM = `You are Aux, the friendly assistant inside the Interlock device portal (an MDM for intercom and kiosk tablets at condominium and commercial sites in Singapore).
 Answer questions about devices, sites, alerts, maintenance tickets and the technical team using ONLY the tools. Never invent devices, numbers, names or statuses; if a tool returns nothing, say so.
 Keep answers short and plain: a sentence or two, then a list or a small Markdown table when there are several items. Refer to a device as [[device:CODE]] (its 4-digit Device ID) and a ticket as [[ticket:T-00001]] so the portal shows links.
 You cannot change anything yourself. When the user asks for an action (restart a device, maintenance on/off, door relay, assign or close a ticket), look up the exact device or ticket first, then call propose_action. The portal then shows the user a Confirm button; tell them to press it, and never say the action is done.
@@ -1252,7 +1305,7 @@ function maxTool(u, name, a, out) {
       if (act === "close_ticket") {
         if (!(u.admin || u.closeTickets)) return { error: "This account isn't allowed to close tickets" };
         if (t.status !== "resolved") return { error: `${t.no} is ${STATUS[t.status]}; only resolved tickets can be closed` };
-        out.push({ label: `Close ticket ${t.no} (${t.title})`, path: `/api/tickets/${t.id}/status`, body: { to: "closed", text: String(a.reason || "Closed via Max").slice(0, 500) } });
+        out.push({ label: `Close ticket ${t.no} (${t.title})`, path: `/api/tickets/${t.id}/status`, body: { to: "closed", text: String(a.reason || "Closed via Aux").slice(0, 500) } });
       } else {
         const s = String(a.technician || "").toLowerCase(), tech = portal.technicians.find(x => x.active && x.name.toLowerCase() === s) || portal.technicians.find(x => x.active && x.name.toLowerCase().includes(s));
         if (!tech) return { error: "No active technician with that name" };
@@ -1279,7 +1332,7 @@ function maxTool(u, name, a, out) {
   }
   return { error: "unknown tool" };
 }
-// Built-in Max (no API key, nothing leaves this server): recognises the usual questions about our own data and answers
+// Built-in Aux (no API key, nothing leaves this server): recognises the usual questions about our own data and answers
 // from the same permission-checked tools. Anything else gets a list of what it can answer.
 // ponytail: keyword matching, not language understanding; set ANTHROPIC_API_KEY for free-form questions.
 const WORD_NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, half: 0.5 };
@@ -1287,7 +1340,7 @@ function localMax(u, q) {
   const out = [], used = [], t = q.toLowerCase().replace(/[?!.,]/g, " ").replace(/\s+/g, " ").trim();
   const run = (name, args = {}) => { used.push(name); return maxTool(u, name, args, out); };
   const has = (...w) => w.some(x => new RegExp(`\\b${x}`).test(t));
-  // Where the portal takes the user for this answer: page (hash), list filters, the element Max flies to and points at
+  // Where the portal takes the user for this answer: page (hash), list filters, the element Aux flies to and points at
   // (a CSS selector, or { site }), and the short line he says there. The full answer stays in the chat.
   let nav = null;
   const go = (hash, target, say, set) => { nav = { hash, target, say, ...set }; };
@@ -1316,9 +1369,11 @@ function localMax(u, q) {
     const tech = portal.technicians.filter(x => x.active && t.includes(x.name.toLowerCase().split(" ")[0])).sort((a, b) => b.name.length - a.name.length)[0];
     return tech ? act("assign_ticket", { ticket: tno, technician: tech.name }) : reply("Who to? Say the technician's name, e.g. \"assign T-00012 to Ahmad\".");
   }
-  if (has("close") && tno) return act("close_ticket", { ticket: tno, reason: "Closed via Max" });
+  if (has("close") && tno) return act("close_ticket", { ticket: tno, reason: "Closed via Aux" });
 
   // ---- questions ----
+  if (has("who") && has("creat", "made", "make", "built", "build", "develop", "design", "program", "invent") || has("your creator", "your developer", "your maker"))
+    return reply("Ashik created me to help you. How can I help you?");
   if (tno) {
     const r = run("ticket_details", { ticket: tno });
     if (r.error) return reply(r.error);
@@ -1335,6 +1390,39 @@ function localMax(u, q) {
       + (r.openAlerts.length ? `\n\nOpen alerts:\n${r.openAlerts.map(a => `- ${a.text}`).join("\n")}` : "")
       + (Array.isArray(r.openTickets) && r.openTickets.length ? `\n\nOpen tickets:\n${tl(r.openTickets)}` : ""));
   }
+  // "open Adam Park", "is Adam Park ok": a site the user can see, named in a question that isn't about its tickets/alerts/devices -> its page
+  const siteHit = portal.sites.map(x => x.name).filter(n => n && siteOk(u, n) && t.includes(n.toLowerCase())).sort((a, b) => b.length - a.length)[0];
+  const siteName = !has("ticket", "alert", "offline", "online", "technician", "device", "tablet", "battery", "storage") && siteHit;
+  if (siteName) {
+    const site = run("sites_summary").sites.find(x => x.site === siteName) || { site: siteName, devices: 0, online: 0, openTickets: 0 };
+    const s = `${site.site}: ${site.devices ? `${site.online} of ${site.devices} device${site.devices === 1 ? "" : "s"} online` : "no devices yet"}${site.openTickets ? `, ${site.openTickets} open ticket${site.openTickets === 1 ? "" : "s"}` : ""}.`;
+    go(`#/site/${encodeURIComponent(site.site)}`, "#view h2", s);
+    const rest = s.slice(site.site.length + 2);
+    return reply(`Opening **${site.site}**. ${rest[0].toUpperCase() + rest.slice(1)}`);
+  }
+  if (siteHit && has("device", "tablet") && !has("offline", "down", "online")) {
+    const r = run("list_devices", { site: siteHit, limit: 50 });
+    go(`#/site/${encodeURIComponent(siteHit)}`, "#view h2", `${siteHit}: ${r.total} device${r.total === 1 ? "" : "s"}`);
+    return answer(r, `${siteHit} has no devices yet.`, `**${r.total}** device${r.total === 1 ? "" : "s"} at ${siteHit}:`, dl);
+  }
+  if (has("site", "building") && has("list", "all", "every", "how many", "show") && !has("offline", "most", "worst")) {
+    const r = run("sites_summary"), list = portal.sites.filter(x => siteOk(u, x.name)) // every site, also the ones without devices yet
+      .map(x => r.sites.find(y => y.site === x.name) || { site: x.name, devices: 0, online: 0, openTickets: 0 });
+    go("#/sites", "#view h2", `${list.length} site${list.length === 1 ? "" : "s"}`);
+    return reply(list.length ? `**${list.length}** site${list.length === 1 ? "" : "s"}:\n\n${list.map(x => `- ${x.site} · ${x.online} of ${x.devices} online${x.openTickets ? ` · ${x.openTickets} open ticket${x.openTickets === 1 ? "" : "s"}` : ""}`).join("\n")}` : "No sites yet. Add one on the Sites page.");
+  }
+  if (has("battery", "batteries") && has("low", "flat", "dying", "empty", "below", "under", "weak")) {
+    const list = vis.filter(d => d.battery != null && d.battery < 20 && (!siteHit || d.group === siteHit)).sort((a, b) => a.battery - b.battery);
+    used.push("list_devices");
+    go("#/devices", "#view tbody tr.click", list.length ? `${list.length} with a low battery` : "No low batteries 🔋");
+    return reply(list.length ? `**${list.length}** device${list.length === 1 ? " has" : "s have"} a low battery (under 20%):\n\n${list.slice(0, 30).map(d => `- [[device:${d.code}]] · ${d.battery}%${d.charging ? " · charging" : ""}`).join("\n")}` : "No device has a low battery. 🔋");
+  }
+  if (has("storage", "disk", "rom", "space", "memory") && has("full", "almost", "low", "running out", "high", "nearly")) {
+    const list = vis.filter(d => d.disk != null && d.disk >= 85 && (!siteHit || d.group === siteHit)).sort((a, b) => b.disk - a.disk);
+    used.push("list_devices");
+    go("#/devices", "#view tbody tr.click", list.length ? `${list.length} nearly full` : "Storage is fine everywhere");
+    return reply(list.length ? `**${list.length}** device${list.length === 1 ? " is" : "s are"} nearly full (85%+ storage used):\n\n${list.slice(0, 30).map(d => `- [[device:${d.code}]] · ${d.disk}% used`).join("\n")}` : "Every device has enough storage (all under 85% used).");
+  }
   if (has("site") && has("offline", "most", "worst", "which", "summary", "health")) {
     // Just the site name(s) with the most offline devices and each one's last three offline alerts (read aloud).
     const r = run("sites_summary"), top = r.sites[0];
@@ -1346,12 +1434,15 @@ function localMax(u, q) {
     return reply(text);
   }
   if (has("offline", "down", "not online", "disconnected")) {
-    const m = /(?:more than|over|longer than|at least)?\s*(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|half)\s*(?:an\s*)?(hour|hr|h\b|minute|min|day)/.exec(t);
-    const mins = m ? (Number(m[1]) || WORD_NUM[m[1]] || 1) * ({ hour: 60, hr: 60, h: 60, minute: 1, min: 1, day: 1440 }[m[2].replace(/\b$/, "")] || 60) : 0;
-    const r = run("list_devices", { status: "offline", offline_for_minutes: mins, limit: 50 });
-    go("#/devices", "#view tbody tr.click", r.total ? `${r.total} offline${mins ? ` for more than ${m[1]} ${m[2]}` : ""}: here they are` : "Nothing offline 🎉", { devices: { status: "offline" } });
-    return answer(r, mins ? `No device has been offline for more than ${m[1]} ${m[2]}.` : "All devices are online. 🎉",
-      `**${r.total}** device${r.total === 1 ? " is" : "s are"} offline${mins ? ` for more than ${m[1]} ${m[2]}${/s$/.test(m[2]) ? "" : "(s)"}` : ""}:`, dl);
+    const m = /(?:more than|over|longer than|at least)?\s*(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|half)\s*(?:an?\s+)?(hours?|hrs?|h\b|minutes?|mins?|days?)/.exec(t);
+    const unit = m && { h: "hour", hr: "hour", min: "minute" }[m[2].replace(/s$/, "")] || m?.[2].replace(/s$/, "");
+    const amount = m ? Number(m[1]) || WORD_NUM[m[1]] || 1 : 0, mins = m ? amount * { hour: 60, minute: 1, day: 1440 }[unit] : 0;
+    const span = !m ? "" : m[1] === "half" ? `half ${unit === "hour" ? "an" : "a"} ${unit}` : `${amount} ${unit}${amount === 1 ? "" : "s"}`;
+    const at = siteHit ? ` at ${siteHit}` : "";
+    const r = run("list_devices", { status: "offline", offline_for_minutes: mins, site: siteHit, limit: 50 });
+    go("#/devices", "#view tbody tr.click", r.total ? `${r.total} offline${at}${mins ? ` for more than ${span}` : ""}: here they are` : "Nothing offline 🎉", { devices: { status: "offline" } });
+    return answer(r, mins ? `No device${at} has been offline for more than ${span}.` : `All devices${at} are online. 🎉`,
+      `**${r.total}** device${r.total === 1 ? " is" : "s are"} offline${at}${mins ? ` for more than ${span}` : ""}:`, dl);
   }
   if (has("online")) {
     const r = run("list_devices", { status: "online", limit: 50 });
@@ -1408,16 +1499,29 @@ function localMax(u, q) {
     go("#/activity", "#view tbody tr", "Here's everything that happened, newest first");
     return r.events.length ? reply(`Latest activity:\n\n${r.events.map(e => `- ${e.at} · ${e.text}`).join("\n")}`) : reply("Nothing in the last 24 hours.");
   }
+  // "open settings", "go to the bug finder page": a portal page by name
+  const PAGES = { overview: ["home", "overview", "dashboard", "main page"], devices: ["devices", "device list", "all devices"], sites: ["sites", "all sites", "site list"],
+    alerts: ["alerts"], tasks: ["scheduled tasks", "tasks", "schedules"], apps: ["apps and files", "apps", "files", "apps & files", "apk"], announcements: ["announcements", "announcement"],
+    enroll: ["enrollment", "enroll", "enrol", "qr", "qr code", "add device"], activity: ["activity", "activity log", "logs"], reports: ["reports", "report"],
+    bugs: ["bug finder", "bugs", "crashes"], config: ["configuration", "config", "settings"], users: ["users", "accounts", "users and access", "access"],
+    "team/tickets": ["tickets"], "team/dashboard": ["technical team", "team"] };
+  const rest = t.replace(/\b(can|could|you|pls|please|plz|open|go|to|the|show|me|take|page|view|i|want|need|my|of|screen|tab)\b/g, " ").replace(/\s+/g, " ").trim();
+  const page = has("open", "go to", "take me", "show", "page") && Object.keys(PAGES).find(k => PAGES[k].includes(rest));
+  if (page) {
+    const nm = PAGES[page][0], Nm = nm[0].toUpperCase() + nm.slice(1);
+    go(`#/${page}`, "#view h2", `Here's ${nm}.`);
+    return reply(`Opening **${Nm}**.`);
+  }
   if (has("how many", "count", "total", "devices", "status", "overview", "fleet")) {
     const r = run("list_devices", { status: "all", limit: 1 }), off = run("list_devices", { status: "offline", limit: 1 }).total;
     go("#/overview", "#view .stats", `${r.total} devices: ${r.total - off} online, ${off} offline`);
     return reply(`You have **${r.total}** device${r.total === 1 ? "" : "s"}: ${r.total - off} online, ${off} offline.`);
   }
   if (has("hi", "hello", "hey", "thanks", "thank you")) return reply("Hi! Ask me about your devices, sites, alerts, tickets or the technical team.");
-  return reply("I only answer questions about this portal's own data. Try:\n\n- Which devices are offline?\n- Devices offline for more than 1 hour\n- Which sites have the most offline devices?\n- Show the open tickets / tickets awaiting closure\n- Who is available in the technical team?\n- What is the status of device 5846?\n- Show me the latest alerts\n- Summarise today's technical work\n- Restart device 5846 / close T-00012 (you confirm first)");
+  return { ...reply("I only answer questions about this portal's own data. Try:\n\n- Which devices are offline?\n- Devices offline for more than 1 hour\n- Which sites have the most offline devices?\n- Show the open tickets / tickets awaiting closure\n- Who is available in the technical team?\n- What is the status of device 5846?\n- Show me the latest alerts\n- Summarise today's technical work\n- Restart device 5846 / close T-00012 (you confirm first)"), unknown: true };
 }
 
-// Claude mode: the page that matches the last tool Max used (same places as the built-in Max).
+// Claude mode: the page that matches the last tool Aux used (same places as the built-in Aux).
 function navFor(u, call, text) {
   if (!call) return null;
   const a = call.input, say = String(text || "").replace(/\[\[(?:device|ticket):([^\]]+)\]\]/g, "$1").replace(/[*|#]/g, "").split(/\n|(?<=\.) /)[0].slice(0, 140);
@@ -1438,17 +1542,22 @@ function navFor(u, call, text) {
   }
 }
 async function askMax(u, history) {
+  history = history.filter(m => m && typeof m === "object");
   if (!ASSISTANT_KEY) {
     const last = [...history].reverse().find(m => m.role !== "assistant");
-    if (!last?.text) throw fail(400, "Ask Max something");
-    return localMax(u, String(last.text).slice(0, 500));
+    if (!String(last?.text || "").trim()) throw fail(400, "Ask Aux something");
+    const q = String(last.text).slice(0, 500), taught = maxTaught(q);
+    const r = localMax(u, taught || q);
+    if (taught) r.taught = taught;
+    maxRecord(u, q, r);
+    return r;
   }
   const messages = history.slice(-12).map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.text || "").slice(0, 2000) })).filter(m => m.content);
   while (messages.length && messages[0].role !== "user") messages.shift();
-  if (!messages.length || messages[messages.length - 1].role !== "user") throw fail(400, "Ask Max something");
+  if (!messages.length || messages[messages.length - 1].role !== "user") throw fail(400, "Ask Aux something");
   const system = `${MAX_SYSTEM}\n\nThe user is ${u.name || u.username}${u.admin ? " (administrator)" : ""}. Time now: ${waTime(Date.now())} (${TIME_ZONE}).`;
   const proposals = [], used = [];
-  let lastCall = null; // the last data Max looked at decides where the portal goes
+  let lastCall = null; // the last data Aux looked at decides where the portal goes
   for (let turn = 0; turn < 6; turn++) {
     const r = await fetch(ASSISTANT_URL, {
       method: "POST", signal: AbortSignal.timeout(60000),
@@ -1575,7 +1684,7 @@ async function openBarrier(site, k, by) {
 
 // Loads the saved data. The office PC also adds the built kiosk APK on first run.
 const ready = (async () => {
-  devices = JSON.parse((await store.read("devices.json")) || "{}");
+  devices = Object.assign(Object.create(null), JSON.parse((await store.read("devices.json")) || "{}"));
   Object.assign(portal, JSON.parse((await store.read("portal.json")) || "{}"));
   bugs = JSON.parse((await store.read("bugs.json")) || "[]");
   await Promise.all(Object.values(devices).map(async d => {
@@ -1609,14 +1718,16 @@ async function handler(req, res) {
     // ---------------- device endpoints (device key) ----------------
     if (req.method === "POST" && p === "/api/report") {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
-      const body = await readJson(req);
-      if (typeof body.id !== "string" || !/^[\w-]{8,64}$/.test(body.id)) return send(res, 400, { error: "bad id" });
+      const body = await readJson(req, 512 * 1024);
+      if (typeof body.id !== "string" || !/^[\w-]{8,64}$/.test(body.id) || /^(__proto__|constructor|prototype)$/.test(body.id)) return send(res, 400, { error: "bad id" });
       const fresh = !devices[body.id];
       const d = devices[body.id] || (devices[body.id] = { id: body.id, firstSeen: Date.now() });
       const wasOnline = d.lastSeen && Date.now() - d.lastSeen < ONLINE_MS;
       // when the app version changed and from what (Apps & files page: "installed / updated on" for each device)
       if (body.appVersion && body.appVersion !== d.appVersion) { d.appFrom = d.appVersion || null; d.appSince = Date.now(); }
-      for (const k of REPORT_FIELDS) if (k in body) d[k] = body[k];
+      for (const k of REPORT_FIELDS) if (Object.hasOwn(body, k)) d[k] = body[k];
+      // numbers must be numbers (a bad value would show as NaN or break the maps and charts)
+      for (const k of ["lat", "lng", "accuracy", "battery", "cpu", "ram", "disk", "temp", "signal", "uptime", "locationTime"]) if (d[k] != null && !Number.isFinite(d[k])) delete d[k];
       // the app reports its top apps as "usage", but d.usage is the onsite / tech setting
       if (Array.isArray(body.usage)) d.appUsage = body.usage;
       if (Array.isArray(d.usage)) delete d.usage;
@@ -1627,7 +1738,7 @@ async function handler(req, res) {
           rustdeskId: /^\d{6,12}$/.test(r.rustdeskId || "") ? r.rustdeskId : null, log: String(r.log || "").slice(0, 200), at: Date.now() };
       } else delete d.remote;
       // Device IP: only a real LAN IPv4 from this check-in; a missing one is cleared rather than shown stale.
-      if (!("localIp" in body) || !/^(\d{1,3}\.){3}\d{1,3}$/.test(d.localIp) || /^(0\.|127\.|169\.254\.)/.test(d.localIp)) delete d.localIp;
+      if (!("localIp" in body) || !/^(\d{1,3}\.){3}\d{1,3}$/.test(d.localIp) || d.localIp.split(".").some(n => n > 255) || /^(0\.|127\.|169\.254\.)/.test(d.localIp)) delete d.localIp;
       for (const k of ["info", "relayInfo"]) if (d[k] !== undefined && (!d[k] || typeof d[k] !== "object" || Array.isArray(d[k]))) delete d[k];
       // Model / usage chosen on the tablet: sent only after a change there, so a portal edit isn't undone by the next check-in.
       if (body.config && typeof body.config === "object") setConfig(d, body.config, "the device");
@@ -1924,23 +2035,29 @@ async function handler(req, res) {
       const sid = crypto.randomBytes(32).toString("hex");
       sessions.set(sid, { exp: Date.now() + SESSION_MS, user });
       if (acct && user) { acct.lastLogin = Date.now(); dirty = true; }
-      res.setHeader("Set-Cookie", cookie(sid, SESSION_MS / 1000));
+      res.setHeader("Set-Cookie", cookie(req, sid, SESSION_MS / 1000));
       return send(res, 200, { ok: true });
     }
     if (req.method === "POST" && p === "/api/logout") {
       sessions.delete(sessionId(req));
-      res.setHeader("Set-Cookie", cookie("", 0));
+      res.setHeader("Set-Cookie", cookie(req, "", 0));
       return send(res, 200, { ok: true });
     }
 
     const page = req.method === "GET" && STATIC[p];
     if (page && (PUBLIC_PAGES.includes(p) || whoIs(req))) {
-      // images and the 3D Max model (6 MB) may be cached for a day; pages never are
+      // images and the 3D Aux model (6 MB) may be cached for a day; pages never are
       if (/\.(png|glb|wav)$/.test(p)) {
         res.writeHead(200, { "Content-Type": page[1], "Cache-Control": "public, max-age=86400" });
         return res.end(fs.readFileSync(path.join(DASHBOARD_DIR, page[0])));
       }
-      return send(res, 200, fs.readFileSync(path.join(DASHBOARD_DIR, page[0])), page[1]);
+      let html = fs.readFileSync(path.join(DASHBOARD_DIR, page[0]));
+      // Configuration > Login page: Yeti off = the page shows the app icon instead (marked here, so he never flashes in)
+      // and the chosen theme's accent colour (hex, checked when saved)
+      const th = (portal.theme?.custom || []).find(t => t.id === portal.theme.current);
+      if (p === "/login" && (portal.yetiOff || th)) html = String(html).replace("<html lang=\"en\">", `<html lang="en"${portal.yetiOff ? " data-noyeti" : ""}${th
+        ? ` style="--accent:${th.accent};--accent2:color-mix(in srgb, ${th.accent} 65%, #fff)"` : ""}>`);
+      return send(res, 200, html, page[1]);
     }
     if (page) {
       res.writeHead(302, { Location: "/login" });
@@ -2000,13 +2117,13 @@ async function handler(req, res) {
         agentKey: u.admin ? agentKey() || null : undefined, // shown in "Add device" for Windows / Linux / IoT
         lan: CLOUD ? null : Object.values(require("os").networkInterfaces()).flat().find(x => x.family === "IPv4" && /^192\.168\./.test(x.address))?.address,
         models: MODELS, relayProfiles: Object.fromEntries(MODELS.map(m => [m, modelProfile(m)])), relayEdited: Object.keys(portal.relayProfiles || {}),
-        relayIfaces: RELAY_IFACES, maintImage: maintVersion(), maintCustom: !!portal.maintImage,
+        relayIfaces: RELAY_IFACES, maintImage: maintVersion(), maintCustom: !!portal.maintImage, showTour: !!portal.showTour, yeti: !portal.yetiOff, theme: portal.theme || { current: "classic", custom: [] },
         categories: CATEGORIES, priorities: PRIORITIES, statuses: STATUS, flow: FLOW,
         technicians: can(u, "team", "devices") ? portal.technicians.map(({ apikey, ...t }) => ({ ...t, hasKey: !!apikey, ...techState(t) })) : [],
         ticketCounts: can(u, "team") ? ticketCounts(myTickets()) : null,
         ticketSettings: can(u, "team") ? tset() : null,
         canClose: !!(u.admin || u.closeTickets),
-        assistant: { on: assistantOn(), configured: !!ASSISTANT_KEY, allowed: can(u, "assistant"), ...(u.admin ? { model: assistantModel(), enabled: portal.assistant.enabled !== false, dailyLimit: Number(portal.assistant.dailyLimit) || 200 } : {}) },
+        assistant: { on: assistantOn(), configured: !!ASSISTANT_KEY, allowed: can(u, "assistant"), tts: !!TTS_KEY, ...(u.admin ? { model: assistantModel(), enabled: portal.assistant.enabled !== false, dailyLimit: Number(portal.assistant.dailyLimit) || 200 } : {}) },
       });
     }
     if (req.method === "GET" && p === "/api/bugs") {
@@ -2058,6 +2175,29 @@ async function handler(req, res) {
       log(null, "maintenance", `Maintenance screen image ${portal.maintImage ? "changed" : "reset to the default poster"} by ${by}`);
       dirty = true;
       return send(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && p === "/api/config/theme") {
+      // Portal look for everyone: a built-in (classic / animated / embossed) or an admin-made theme = one of those + an accent colour
+      if (!u.admin) return deny("Only admins can change the theme");
+      const custom = (Array.isArray(body.custom) ? body.custom : []).slice(0, 30).map(t => ({
+        id: String(t.id || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40), name: String(t.name || "").trim().slice(0, 40),
+        base: String(t.base || ""), accent: String(t.accent || "") }));
+      if (custom.some(t => !t.id || !t.name || !LOOKS.includes(t.base) || !/^#[0-9a-f]{6}$/i.test(t.accent))) return send(res, 400, { error: "each theme needs a name, a style and a colour" });
+      const current = String(body.current || "classic");
+      if (!LOOKS.includes(current) && !custom.some(t => t.id === current)) return send(res, 400, { error: "pick a theme" });
+      portal.theme = { current, custom };
+      return ok();
+    }
+    if (req.method === "POST" && p === "/api/config/yeti") {
+      if (!u.admin) return deny("Only admins can change this");
+      portal.yetiOff = !body.on;
+      return ok();
+    }
+    if (req.method === "POST" && p === "/api/config/tour") {
+      // Overview's "Watch the 2-min tour" button: hidden for everyone unless an admin turns it on
+      if (!u.admin) return deny("Only admins can change this");
+      portal.showTour = !!body.on;
+      return ok();
     }
     if (req.method === "POST" && p === "/api/config/relay") {
       // Relay profile for a whole device model; devices with their own verified setup (relayCfg) keep it on top.
@@ -2187,6 +2327,7 @@ async function handler(req, res) {
     }
     if (req.method === "POST" && p === "/api/devices/new") {
       if (!can(u, "devices", "enroll") || !siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
+      if (String(body.group || "").trim() && !portal.sites.some(x => x.name === String(body.group).trim())) return send(res, 400, { error: "no such site" });
       const slot = { code: newCode(), name: String(body.name || "").slice(0, 80).trim(), group: String(body.group || "").slice(0, 60).trim(), createdAt: Date.now() };
       portal.pending.push(slot);
       log(null, "enroll", `Device ID ${slot.code} created${slot.name ? " for " + slot.name : ""}, waiting for the device to link`);
@@ -2197,7 +2338,7 @@ async function handler(req, res) {
       portal.pending = portal.pending.filter(x => x.code !== body.code || !siteOk(u, x.group));
       return ok();
     }
-    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|ssh|delete|config|relaycfg)$/.exec(p);
+    m = /^\/api\/devices\/([\w-]+)\/(command|name|group|relaylink|ssh|delete|config|relaycfg|pin)$/.exec(p);
     if (req.method === "POST" && m) {
       const d = devices[m[1]];
       if (!d || !sees(u, d)) return send(res, 404, { error: "no such device" });
@@ -2232,7 +2373,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
-        if ((body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "browse" || body.type === "pull" || body.type === "adbwifi") && !u.admin) return deny("Only admins can do this");
+        if (ADMIN_ONLY.includes(body.type) && !u.admin) return deny("Only admins can do this");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
@@ -2242,10 +2383,18 @@ async function handler(req, res) {
         log(d.id, "relay", `Relay follows maintenance mode: ${d.relayLink ? "yes" : "no"} (by ${by})`);
       } else if (m[2] === "ssh") {
         setSsh(d, !!body.on, by);
+      } else if (m[2] === "pin") {
+        // Fixed map spot for a tablet without GPS: the technician's phone location, taken next to the tablet. Not a
+        // report field, so check-ins never overwrite it; works with every app version.
+        const at = point(body.lat, body.lng);
+        if (!at && !body.clear) return send(res, 400, { error: "no location" });
+        d.pin = at ? { ...at, accuracy: Math.round(num(body.accuracy) || 0), at: Date.now(), by } : null;
+        log(d.id, "site", at ? `${label(d)} location pinned at ${at.lat.toFixed(5)}, ${at.lng.toFixed(5)} (by ${by})` : `${label(d)} pinned location cleared (by ${by})`);
       } else if (m[2] === "name") {
         d.name = String(body.name || "").slice(0, 80).trim();
       } else if (m[2] === "group") {
         if (!siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
+        if (String(body.group || "").trim() && !portal.sites.some(x => x.name === String(body.group).trim())) return send(res, 400, { error: "no such site" });
         d.group = String(body.group || "").slice(0, 60).trim();
       } else {
         delete devices[m[1]];
@@ -2259,7 +2408,7 @@ async function handler(req, res) {
       if (!can(u, "devices", "sites")) return deny();
       const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
-      if (body.action === "command" && (body.type === "run" || body.type === "term" || body.type === "wipe" || body.type === "lost" || body.type === "found" || body.type === "adbwifi") && !u.admin) return deny("Only admins can do this");
+      if (body.action === "command" && ADMIN_ONLY.includes(body.type) && !u.admin) return deny("Only admins can do this");
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");
@@ -2267,6 +2416,7 @@ async function handler(req, res) {
       }
       if (body.action === "group") {
         if (!siteOk(u, String(body.group || "").trim())) return deny("Pick one of your sites");
+        if (String(body.group || "").trim() && !portal.sites.some(x => x.name === String(body.group).trim())) return send(res, 400, { error: "no such site" });
         for (const d of list) d.group = String(body.group || "").slice(0, 60).trim();
         return ok({ count: list.length });
       }
@@ -2324,7 +2474,7 @@ async function handler(req, res) {
     }
     if (req.method === "POST" && p === "/api/sites") {
       if (!can(u, "sites") || (body.oldName ? !u.admin : !allSites(u))) return deny(); // only admins edit sites
-      const name = String(body.name || "").slice(0, 60).trim();
+      const name = typeof body.name === "string" ? body.name.slice(0, 60).trim() : "";
       if (!name) return send(res, 400, { error: "site name required" });
       const site = portal.sites.find(x => x.name.toLowerCase() === name.toLowerCase());
       const fields = { address: String(body.address || "").slice(0, 200).trim(), contact: String(body.contact || "").slice(0, 120).trim() };
@@ -2332,7 +2482,12 @@ async function handler(req, res) {
       const at = point(body.lat, body.lng);
       if (!at && (num(body.lat) !== null || num(body.lng) !== null)) return send(res, 400, { error: "Latitude -90..90 and longitude -180..180, or leave both empty" });
       Object.assign(fields, { lat: at?.lat ?? null, lng: at?.lng ?? null });
-      fields.geofence = body.geofence === "" || body.geofence == null ? null : Math.max(20, Math.min(50000, Math.round(Number(body.geofence)) || 0)) || null;
+      if (body.geofence === "" || body.geofence === null) fields.geofence = null;
+      else if (body.geofence !== undefined) {
+        const m = Number(body.geofence);
+        if (!Number.isFinite(m) || m < 0) return send(res, 400, { error: "Geofence: a distance in metres, or leave it empty" });
+        fields.geofence = m === 0 ? null : Math.max(20, Math.min(50000, Math.round(m))); // 0 = off
+      }
       // logo: a small image the portal already shrank to 128 px; "" removes it, left out keeps it.
       // ponytail: stored inline in portal.json and sent with every state refresh; fine for tens of sites
       if (body.logo === "") fields.logo = null;
@@ -2384,6 +2539,7 @@ async function handler(req, res) {
     }
     if (req.method === "POST" && p === "/api/sites/delete") {
       if (!u.admin) return deny(); // only admins delete sites
+      if (!portal.sites.some(x => x.name === body.name)) return send(res, 404, { error: "no such site" });
       for (const x of portal.users) x.sites = (x.sites || []).filter(s => s !== body.name);
       portal.sites = portal.sites.filter(x => x.name !== body.name);
       delete portal.barriers[body.name];
@@ -2404,10 +2560,11 @@ async function handler(req, res) {
       if (!can(u, "tasks") || !(allSites(u) || siteOk(u, body.target?.group))) return deny("Pick one of your sites as the target");
       const old = portal.tasks.find(x => x.id === body.id);
       if (old && !(allSites(u) || siteOk(u, old.target?.group))) return deny();
-      const days = (Array.isArray(body.days) ? body.days : []).map(Number).filter(n => n >= 0 && n <= 6);
-      if (!/^\d\d:\d\d$/.test(body.time || "") || !days.length) return send(res, 400, { error: "pick a time and at least one day" });
+      if (ADMIN_ONLY.includes(body.type) && !u.admin) return deny("Only admins can schedule this");
+      const days = [...new Set((Array.isArray(body.days) ? body.days : []).filter(x => /^[0-6]$/.test(String(x))).map(Number))];
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time || "") || !days.length) return send(res, 400, { error: "pick a time and at least one day" });
       const t = { id: /^[a-f0-9]{16}$/.test(body.id || "") ? body.id : rid(), name: String(body.name || body.type).slice(0, 80),
-        type: body.type, appId: body.appId, fileId: body.fileId, target: body.target || { all: true }, time: body.time, days,
+        type: body.type, appId: body.appId, fileId: body.fileId, target: allSites(u) ? body.target || { all: true } : { group: body.target.group }, time: body.time, days,
         enabled: body.enabled !== false };
       commandFrom(t); // validates the command
       const i = portal.tasks.findIndex(x => x.id === t.id);
@@ -2526,6 +2683,7 @@ async function handler(req, res) {
     m = /^\/api\/(apps|files)\/([a-f0-9]{16})\/(delete|kiosk)$/.exec(p);
     if (req.method === "POST" && m) {
       if (!can(u, "apps")) return deny();
+      if (!portal[m[1]].some(x => x.id === m[2])) return send(res, 404, { error: "no such upload" }); // an unknown kiosk app would break the enrollment QR
       if (m[3] === "kiosk" && m[1] === "apps") { portal.kioskApp = m[2]; return ok(); }
       portal[m[1]] = portal[m[1]].filter(x => x.id !== m[2]);
       store.remove(m[1] === "apps" ? appKey(m[2]) : fileKey(m[2]));
@@ -2624,23 +2782,52 @@ async function handler(req, res) {
       }
       return send(res, 404, { error: "not found" });
     }
-    // ---------------- Max (assistant module) ----------------
+    // ---------------- Aux (assistant module) ----------------
     if (req.method === "POST" && p === "/api/assistant") {
-      if (!can(u, "assistant")) return deny("Your account doesn't have Max (ask an admin to tick Max under Users & access)");
-      if (!assistantOn()) return send(res, 503, { error: "Max is turned off by an admin." });
+      if (!can(u, "assistant")) return deny("Your account doesn't have Aux (ask an admin to tick Aux under Users & access)");
+      if (!assistantOn()) return send(res, 503, { error: "Aux is turned off by an admin." });
       const limited = assistantAllowed(u);
       if (limited) return send(res, 429, { error: limited });
       const q = (Array.isArray(body.messages) ? body.messages : []).slice(-1)[0]?.text;
       const r = await askMax(u, Array.isArray(body.messages) ? body.messages : []);
-      log(null, "assistant", `${by} asked Max: "${String(q || "").slice(0, 120)}"${r.used.length ? ` (looked at ${[...new Set(r.used)].join(", ")})` : ""}`);
+      log(null, "assistant", `${by} asked Aux: "${String(q || "").slice(0, 120)}"${r.used.length ? ` (looked at ${[...new Set(r.used)].join(", ")})` : ""}`);
       return send(res, 200, r);
+    }
+    // Aux training (admins): the recorded questions and the taught wordings
+    if (p === "/api/max/questions" && req.method === "GET") {
+      if (!u.admin) return deny();
+      const all = maxReadLog(Date.now() - Math.min(90, Number(url.searchParams.get("days")) || 7) * 86400000);
+      return send(res, 200, { total: all.length, missed: all.filter(e => !e.ok).length, questions: all.slice(-500).reverse(), teach: portal.maxTeach || {} });
+    }
+    if (req.method === "POST" && p === "/api/max/teach") {
+      if (!u.admin) return deny();
+      const k = maxNorm(body.q || ""), as = String(body.as || "").trim().slice(0, 300), teach = (portal.maxTeach ||= {});
+      if (!k) return send(res, 400, { error: "Which question?" });
+      if (!as) { delete teach[k]; dirty = true; return send(res, 200, { ok: true }); }
+      if (localMax(u, as).unknown) return send(res, 400, { error: `Aux doesn't understand "${as}" either. Pick one of his questions.` });
+      teach[k] = as;
+      dirty = true;
+      log(null, "assistant", `${by} taught Aux: "${body.q}" → "${as}"`);
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && p === "/api/tts") {
+      if (!can(u, "assistant") || !TTS_KEY) return deny();
+      const text = String(body.text || "").slice(0, 1200);
+      if (!text.trim()) return send(res, 400, { error: "no text" });
+      const r = await fetch("https://api.openai.com/v1/audio/speech", { method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + TTS_KEY },
+        body: JSON.stringify({ model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts", voice: TTS_VOICE, input: text, response_format: "mp3",
+          instructions: "You are Aux, a warm, friendly, upbeat helper. Speak naturally and conversationally, at a relaxed pace." }) }).catch(e => ({ ok: false, status: 502, text: async () => e.message }));
+      if (!r.ok) return send(res, 502, { error: "Voice service: " + (await r.text()).slice(0, 200) });
+      res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" });
+      return res.end(Buffer.from(await r.arrayBuffer()));
     }
     if (req.method === "POST" && p === "/api/assistant/settings") {
       if (!u.admin) return deny();
       const model = String(body.model || "").trim();
       if (model && !/^claude-[\w.-]{2,60}$/.test(model)) return send(res, 400, { error: "Model: a Claude model id such as claude-haiku-5-5" });
       portal.assistant = { enabled: body.enabled !== false, model, dailyLimit: Math.min(5000, Math.max(1, Number(body.dailyLimit) || 200)) };
-      log(null, "assistant", `Max settings changed by ${by}`);
+      log(null, "assistant", `Aux settings changed by ${by}`);
       return ok();
     }
     // ---------------- technical team and tickets (team module) ----------------
@@ -2654,6 +2841,7 @@ async function handler(req, res) {
         if (body.deviceId && !sees(u, d)) return send(res, 404, { error: "no such device" });
         if (!(allSites(u) || siteOk(u, site || d?.group))) return deny("Pick one of your sites");
         if (site && !portal.sites.some(x => x.name === site)) return send(res, 400, { error: "no such site" });
+        if (body.due && Number.isNaN(Date.parse(body.due))) return send(res, 400, { error: "Due: pick a date" });
         const t = newTicket({ title, desc: String(body.desc || "").slice(0, 4000), internal: String(body.internal || "").slice(0, 4000),
           category: body.category, priority: body.priority, site, deviceId: d?.id, due: body.due ? Date.parse(body.due) : null }, by);
         if (body.techId) assignTicket(t, String(body.techId), by);
@@ -2690,7 +2878,8 @@ async function handler(req, res) {
         if (body.internal !== undefined) set("internal", String(body.internal).slice(0, 4000));
         if (CATEGORIES.includes(body.category)) set("category", body.category);
         if (PRIORITIES.includes(body.priority)) set("priority", body.priority);
-        if (body.due !== undefined) set("due", body.due ? Date.parse(body.due) || t.due : null);
+        if (body.due && Number.isNaN(Date.parse(body.due))) return send(res, 400, { error: "Due: pick a date" });
+        if (body.due !== undefined) set("due", body.due ? Date.parse(body.due) : null);
         if (body.site !== undefined) {
           if (body.site && !portal.sites.some(x => x.name === body.site)) return send(res, 400, { error: "no such site" });
           if (!(allSites(u) || siteOk(u, body.site))) return deny("Pick one of your sites");
@@ -2699,6 +2888,7 @@ async function handler(req, res) {
         if (changes.length) tnote(t, by, "edit", `Changed ${changes.join(", ")}`);
         return ok();
       }
+      if (req.method === "POST" && (p === "/api/technicians" || p === "/api/technicians/delete") && !allSites(u)) return deny("Only accounts with all sites can manage technicians");
       if (req.method === "POST" && p === "/api/technicians") {
         const old = body.id && portal.technicians.find(x => x.id === body.id);
         if (body.id && !old) return send(res, 404, { error: "no such technician" });
