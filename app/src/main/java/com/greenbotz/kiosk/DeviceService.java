@@ -39,6 +39,7 @@ import android.provider.Settings;
 import android.util.Log;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -69,6 +70,7 @@ public class DeviceService extends Service {
     static final String PREF_TOKEN = "token";
     static final String PREF_CODE = "code";
     static final String PREF_MAINTENANCE = "maintenance";
+    static final String PREF_LOST = "lost"; // JSON {message, phone}; empty = not lost
     static final String PREF_MAINT_IMG = "maint_img"; // version (portal time) of files/maintenance.jpg; 0 = built-in image
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
@@ -356,6 +358,7 @@ public class DeviceService extends Service {
             d.put("uptime", android.os.SystemClock.elapsedRealtime() / 1000);
             d.put("appVersion", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
             putUsage(d);
+            d.put("lost", LostActivity.on(this));
             Location loc = lastLocation;
             if (loc != null) {
                 d.put("lat", loc.getLatitude());
@@ -386,6 +389,11 @@ public class DeviceService extends Service {
             if (img != prefs.getLong(PREF_MAINT_IMG, 0) && !fetchingMaintImage) {
                 fetchingMaintImage = true;
                 new Thread(() -> fetchMaintImage(img)).start();
+            }
+            // Keep the lost-device screen up if lost mode is on (priority over everything).
+            if (LostActivity.on(this) && !KioskActivity.monitorOnly(this)) {
+                handler.post(() -> startActivity(new Intent(this, LostActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
             }
             // Keep the maintenance screen up (also covers reboots and an app coming to the front).
             if (maint && !maintenanceShowing && !KioskActivity.monitorOnly(this)) {
@@ -917,6 +925,27 @@ public class DeviceService extends Service {
         if (type.equals("run")) new Thread(() -> runShell(cmd), "run").start();
         if (type.equals("apps")) setAllowedApps(cmd.optJSONArray("packages"));
         if (type.equals("wifi")) addWifi(cmd.optString("ssid"), cmd.optString("password"));
+        if (type.equals("lost") || type.equals("found")) {
+            String json = "";
+            if (type.equals("lost")) {
+                try {
+                    json = new JSONObject().put("message", cmd.optString("message")).put("phone", cmd.optString("phone")).toString();
+                } catch (JSONException e) {
+                    json = "{}";
+                }
+            }
+            getSharedPreferences("kiosk", MODE_PRIVATE).edit().putString(KioskActivity.PREF_LOST_KEY, json).commit();
+            event(this, type.equals("lost") ? "Lost mode on" : "Lost mode off");
+            if (type.equals("lost") && !KioskActivity.monitorOnly(this)) startActivity(new Intent(this, LostActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        }
+        if (type.equals("wipe")) {
+            try {
+                event(this, "Factory reset started from the portal");
+                dpm.wipeData(0);
+            } catch (SecurityException e) {
+                event(this, "Wipe failed: app is not device owner");
+            }
+        }
         if (type.equals("relay")) setRelay(cmd.optBoolean("on"), cmd.optInt("seconds"));
         if (type.equals("install") || type.equals("file") || type.equals("logs")) {
             new Thread(() -> {

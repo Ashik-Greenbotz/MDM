@@ -98,6 +98,14 @@
             android:lockTaskMode="if_whitelisted"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
+        <!-- Full-screen lost-device notice, pushed from the portal -->
+        <activity
+            android:name=".LostActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:lockTaskMode="if_whitelisted"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+
         <activity
             android:name=".SetupActivity"
             android:exported="false"

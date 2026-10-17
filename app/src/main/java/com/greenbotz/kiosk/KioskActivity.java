@@ -76,6 +76,7 @@ public class KioskActivity extends Activity {
     private boolean remoteUnlockPending;
     static final String EXTRA_REMOTE_UNLOCK = "remote_unlock";
     static final String EXTRA_WAKE = "wake"; // night mode ended: this screen turns the display back on
+    static final String PREF_LOST_KEY = DeviceService.PREF_LOST;
     // "kiosk" locks the device to this app; "monitor" only reports to the dashboard (phones, Telpo terminals).
     static final String PREF_MODE = "mode";
     // App pinning: package that runs full screen; the kiosk screen only shows briefly to reopen it.
