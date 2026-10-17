@@ -1971,13 +1971,14 @@ function siteForm(site) {
       <label class="btn" style="cursor:pointer">Upload…<input type="file" id="sLogo" accept="image/*" hidden></label>
       <button class="btn ghost" type="button" id="sLogoDel" ${site?.logo ? "" : "hidden"}>Remove</button></div>
     <label class="meta">Coordinates</label><div class="row"><input id="sLat" style="width:110px" placeholder="latitude" value="${esc(site?.lat ?? "")}">
-      <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div></div>
+      <input id="sLng" style="width:110px" placeholder="longitude" value="${esc(site?.lng ?? "")}"><button class="btn" type="button" id="sFind">Find address</button></div>
+    <label class="meta">Geofence</label><div class="row"><input id="sGeo" type="number" min="20" max="50000" style="width:110px" placeholder="off" value="${esc(site?.geofence ?? "")}"><span class="meta">metres — alert when a tablet goes this far from the site (needs coordinates)</span></div></div>
     <div id="sFound" class="chips" style="margin-top:8px"></div>
     <p class="meta">Coordinates are used to find technicians near the site. Find address searches OneMap (Singapore) for the Location; you can also type them.</p>`,
     site ? "Save" : "Add site", () => {
       const name = $("sName").value.trim();
       if (!name) return toast("Site name is required", true);
-      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, oldName: site?.name, logo }),
+      act(() => api("/api/sites", { name, address: $("sAddr").value, contact: $("sContact").value, lat: $("sLat").value, lng: $("sLng").value, geofence: $("sGeo").value, oldName: site?.name, logo }),
         site ? "Site saved" : `Site "${name}" added`);
     });
   // Logo: shrunk to fit 128 x 128 here, so the server only stores a few KB. undefined = unchanged, "" = removed.
@@ -3223,6 +3224,18 @@ function baseLayers() {
   return { default: onemap, all: { "OneMap (SG)": onemap, Satellite: sat } };
 }
 let map, markers = {}, fitted = false;
+// A device's recent path and its site's geofence circle, shown when the map is opened for one device.
+let trailLayer;
+async function drawTrail(d) {
+  trailLayer?.remove();
+  trailLayer = L.layerGroup().addTo(map);
+  const site = siteOf(d.group || "");
+  if (site.lat != null && site.geofence) L.circle([site.lat, site.lng], { radius: site.geofence, color: "#f28c00", weight: 1, fillOpacity: .05 }).addTo(trailLayer);
+  try {
+    const { trail } = await api(`/api/devices/${encodeURIComponent(d.id)}/trail`);
+    if (trail?.length > 1) L.polyline(trail.map(p => [p[1], p[2]]), { color: "#4078ff", weight: 3, opacity: .7, dashArray: "4 4" }).addTo(trailLayer);
+  } catch {}
+}
 function drawMap() {
   if (!map) {
     map = L.map("map").setView([1.3521, 103.8198], 11);
@@ -3275,6 +3288,7 @@ $("mapQ").oninput = () => { drawMap(); fitMap(); };
 function openMap(d) {
   fillMapSites();
   $("mapSite").value = ""; $("mapQ").value = ""; // the dialog always opens on all devices
+  trailLayer?.remove(); trailLayer = null;
   $("mapDlg").showModal();
   drawMap();
   map.invalidateSize();
@@ -3288,6 +3302,7 @@ function openMap(d) {
     if (!markers[d.id]) return toast("No location from this device yet", true);
     map.setView(markers[d.id].getLatLng(), 18);
     markers[d.id].openPopup();
+    drawTrail(d);
   }
 }
 $("mapBtn").onclick = () => openMap();

@@ -550,6 +550,7 @@ function waPush(key, alertId, type, recipients, text) {
 }
 // Device alerts go to the alert numbers. The key is alert + type + reminder number.
 const waQueue = (type, d, a, n = 0) => waPush(`${a.id}:${type}:${n}`, a.id, type, portal.whatsapp, waText(type, d, a));
+// geofence alerts reuse the generic alert text (a.text / a.detail).
 // The API key for a number: an alert number, or a technician's own number (ticket messages).
 const waRecipient = phone => portal.whatsapp.find(r => r.phone === phone) || portal.technicians.find(t => t.phone === phone && t.apikey);
 async function callmebot(phone, apikey, text) {
@@ -769,6 +770,27 @@ const isOnline = d => Date.now() - d.lastSeen < ONLINE_MS;
 const num = v => ((typeof v === "number" || (typeof v === "string" && v.trim())) && Number.isFinite(+v) ? +v : null);
 const point = (lat, lng) => (num(lat) !== null && num(lng) !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat: +lat, lng: +lng } : null);
 // Great-circle distance in km (haversine).
+// Location trail (last 50 points, at least 3 min / 25 m apart) and a geofence alert when a tablet leaves its site.
+function checkLocation(d) {
+  if (d.lat == null || d.lng == null) return;
+  const at = { lat: d.lat, lng: d.lng }, trail = (d.trail ||= []), last = trail[trail.length - 1];
+  if (!last || (Date.now() - last[0] > 180000 && km(at, { lat: last[1], lng: last[2] }) > 0.025)) {
+    trail.push([Date.now(), d.lat, d.lng]);
+    if (trail.length > 50) trail.shift();
+  }
+  const site = portal.sites.find(x => x.name === d.group);
+  if (!site || site.lat == null || !site.geofence) { d.outsideSite = false; return; }
+  const away = km(at, { lat: site.lat, lng: site.lng }) * 1000; // metres
+  const outside = away > site.geofence;
+  if (outside && !d.outsideSite) {
+    portal.alerts.push({ id: rid(), deviceId: d.id, kind: "geofence", text: `${label(d)} left ${site.name}`, detail: `${Math.round(away)} m from the site (fence ${site.geofence} m)`, at: Date.now() });
+    waQueue("geofence", d, portal.alerts[portal.alerts.length - 1]);
+    log(d.id, "alert", `${label(d)} left its site (${Math.round(away)} m away)`);
+  }
+  if (!outside && d.outsideSite) log(d.id, "device", `${label(d)} is back inside ${site.name}`);
+  d.outsideSite = outside;
+}
+
 function km(a, b) {
   const r = x => (x * Math.PI) / 180, h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
   return 12742 * Math.asin(Math.sqrt(h));
@@ -1578,6 +1600,7 @@ async function handler(req, res) {
       // Technical team devices: their location is only kept when the technician agreed to share it.
       if (d.usage === "tech" && !techOf(d)?.shareLocation) for (const k of ["lat", "lng", "accuracy", "locationTime"]) delete d[k];
       d.lastSeen = Date.now();
+      checkLocation(d);
       d.ip = ipOf(req);
       if (!d.code) d.code = newCode();
       if (fresh) log(d.id, "enroll", `${label(d)} registered (${typeOf(d)}), Device ID ${d.code}`);
@@ -2015,6 +2038,13 @@ async function handler(req, res) {
       }
     }
     // Remote shell, portal side (admins): GET ?from=<n> waits up to 10 s for output past n; POST { data } types into it.
+    // Location trail for the map (last points).
+    m = /^\/api\/devices\/([\w-]+)\/trail$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]];
+      if (!d || !can(u, "devices") || !sees(u, d)) return deny();
+      return send(res, 200, { trail: d.trail || [] });
+    }
     // A saved Remote SSH session (admins).
     m = /^\/api\/devices\/([\w-]+)\/shell\/(\d+)$/.exec(p);
     if (req.method === "GET" && m) {
@@ -2224,6 +2254,7 @@ async function handler(req, res) {
       const at = point(body.lat, body.lng);
       if (!at && (num(body.lat) !== null || num(body.lng) !== null)) return send(res, 400, { error: "Latitude -90..90 and longitude -180..180, or leave both empty" });
       Object.assign(fields, { lat: at?.lat ?? null, lng: at?.lng ?? null });
+      fields.geofence = body.geofence === "" || body.geofence == null ? null : Math.max(20, Math.min(50000, Math.round(Number(body.geofence)) || 0)) || null;
       // logo: a small image the portal already shrank to 128 px; "" removes it, left out keeps it.
       // ponytail: stored inline in portal.json and sent with every state refresh; fine for tens of sites
       if (body.logo === "") fields.logo = null;
