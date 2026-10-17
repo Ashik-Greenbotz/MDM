@@ -130,6 +130,8 @@
   <input id="user" autocomplete="username" required autofocus>
   <label for="password">Password</label>
   <input id="password" type="password" autocomplete="current-password" required>
+  <label for="code" id="codeLbl" hidden>6-digit code from your authenticator app</label>
+  <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" hidden>
   <div class="err" id="err" role="alert"></div>
   <div class="ship" id="ship">
     <button id="btn" type="button"><span class="dot"></span><span id="lbl">Type to sign in</span></button>
@@ -246,21 +248,27 @@ function wrong(msg) {
   tease(); fire(); shake();
 }
 async function check(loud) {
-  const key = user.value.trim() + "\n" + pw.value;
+  const key = user.value.trim() + "\n" + pw.value + "\n" + code.value;
   if (key === lastTried) { if (loud) shake(); return say("Enter the correct password"); }
   busy = true; lastTried = key; btn.classList.add("busy"); err.textContent = "";
   try {
     const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: user.value.trim(), password: pw.value }) });
+      body: JSON.stringify({ user: user.value.trim(), password: pw.value, code: code.value.trim() }) });
     if (r.ok) { say("🚀 Welcome!"); fly(); return; }
-    const msg = (await r.json().catch(() => ({}))).error || "Sign-in failed";
+    const j = await r.json().catch(() => ({})), msg = j.error || "Sign-in failed";
+    if (j.need2fa && !code.value.trim()) { // right password, two-factor on: ask for the code
+      code.hidden = codeLbl.hidden = false; code.focus(); err.textContent = ""; say("Enter the code");
+      busy = false; btn.classList.remove("busy"); return;
+    }
     if (r.status === 429) lastTried = "";
     if (loud || r.status === 429) wrong(msg); else quiet = setTimeout(() => wrong(msg), WAIT);
   } catch { err.textContent = "Cannot reach the server"; lastTried = ""; shake(); }
   busy = false; btn.classList.remove("busy");
-  if (user.value.trim() + "\n" + pw.value !== key) queue(); // they kept typing while we checked
+  if (user.value.trim() + "\n" + pw.value + "\n" + code.value !== key) queue(); // they kept typing while we checked
 }
 pw.addEventListener("input", queue);
+const code = document.getElementById("code"), codeLbl = document.getElementById("codeLbl");
+code.addEventListener("input", () => { if (code.value.replace(/\s/g, "").length === 6) queue(); });
 user.addEventListener("input", queue);
 setTimeout(queue, 600); // browser autofill
 </script>

@@ -289,6 +289,12 @@
   #shotDlg.live .foot { margin-top: 10px; }
   #shotDlg .live-side { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
   #shotDlg .live-side:empty { display: none; }
+  #shotDlg.term { width: min(1100px, calc(100vw - 24px)); background: #0c0c0c; color: #d4d4d4; border-color: #262626; }
+  #shotDlg.term h2 { margin: 0 0 10px; color: #f5f5f5; display: flex; align-items: center; gap: 8px; }
+  #shotDlg.term h2 input { margin-left: auto; width: min(280px, 45vw); font-size: 13px; font-weight: 400; padding: 6px 10px; border-radius: 8px;
+    background: #1a1a1a; color: #eee; border: 1px solid #333; }
+  #shotDlg.term .xt { height: min(68vh, 640px); padding: 6px; background: #0c0c0c; border-radius: 8px; border: 1px solid #262626; }
+  #shotDlg.term .meta { color: #8a8a8a; }
   #shotDlg h2 .code { font-size: 13px; vertical-align: middle; }
   img.shot { display: block; max-width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; border-radius: 14px; border: 1px solid var(--line); background: #000;
     box-shadow: 0 20px 50px rgba(0,0,0,.3); animation: zoom .5s var(--ease); }
@@ -452,6 +458,33 @@
   .max-spot { outline: 3px solid var(--accent) !important; outline-offset: 4px; box-shadow: 0 0 0 10px var(--accent-soft) !important; border-radius: 12px; transition: outline-color .3s; }
   .theming, .theming * { transition: background-color .45s var(--ease), color .45s var(--ease), border-color .45s var(--ease), box-shadow .45s var(--ease) !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  /* Reports: the month at a glance (big uptime figure, downtime per day, sites, tickets, alerts) */
+  :root { --rp-bar: #2a78d6; } :root[data-theme="dark"] { --rp-bar: #3987e5; }
+  .rp-hero { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 32px; align-items: end; }
+  .rp-big { font-size: clamp(56px, 7vw, 104px); font-weight: 700; letter-spacing: -.045em; line-height: .9; font-variant-numeric: tabular-nums; }
+  .rp-big small { font-size: .38em; letter-spacing: -.01em; margin-left: 2px; }
+  .rp-sub { font-size: 16px; line-height: 1.5; margin: 14px 0 10px; max-width: 46ch; }
+  .rp-chart h3, .rp-h { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+  .rp-days { position: relative; display: flex; align-items: flex-end; gap: 3px; height: 160px; }
+  .rp-days i { flex: 1; min-width: 3px; height: 100%; display: flex; align-items: flex-end; cursor: default; }
+  .rp-days i b { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--bad); transition: opacity .15s; }
+  .rp-days i.z b { background: var(--ok); opacity: .45; }
+  .rp-days i:hover b { opacity: .7; }
+  .rp-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .rp-tip { position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%); pointer-events: none; white-space: nowrap; background: var(--dlg);
+    border-radius: 10px; padding: 6px 10px; font-size: 12px; box-shadow: var(--shadow-hi); z-index: 2; }
+  .rp-rows { display: grid; gap: 14px; }
+  .rp-row { display: grid; grid-template-columns: minmax(100px, 170px) 1fr auto; gap: 14px; align-items: center; font-size: 14px; }
+  .rp-row .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; min-width: 64px; }
+  .rp-row .v span { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+  .rp-track { height: 10px; border-radius: 5px; background: var(--line); }
+  .rp-track b { display: block; height: 100%; min-width: 4px; border-radius: 5px; }
+  .rp-tk { display: grid; grid-template-columns: 150px 1fr; gap: 24px; align-items: center; }
+  .rp-tk dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: baseline; }
+  .rp-tk dt { font-size: 28px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; text-align: right; }
+  .rp-tk dd { margin: 0; color: var(--muted); font-size: 14px; }
+  .rp-more summary { cursor: pointer; padding: 14px 18px; font-weight: 600; }
+  @media (max-width: 760px) { .rp-hero, .rp-tk { grid-template-columns: 1fr; } .rp-row { grid-template-columns: 1fr auto; } .rp-row .rp-track { grid-column: 1 / -1; grid-row: 2; } }
 </style>
 <script>
   // Theme before first paint: "light" | "dark" | "auto" (follows the system).
@@ -514,7 +547,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&
 const TYPES = { "android-kiosk": "Kiosk tablet", android: "Android", telpo: "Telpo", windows: "Windows PC", linux: "Linux", iot: "IoT" };
 const CMD = {
   unlock: "Unlock (2 min)", lock: "Lock to kiosk", lockscreen: "Lock screen", ring: "Ring (find device)",
-  reboot: "Restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", screenshot: "📸 Screenshot", live: "🖥 Remote control", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
+  reboot: "Device restart", shutdown: "⏻ Shut down", logoff: "Log off user", message: "💬 Show message…", run: "⌨ Run command…", install: "Install / update app…", file: "Send file…", logs: "Get logs", singleapp: "App pinning…", apps: "Allowed apps", relay: "Relay", unpin: "Unpin app", term: "⌨ Remote SSH", restartapp: "🔄 Restart pinned app", screenshot: "📸 Screenshot", live: "🖥 Remote control", maintOn: "🛠 Maintenance on", maintOff: "Maintenance off",
   remote: "🖥 Set up remote desktop", sshon: "SSH on", sshoff: "SSH off",
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -525,11 +558,12 @@ Object.assign(ICONS, { settings: "<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 
   mic: "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>",
   bug: "<path d=\"m8 2 1.88 1.88\"/><path d=\"M14.12 3.88 16 2\"/><path d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/><path d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/><path d=\"M12 20v-9\"/><path d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/><path d=\"M6 13H2\"/><path d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/><path d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/><path d=\"M22 13h-4\"/><path d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>",
   send: "<path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/>", x: "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", minus: "<path d=\"M5 12h14\"/>" });
+ICONS.chart = "<path d=\"M3 3v16a2 2 0 0 0 2 2h16\"/><path d=\"M18 17V9\"/><path d=\"M13 17V5\"/><path d=\"M8 17v-3\"/>";
 const ico = n => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES = [
   ["overview", "layout-dashboard", "Overview"], ["devices", "tablet-smartphone", "Devices"], ["sites", "map-pin", "Sites"], ["alerts", "bell", "Alerts"], ["bugs", "bug", "Bug Finder"], ["team", "wrench", "Technical Team"],
   ["tasks", "calendar-clock", "Scheduled tasks"], ["apps", "package", "Apps & files"], ["enroll", "qr-code", "Enroll devices"],
-  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
+  ["announcements", "bell", "Announcements"], ["activity", "activity", "Activity log"], ["reports", "chart", "Reports"], ["users", "users", "Users & access"], ["config", "settings", "Configuration"],
 ];
 // What the signed-in account may open (server enforces the same; this only hides what would be refused).
 const me = () => S.me || { admin: true, modules: PAGES.map(p => p[0]) };
@@ -561,7 +595,7 @@ const meter = (v, warnAt, badAt, suffix = "%", invert = false) => {
   return `<span class="meter ${lvl}"><span class="bar"><b style="width:${Math.min(100, Math.max(0, v))}%"></b></span>${v}${suffix}</span>`;
 };
 const batt = d => d.battery == null ? `<span class="meta">–</span>` : meter(d.battery, 40, LOW_BATTERY, "%", true) + (d.charging ? " ⚡" : "");
-const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps" && c !== "relay")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin"] : [c]), "maintOn", "maintOff"] : cmds;
+const withUnpin = cmds => (cmds = cmds.filter(c => c !== "apps" && c !== "relay" && c !== "restartapp")).includes("singleapp") ? [...cmds.flatMap(c => c === "singleapp" ? [c, "unpin", "restartapp"] : [c]), "maintOn", "maintOff"] : cmds;
 const appName = (d, pkg) => (d.launcherApps || []).find(a => a[0] === pkg)?.[1] || pkg;
 const stateCell = d => (d.maintenance ? `<span class="pill warn" title="Showing the System Maintenance screen">🛠 Maintenance</span> ` : "") + stateCell1(d);
 const stateCell1 = d => d.pending ? `<span class="pill neutral">Sending ${esc((CMD[d.pending] || d.pending).replace("…", ""))}…</span>`
@@ -868,6 +902,7 @@ const STATUS = {
   unlocked: ["Unlocked kiosks", d => d.type === "android-kiosk" && d.kioskLocked === false],
   low: ["Low battery", d => d.battery != null && d.battery < LOW_BATTERY],
   maintenance: ["In maintenance", d => d.maintenance],
+  health: ["Health warnings", d => d.score?.warn?.length > 0],
 };
 function shownDevices() {
   const q = filters.q.toLowerCase();
@@ -905,7 +940,8 @@ VIEWS.devices = (arg, first) => {
   const onl = S.devices.filter(isOnline).length;
   $("devStats").innerHTML = `<a class="stat" data-st=""><div class="n">${S.devices.length}</div><div class="l">Total devices</div></a>
     <a class="stat ok" data-st="online"><div class="n">${onl}</div><div class="l">Online</div></a>
-    <a class="stat bad" data-st="offline"><div class="n">${S.devices.length - onl}</div><div class="l">Offline</div></a>`;
+    <a class="stat bad" data-st="offline"><div class="n">${S.devices.length - onl}</div><div class="l">Offline</div></a>
+    <a class="stat warn" data-st="health"><div class="n">${S.devices.filter(STATUS.health[1]).length}</div><div class="l">Health warnings</div><div class="s">Storage, temperature, battery trend</div></a>`;
   // the live refresh (every 5 s) leaves a dropdown alone while it is open
   const fill = (id, html) => { if (document.activeElement !== $(id)) $(id).innerHTML = html; };
   fill("fType", options([["", "All types"], ...Object.entries(TYPES)], filters.type));
@@ -933,7 +969,6 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
-        ${(S.commands[d.type] || []).includes("screenshot") ? `<button class="btn ghost" data-cmd="screenshot" title="Screenshot" aria-label="Screenshot">📸</button>` : ""}
         ${(S.commands[d.type] || []).includes("live") ? `<button class="btn ghost" data-cmd="live" title="Remote control" aria-label="Remote control">🖥</button>` : ""}
         <button class="btn ghost" data-menu aria-label="More actions">⋯</button></div></td></tr>`;
 // Public (internet) address the portal saw the device's check-in from; null on the same LAN as the portal.
@@ -1040,7 +1075,7 @@ function renderBulk() {
   if (document.activeElement?.closest("#bulk")) return; // the user is choosing a command: don't rebuild it under them
   const sel = [...picked].map(dev).filter(Boolean);
   if (!sel.length) { $("bulk").innerHTML = ""; return; }
-  const cmds = [...new Set(sel.flatMap(d => withUnpin(S.commands[d.type] || [])))];
+  const cmds = [...new Set(sel.flatMap(d => withUnpin(S.commands[d.type] || [])))].filter(c => c !== "screenshot");
   $("bulk").innerHTML = `<div class="bulk"><b>${sel.length} selected</b>
     <select id="bCmd"><option value="">Send command…</option>${options(cmds.map(c => [c, CMD[c]]))}</select>
     <button class="btn" id="bGroup">Move to site…</button>
@@ -1060,7 +1095,7 @@ function deviceMenu(btn, d) {
   closeMenu();
   const m = document.createElement("div");
   m.className = "menu";
-  m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => !["unlock", "lock"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
+  m.innerHTML = withUnpin(S.commands[d.type] || []).filter(c => !["unlock", "lock", "screenshot"].includes(c)).map(c => `<button data-cmd="${c}">${CMD[c]}</button>`).join("") +
     `<hr><button data-act="open">Details & health</button><button data-act="map">Show on map</button>
      <button data-act="logs">Download logs</button><button data-act="rename">Rename</button><button data-act="group">Move to site…</button><button data-act="delete" class="danger">Remove</button>`;
   document.body.append(m);
@@ -1199,6 +1234,91 @@ async function screenshot(d, send = true) {
   catch (e) { sendError = e.message; render(); }
 }
 
+// Remote SSH (Android): a black terminal on the tablet's shell. sh has no tty, so the line is edited here (Backspace,
+// ↑/↓ history) and sent on Enter; Ctrl+C starts a fresh shell on the tablet.
+const XTERM = "https://cdn.jsdelivr.net/npm/@xterm/";
+const loadScript = src => new Promise((ok, bad) => document.head.append(Object.assign(document.createElement("script"), { src, onload: ok, onerror: () => bad(new Error("Couldn't load the terminal (no internet?)")) })));
+const termFrom = {}; // device id -> where Clear was pressed, so reopening starts there
+const QUICK = [["IP address", "ip -4 addr show wlan0"], ["Battery", "dumpsys battery | head -12"], ["Disk", "df -h /data /sdcard"],
+  ["Wi-Fi", "dumpsys wifi | grep -m 2 mWifiInfo"], ["Apps", "pm list packages -3"], ["Uptime", "uptime"], ["⟳ Reboot", "reboot"]];
+async function shellView(d) {
+  const dl = $("shotDlg"), base = `/api/devices/${encodeURIComponent(d.id)}/term`;
+  shotTimers.forEach(clearInterval);
+  shotTimers = [];
+  let open = true, term = null, from = 0;
+  dl.innerHTML = `<h2>⌨ ${esc(label(d))} <span class="code">${esc(d.code || "")}</span>
+    <input id="xtFind" type="search" placeholder="🔍 Search output (Enter = next, Shift+Enter = previous)" aria-label="Search the terminal output"></h2><div class="xt" id="xt"></div>
+    <div class="row" style="margin-top:8px;gap:6px">${QUICK.map(([t, c]) => `<button class="btn" data-q="${esc(c)}" title="${esc(c)}">${t}</button>`).join("")}</div>
+    <div class="foot"><span class="meta">Rooted tablets (Telpo) open as <b>root</b>, full system control. Others run with the kiosk app's rights only. Ctrl+C = fresh shell.</span>
+      <span class="grow"></span><button class="btn" data-k="clear">Clear</button><button class="btn" data-k="close">Close</button></div>`;
+  dl.classList.add("term");
+  dl.onclose = () => { open = false; dl.classList.remove("term"); term?.dispose(); };
+  dl.onclick = e => {
+    const k = e.target.closest("[data-k]")?.dataset.k;
+    const q = e.target.closest("[data-q]")?.dataset.q;
+    if (q && term) {
+      if (q === "reboot" && !confirm(`Reboot ${label(d)} now? It is offline for about a minute.`)) return;
+      term.write(q + "\r\n");
+      api(base, { data: q + "\n" }).catch(err => toast(err.message, true));
+      return term.focus();
+    }
+    if (k === "clear") { term?.clear(); termFrom[d.id] = from; term?.focus(); } // stays cleared when reopened
+    else if (k) dl.close();
+  };
+  if (!dl.open) dl.showModal();
+  try {
+    if (!window.Terminal) {
+      document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: XTERM + "xterm@5.5.0/css/xterm.min.css" }));
+      await Promise.all([loadScript(XTERM + "xterm@5.5.0/lib/xterm.min.js"), loadScript(XTERM + "addon-fit@0.10.0/lib/addon-fit.min.js"), loadScript(XTERM + "addon-search@0.15.0/lib/addon-search.min.js")]);
+    }
+    await api(`/api/devices/${d.id}/command`, { type: "term" });
+  } catch (e) { toast(e.message, true); return dl.close(); }
+  if (!open) return;
+  term = new Terminal({ convertEol: true, cursorBlink: true, allowProposedApi: true, fontSize: 14, fontFamily: "ui-monospace, Consolas, monospace", theme: { background: "#0c0c0c" } });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  const find = new SearchAddon.SearchAddon(), look = { decorations: { matchOverviewRuler: "#888", activeMatchColorOverviewRuler: "#f28c00", matchBackground: "#5a4a00", activeMatchBackground: "#f28c00" } };
+  term.loadAddon(find);
+  $("xtFind").oninput = e => e.target.value ? find.findNext(e.target.value, { ...look, incremental: true }) : find.clearDecorations();
+  $("xtFind").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); find[e.shiftKey ? "findPrevious" : "findNext"](e.target.value, look); } };
+  term.open($("xt"));
+  fit.fit();
+  term.focus();
+  term.write(`\x1b[90mConnecting to ${label(d)}${isOnline(d) ? " (the tablet picks this up within 10 s)" : " (offline, waits until it is back)"}…\x1b[0m\r\n`);
+  const send = data => api(base, { data }).catch(e => term.write(`\r\n\x1b[31m[${e.message}]\x1b[0m\r\n`));
+  const hist = [];
+  let line = "", hi = 0;
+  const setLine = s => { term.write("\b \b".repeat(line.length) + s); line = s; };
+  term.onData(s => {
+    if (s === "\x1b[A" || s === "\x1b[B") { hi = Math.max(0, Math.min(hist.length, hi + (s === "\x1b[A" ? -1 : 1))); return setLine(hist[hi] || ""); }
+    if (s[0] === "\x1b") return; // other keys (←/→, F-keys) need a real tty
+    for (const ch of s) {
+      if (ch === "\r") { term.write("\r\n"); send(line + "\n"); if (line) hist.push(line); hi = hist.length; line = ""; }
+      else if (ch === "\x7f" || ch === "\b") { if (line) setLine(line.slice(0, -1)); }
+      else if (ch === "\x03") { term.write("^C\r\n"); line = ""; send("\x03"); }
+      else if (ch >= " ") { line += ch; term.write(ch); }
+    }
+  });
+  const resize = () => fit.fit();
+  addEventListener("resize", resize);
+  dl.addEventListener("close", () => removeEventListener("resize", resize), { once: true });
+  from = termFrom[d.id] || 0;
+  while (open) {
+    try {
+      const r = await fetch(`${base}?from=${from}`);
+      if (r.status === 401) { location.href = "/login"; break; }
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+      if (j.data && open) term.write(j.data.replace(/^sh: (can.t find: tty fd|warning: won.t have full job control).*\n/gm, ""));
+      from = j.to;
+    } catch (e) {
+      if (!open) break;
+      term.write(`\r\n\x1b[31m[${e.message}]\x1b[0m\r\n`);
+      await new Promise(ok => setTimeout(ok, 3000));
+    }
+  }
+}
+
 // Live remote control (Android): the device streams its screen while this window is open and stops ~20 s after it
 // closes. Click = tap, drag = swipe. About 1 picture a second on Android 11-13, 3 on 14+; taps go through at once.
 async function liveView(d) {
@@ -1210,7 +1330,7 @@ async function liveView(d) {
     <div class="shot-msg" id="liveWait"><div class="spin"></div><b>Connecting…</b>
       <p class="meta">${isOnline(d) ? "The device picks this up on its next check-in, usually within 10 seconds." : `⚠️ ${esc(label(d))} is offline (last seen ${ago(d.lastSeen)}).`}</p></div>
     <img class="shot" id="liveImg" alt="Live screen of ${esc(label(d))}" hidden draggable="false" style="cursor:pointer;touch-action:none;user-select:none">
-    <div class="live-side">${[["unlock", "🔓 Unlock 2 min"], ["lock", "🔒 Lock"], ["singleapp", "📌 Pin app…"], ["unpin", "Unpin app"]]
+    <div class="live-side">${[["unlock", "🔓 Unlock 2 min"], ["lock", "🔒 Lock"], ["singleapp", "📌 Pin app…"], ["unpin", "Unpin app"], ["restartapp", "🔄 Restart app"]]
       .filter(([c]) => withUnpin(S.commands[d.type] || []).includes(c)).map(([c, t]) => `<button class="btn" data-c="${c}">${t}</button>`).join("")}</div>
     <div class="foot"><button class="btn" data-k="back">◀ Back</button><button class="btn" data-k="home">● Home</button><button class="btn" data-k="recents">▢ Recents</button>
       <span class="grow"></span><span class="meta" id="liveAt"></span><button class="btn" data-k="close">Close</button></div>`;
@@ -1297,21 +1417,27 @@ async function command(list, type, extra = {}) {
   if (type === "maintOn" || type === "maintOff") return maintenance({ ids: list.map(d => d.id) }, type === "maintOn", list.length);
   if (type === "screenshot" && list.length === 1) return screenshot(list[0]);
   if (type === "live") return list.length === 1 ? liveView(list[0]) : toast("Remote control works on one device at a time", true);
+  if (type === "term") return list.length === 1 ? shellView(list[0]) : toast("Remote SSH works on one device at a time", true);
   if (type === "install" && !extra.appId) return pickUpload("apps", list, type);
   if (type === "file" && !extra.fileId) return pickUpload("files", list, type);
   if (type === "singleapp" && extra.package === undefined) return pickSingleApp(list);
   if (type === "unpin") return command(list, "singleapp", { package: "", appName: "unpin" });
+  if (type === "restartapp") {
+    list = list.filter(d => d.singleApp);
+    if (!list.length) return toast("No app is pinned, so there is nothing to restart", true);
+    if (list.length === 1 && !confirm(`Restart ${list.map(d => appName(d, d.singleApp) + " on " + label(d)).join(", ")}? It closes once and opens again.`)) return;
+  }
   if (type === "message" && extra.text === undefined) return dialog(`<h2>Show message</h2>
     <p class="meta">Pops up on the screen of ${list.length === 1 ? esc(label(list[0])) : list.length + " devices"} for the signed-in user.</p>
     <textarea id="msgText" rows="4" maxlength="500" style="width:100%" required placeholder="e.g. Please save your work, this PC restarts in 10 minutes."></textarea>`,
     "Show", () => command(list, "message", { text: $("msgText").value }));
   if (type === "run" && extra.script === undefined) return dialog(`<h2>Run command</h2>
-    <p class="meta">PowerShell, run as administrator (SYSTEM) on ${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}. The output shows on the device page. Admins only.</p>
-    <textarea id="runText" rows="6" maxlength="8000" style="width:100%;font-family:ui-monospace,Consolas,monospace" required placeholder="e.g. Get-Service | Where-Object Status -eq Running | Select-Object -First 20"></textarea>`,
+    <p class="meta">${list.some(d => d.type === "windows") ? "PowerShell, run as administrator (SYSTEM) on Windows PCs; " : ""}${list.some(d => d.type !== "windows") ? "Android shell on tablets (root on rooted ones), up to 30 s; " : ""}on ${list.length === 1 ? esc(label(list[0])) : list.length + " devices"}. The output shows on each device page. Admins only.</p>
+    <textarea id="runText" rows="6" maxlength="8000" style="width:100%;font-family:ui-monospace,Consolas,monospace" required placeholder="${list.every(d => d.type === "windows") ? "e.g. Get-Service | Where-Object Status -eq Running | Select-Object -First 20" : "e.g. pm clear com.example.app"}"></textarea>`,
     "Run", () => command(list, "run", { script: $("runText").value }));
   const names = list.length === 1 ? label(list[0]) : list.length + " devices";
   const what = type === "singleapp" && extra.package === "" ? "Unpin app" : CMD[type].replace("…", "");
-  if (type === "reboot" && !confirm(`Restart ${names}?`)) return;
+  if (type === "reboot" && !confirm(`Restart the device ${names}?`)) return;
   if (type === "shutdown" && !confirm(`Shut down ${names}? Someone has to switch ${list.length === 1 ? "it" : "them"} on again.`)) return;
   if (type === "logoff" && !confirm(`Log off the user on ${names}? Unsaved work is lost.`)) return;
   if (list.length === 1 && !isOnline(list[0]) && !confirm(`${names} is offline. Send anyway? It runs when the device reconnects.`)) return;
@@ -1378,6 +1504,34 @@ function askGroup(what, cur, done) {
     "Move", () => done($("gName").value));
 }
 
+// Tablet settings: a site's defaults, or one tablet's own values (empty = use the site's / leave as it is).
+const UPDATES = { "": "Leave as it is", auto: "Install automatically", night: "Install only at night (1–5 am)", postpone: "Postpone (up to 30 days)" };
+function settingsText(own = {}, site = {}) {
+  const v = k => own?.[k] !== null && own?.[k] !== undefined && own?.[k] !== "" ? own[k] : site?.[k] !== null && site?.[k] !== "" ? site?.[k] : null;
+  const parts = [v("brightness") != null && `brightness ${v("brightness")}%`, v("volume") != null && `volume ${v("volume")}%`,
+    v("screenOff") && v("screenOn") && `screen off ${v("screenOff")}–${v("screenOn")}`, v("updates") && `updates: ${UPDATES[v("updates")].toLowerCase()}`].filter(Boolean);
+  return parts.join(" · ") || "Not set";
+}
+function tabletSettings(d, site) {
+  const s = (d ? d.settings : site.settings) || {}, base = d ? siteOf(d.group)?.settings || {} : {};
+  const ph = k => base[k] !== null && base[k] !== undefined && base[k] !== "" ? `site: ${base[k]}` : "leave as it is";
+  dialog(`<h2>⚙ Tablet settings · ${esc(d ? label(d) : site.name)}</h2>
+    <p class="meta">${d ? "This tablet only. Empty fields use the site's settings." : "Every tablet at this site, unless a tablet has its own value. Empty = leave as it is."}</p>
+    <div class="grid">
+      <label for="stB">Brightness %</label><input type="number" id="stB" min="0" max="100" value="${s.brightness ?? ""}" placeholder="${ph("brightness")}">
+      <label for="stV">Volume %</label><input type="number" id="stV" min="0" max="100" value="${s.volume ?? ""}" placeholder="${ph("volume")}">
+      <label for="stOff">Screen off at</label><input type="time" id="stOff" value="${s.screenOff || ""}">
+      <label for="stOn">Screen on at</label><input type="time" id="stOn" value="${s.screenOn || ""}">
+      <label for="stU">System updates</label><select id="stU">${options(Object.entries(UPDATES))}</select>
+    </div><p class="meta">Night mode: the screen turns off at the first time and back on at the second (both needed). ${d && base.screenOff ? `Site: ${base.screenOff}–${base.screenOn}.` : ""}</p>`,
+    "Save", () => {
+      const num = id => $(id).value === "" ? null : Number($(id).value);
+      const v = { brightness: num("stB"), volume: num("stV"), screenOff: $("stOff").value, screenOn: $("stOn").value, updates: $("stU").value };
+      act(() => d ? api(`/api/devices/${encodeURIComponent(d.id)}/settings`, v) : api("/api/sites/settings", { name: site.name, settings: v }),
+        "Tablet settings saved; tablets apply them on their next check-in");
+    });
+  $("stU").value = s.updates || "";
+}
 VIEWS.device = async (id, first) => {
   const d = dev(id);
   if (!d) { $("view").innerHTML = `<p class="empty">Device not found. <a href="#/devices">Back to devices</a></p>`; return; }
@@ -1387,7 +1541,7 @@ VIEWS.device = async (id, first) => {
     "Device model": d.type === "android-kiosk" && (d.deviceModel || "Not set (Model… to choose)"),
     Usage: d.type === "android-kiosk" && (d.usage === "tech" ? "Technical team device" + (d.techName ? " · " + d.techName : " · no technician yet") : "Onsite device"),
     "App pinning": d.type === "android-kiosk" && (d.singleApp ? "📌 " + appName(d, d.singleApp) : "Not pinned"), Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
-    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP (LAN)": d.localIp, "Public IP": pubIp(d) || (d.ip && "Same network as the portal"),
+    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Security patch": d.patch, "Tablet settings": d.type === "android-kiosk" && settingsText(d.settings, siteOf(d.group)?.settings), "Device IP (LAN)": d.localIp, "Public IP": pubIp(d) || (d.ip && "Same network as the portal"),
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
     Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
     Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
@@ -1399,7 +1553,7 @@ VIEWS.device = async (id, first) => {
       <p><a href="#/devices">← All devices</a></p>
       <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
         <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
-        <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
+        <button class="btn" data-a="map">🗺 Map</button><button class="btn" data-a="settings" id="dSetBtn">⚙ Tablet settings…</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card" id="dUpdCard" hidden><div class="pad row"><span id="dUpdText"></span><span class="grow" style="flex:1"></span><button class="btn primary" id="dUpdBtn">⬆ Update to latest version</button></div></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
@@ -1434,7 +1588,7 @@ VIEWS.device = async (id, first) => {
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
         <div class="pad row">Saved logs from <input type="datetime-local" id="dFrom"> to <input type="datetime-local" id="dTo">
           <button class="btn" id="dRange">⬇ Download</button><span class="meta" id="dDays"></span></div>
-        <pre class="log" id="dLogs">Loading…</pre></div>`;
+        <pre class="log" id="dLogs">Loading…</pre><p class="meta pad" id="dShellLogs" hidden style="margin:0"></p></div>`;
     $("view").onclick = e => {
       if (e.target.id === "dShot") return screenshot(dev(id), false);
       if (e.target.id === "dRelaySetup") return relaySetup(dev(id));
@@ -1448,6 +1602,7 @@ VIEWS.device = async (id, first) => {
       if (cp) return navigator.clipboard.writeText($(cp.dataset.copy).textContent).then(() => toast("Copied"));
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
+      if (b.dataset.a === "settings") return tabletSettings(dev(id));
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
     };
     $("dUpdBtn").onclick = () => {
@@ -1472,10 +1627,13 @@ VIEWS.device = async (id, first) => {
         .then(() => { delete $("dApps").dataset.edited; });
     };
   }
+  $("dShellLogs").hidden = !me().admin || !d.shellLogs?.length;
+  if (!$("dShellLogs").hidden) $("dShellLogs").innerHTML = "Remote SSH recordings: " + d.shellLogs.slice().reverse()
+    .map(x => `<a href="/api/devices/${encodeURIComponent(d.id)}/shell/${x.at}">${esc(new Date(x.at).toLocaleString())} · ${esc(x.by)}</a>`).join(" · ");
   const apps = d.type === "android-kiosk" ? d.launcherApps || [] : [];
   $("dAppsCard").hidden = !apps.length;
   const rp = d.relayProfile || { relay: "unknown" }, ri = d.relayInfo || {};
-  $("dModelBtn").hidden = d.type !== "android-kiosk";
+  $("dModelBtn").hidden = $("dSetBtn").hidden = d.type !== "android-kiosk";
   const upd = d.type === "android-kiosk" && latestKioskApp(), uv = upd && verOf(upd.label);
   // Only when an update is waiting; up to date shows just the App version row in Details.
   $("dUpdCard").hidden = !(upd && (!uv || !d.appVersion || cmpVer(d.appVersion, uv) < 0));
@@ -1739,7 +1897,7 @@ VIEWS.site = async (name, first) => {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
       <div class="row" style="margin-bottom:4px;gap:12px">${siteLogo(site, true)}<h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
-        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
+        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="settings">⚙ Tablet settings…</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
       <div class="cols">
@@ -1766,6 +1924,7 @@ VIEWS.site = async (name, first) => {
       if (r) location.hash = "#/device/" + encodeURIComponent(r.dataset.dev);
       if (b?.dataset.s === "edit") siteForm(siteOf(name));
       if (b?.dataset.s === "addDev") addDevicesToSite(name);
+      if (b?.dataset.s === "settings") tabletSettings(null, siteOf(name));
       if (b?.dataset.s === "map") openMap(mine());
       if (b?.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) {
         act(() => api("/api/sites/delete", { name }), "Site deleted").then(() => { location.hash = "#/sites"; });
@@ -2162,15 +2321,130 @@ VIEWS.enroll = (arg, first) => {
 const EV = { site: "📍", enroll: "➕", online: "🟢", offline: "🔴", command: "📤", delivered: "📥", alert: "⚠️", resolved: "✅", logs: "📄", task: "⏰", upload: "📦", removed: "🗑", device: "📱", screenshot: "📸", announcement: "📢", config: "⚙️", relay: "⚡", ticket: "🛠", team: "👷", assistant: "🤖", whatsapp: "💬", maintenance: "🛠", user: "👤", ssh: "🔐" };
 const eventRow = e => `<tr><td>${EV[e.kind] || "•"}</td><td class="wrap">${esc(e.text)}${e.deviceId && dev(e.deviceId) && !location.hash.startsWith("#/device/")
   ? ` <a class="meta" href="#/device/${encodeURIComponent(e.deviceId)}">${esc(label(dev(e.deviceId)))}</a>` : ""}</td><td class="meta">${new Date(e.at).toLocaleString()}</td></tr>`;
+// Who did it: the log texts say "(by <name>)" at the end (tickets) or "by <username>" (commands, settings...); everything else is the system.
+const evBy = e => (/\(by (.+)\)$/.exec(e.text) || /\bby ([\w.@-]+)(?=$|\)|\s\(|,)/.exec(e.text) || [])[1] || "system";
+const evShown = list => {
+  const q = $("evQ").value.toLowerCase(), k = $("evKind").value, who = $("evUser").value;
+  return list.filter(e => (!k || e.kind === k) && (!who || evBy(e) === who) && (!q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)));
+};
+// Rows to CSV text; a cell starting with = + - @ gets a ' so a spreadsheet doesn't run it as a formula.
+const csvOf = rows => rows.map(r => r.map(v => {
+  v = String(v ?? "");
+  if (/^[=+\-@]/.test(v)) v = "'" + v;
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}).join(",")).join("\r\n");
+const saveText = (name, text, type = "text/csv") => {
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["\ufeff" + text], { type })), download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 VIEWS.activity = async (arg, first) => {
-  if (first) $("view").innerHTML = `<h2>Activity log</h2><p class="lead">Everything that happened: devices coming online and offline, commands sent and delivered, alerts, uploads, tasks.</p>
-    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Filter…"></div><div class="table-wrap"><table><tbody id="evRows"></tbody></table></div></div>`;
-  if (first) $("evQ").oninput = () => VIEWS.activity();
+  if (first) {
+    $("view").innerHTML = `<h2>Activity log</h2><p class="lead">Everything that happened: devices coming online and offline, commands sent and delivered, alerts, uploads, tasks.</p>
+    <div class="card"><div class="toolbar"><input type="search" id="evQ" placeholder="Filter…"><select id="evKind"></select><select id="evUser"></select>
+      <button class="btn" id="evCsv">⬇ CSV</button></div><div class="table-wrap"><table><tbody id="evRows"></tbody></table></div></div>`;
+    $("evQ").oninput = $("evKind").onchange = $("evUser").onchange = () => VIEWS.activity();
+    // the export takes the whole log (up to 5000 entries), not just the 1000 on screen
+    $("evCsv").onclick = () => act(async () => {
+      const list = evShown((await api("/api/events?all=1")).events);
+      saveText(`activity-${new Date().toISOString().slice(0, 10)}.csv`, csvOf([["Time", "Type", "User", "Device", "Device ID", "Site", "What happened"],
+        ...list.map(e => { const d = dev(e.deviceId); return [new Date(e.at).toLocaleString(), e.kind, evBy(e), d ? label(d) : "", d?.code || "", d?.group || "", e.text]; })]));
+      return list.length;
+    }, n => `${n} entries exported`);
+  }
   const r = await api("/api/events").catch(() => ({ events: [] }));
   if (!$("evRows")) return;
-  const q = $("evQ").value.toLowerCase();
-  $("evRows").innerHTML = r.events.filter(e => !q || (e.text + " " + (dev(e.deviceId) ? label(dev(e.deviceId)) : "")).toLowerCase().includes(q)).slice(0, 500).map(eventRow).join("")
-    || `<tr><td class="empty">Nothing yet</td></tr>`;
+  const fill = (id, all, list) => { if (document.activeElement !== $(id)) { const v = $(id).value; $(id).innerHTML = options([["", all], ...list.map(x => [x, x])], v); } };
+  fill("evKind", "All types", [...new Set(r.events.map(e => e.kind))].sort());
+  fill("evUser", "All users", [...new Set(r.events.map(evBy))].sort());
+  $("evRows").innerHTML = evShown(r.events).slice(0, 500).map(eventRow).join("") || `<tr><td class="empty">Nothing matches</td></tr>`;
+};
+
+// Reports: monthly uptime, alerts and tickets per site. CSV, a printable page and (admins) a WhatsApp summary.
+const REP_COLS = [["Site", s => s.site || "No site"], ["Devices", s => s.devices], ["Uptime %", s => s.uptime ?? "–"], ["Downtime (h)", s => s.downH],
+  ["Offline alerts", s => s.alerts.offline || 0], ["Other alerts", s => s.alertsTotal - (s.alerts.offline || 0)],
+  ["Tickets opened", s => s.opened], ["Resolved", s => s.resolved], ["Resolved on time", s => s.onTime], ["Open at month end", s => s.open]];
+const repRows = r => [...r.sites, r.total];
+const repTable = r => `<table><thead><tr>${REP_COLS.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${repRows(r).map(s =>
+  `<tr${s === r.total ? ` style="font-weight:700"` : ""}>${REP_COLS.map(c => `<td>${esc(c[1](s))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+const repSpan = r => `${new Date(r.from).toLocaleDateString([], { day: "numeric", month: "short" })} – ${new Date(r.to - 1).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
+// Uptime levels: 99 % and up is on target, 95 % and up needs a look, below that is poor. Shown as a pill with words, never colour alone.
+const upLevel = u => u == null ? ["neutral", "No data"] : u >= 99 ? ["ok", "On target"] : u >= 95 ? ["warn", "Below target"] : ["bad", "Poor"];
+const upColor = u => `var(--${upLevel(u)[0] === "neutral" ? "line" : upLevel(u)[0]})`;
+const ALERT_NAMES = { offline: "Offline", battery: "Low battery", crash: "App crash", cpu: "High CPU", ram: "High RAM", disk: "Storage nearly full", temp: "Too hot" };
+const dayName = t => new Date(t).toLocaleDateString([], { day: "numeric", month: "short" });
+function repView(r) {
+  const t = r.total, sites = r.sites.filter(x => x.devices), lvl = upLevel(t.uptime);
+  const worst = r.days.reduce((w, d) => (d.downH > (w?.downH || 0) ? d : w), null), maxH = Math.max(1, ...r.days.map(d => d.downH));
+  const nSites = sites.filter(x => x.site).length;
+  const summary = t.devices ? `${t.devices} device${t.devices === 1 ? "" : "s"}${nSites ? ` across ${nSites} site${nSites === 1 ? "" : "s"}` : ""} were online ${t.uptime ?? "–"}% of the time, ${repSpan(r)}. `
+    + (t.downH ? `${t.downH} h of downtime in total${worst ? `, most on ${dayName(worst.at)} (${worst.downH} h)` : ""}.` : "No downtime at all.") : "No devices were reporting in this month.";
+  const days = r.days.map(d => `<i class="${d.downH ? "" : "z"}" data-tip="${esc(`${dayName(d.at)}: ${d.uptime ?? "–"}% online, ${d.downH} h down`)}"><b style="height:${d.downH ? Math.max(4, 100 * d.downH / maxH) : 3}%"></b></i>`).join("");
+  const kinds = Object.entries(t.alerts).sort((a, b) => b[1] - a[1]), maxK = Math.max(1, ...kinds.map(k => k[1]));
+  const onPct = t.resolved ? Math.round(100 * t.onTime / t.resolved) : null, C = 2 * Math.PI * 54;
+  return `
+    <div class="card"><div class="pad rp-hero">
+      <div><div class="rp-big">${t.uptime ?? "–"}<small>%</small></div>
+        <p class="rp-sub">${esc(summary)}</p><span class="pill ${lvl[0]}"><i></i>${lvl[1]}</span></div>
+      <div class="rp-chart"><h3>Downtime per day</h3>
+        <div class="rp-days" id="repDays">${days || `<p class="meta">No days yet</p>`}</div>
+        <div class="rp-axis"><span>${r.days[0] ? dayName(r.days[0].at) : ""}</span><span>Taller bar = longer offline · green = no downtime</span><span>${r.days.length ? dayName(r.days[r.days.length - 1].at) : ""}</span></div></div>
+    </div></div>
+    <div class="cols">
+      <div class="card"><div class="pad"><h3 class="rp-h">Uptime by site</h3><div class="rp-rows">${sites.map(x => `<div class="rp-row">
+          <div class="name">${esc(x.site || "No site")}<div class="meta">${x.devices} device${x.devices === 1 ? "" : "s"}</div></div>
+          <div class="rp-track" title="${esc(upLevel(x.uptime)[1])}"><b style="width:${x.uptime ?? 0}%;background:${upColor(x.uptime)}"></b></div>
+          <div class="v">${x.uptime ?? "–"}%<span>${x.downH} h down</span></div></div>`).join("") || `<p class="meta">No devices this month</p>`}</div></div></div>
+      <div class="card"><div class="pad"><h3 class="rp-h">Tickets</h3><div class="rp-tk">
+        <svg viewBox="0 0 140 140" width="150" height="150" role="img" aria-label="${onPct == null ? "No tickets resolved" : onPct + "% of resolved tickets were on time"}">
+          <circle cx="70" cy="70" r="54" fill="none" stroke="var(--line)" stroke-width="14"/>
+          ${onPct ? `<circle cx="70" cy="70" r="54" fill="none" stroke="var(--ok)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C * onPct / 100} ${C}" transform="rotate(-90 70 70)"/>` : ""}
+          <text x="70" y="72" text-anchor="middle" font-size="30" font-weight="700" fill="currentColor">${onPct == null ? "–" : onPct + "%"}</text>
+          <text x="70" y="94" text-anchor="middle" font-size="12" fill="currentColor" opacity=".65">on time</text></svg>
+        <dl><dt>${t.opened}</dt><dd>opened this month</dd><dt>${t.resolved}</dt><dd>resolved by technicians</dd>
+          <dt>${t.onTime}</dt><dd>resolved before the deadline</dd><dt>${t.open}</dt><dd>still open at month end</dd></dl></div></div></div>
+    </div>
+    <div class="card"><div class="pad"><h3 class="rp-h">Alerts by kind <span class="meta">· ${t.alertsTotal} in total</span></h3><div class="rp-rows">${kinds.map(([k, n]) => `<div class="rp-row">
+        <div class="name">${esc(ALERT_NAMES[k] || k)}</div><div class="rp-track"><b style="width:${100 * n / maxK}%;background:var(--rp-bar)"></b></div><div class="v">${n}</div></div>`).join("")
+      || `<p class="meta">No alerts this month</p>`}</div></div></div>
+    <details class="card rp-more"><summary>All numbers per site</summary><div class="table-wrap">${repTable(r)}</div></details>`;
+}
+let repMonth = new Date().toISOString().slice(0, 7);
+VIEWS.reports = async (arg, first) => {
+  if (!first) return; // monthly numbers: no redraw every 5 s
+  $("view").innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:10px"><h2>Reports</h2>
+      <div class="row"><input type="month" id="repM" value="${repMonth}" max="${new Date().toISOString().slice(0, 7)}">
+        <button class="btn" id="repCsv">Download CSV</button><button class="btn" id="repPrint">Print</button>${me().admin ? `<button class="btn" id="repWa">Send on WhatsApp</button>` : ""}</div></div>
+    <p class="lead">How the fleet did this month: time online, the days it went down, each site, tickets and alerts.</p>
+    <div id="repBody"><p class="empty">Loading…</p></div>`;
+  let r = null;
+  const load = async () => {
+    r = await api("/api/report?month=" + repMonth).catch(e => (toast("Failed: " + e.message, true), null));
+    if (!r || !$("repBody")) return;
+    $("repBody").innerHTML = repView(r);
+    // hover a day: its date, uptime and downtime
+    const box = $("repDays"), tip = document.createElement("div");
+    tip.className = "rp-tip"; tip.hidden = true; box.append(tip);
+    box.onmouseover = e => { const i = e.target.closest("i[data-tip]"); if (!i) return; tip.textContent = i.dataset.tip; tip.hidden = false; tip.style.left = (i.offsetLeft + i.offsetWidth / 2) + "px"; };
+    box.onmouseleave = () => (tip.hidden = true);
+  };
+  $("repM").onchange = e => { if (e.target.value) { repMonth = e.target.value; load(); } };
+  $("repCsv").onclick = () => r && saveText(`report-${r.month}.csv`, csvOf([REP_COLS.map(c => c[0]), ...repRows(r).map(s => REP_COLS.map(c => c[1](s)))]));
+  $("repPrint").onclick = () => {
+    if (!r) return;
+    const w = open("", "_blank");
+    if (!w) return toast("Allow pop-ups for this site to print", true);
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Report ${esc(r.month)}</title><style>body{font:13px system-ui,sans-serif;margin:24px;color:#111}
+      table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:6px 8px;text-align:left}th{background:#eee}.big{font-size:56px;font-weight:700;letter-spacing:-.04em}</style>
+      <h1>Monthly report · ${esc(r.month)}</h1><p>${esc(repSpan(r))} · printed ${esc(new Date().toLocaleString())}</p>
+      <div class="big">${r.total.uptime ?? "–"}% online</div><p>${r.total.downH} h of downtime · ${r.total.alertsTotal} alerts · ${r.total.opened} tickets opened, ${r.total.resolved} resolved (${r.total.onTime} on time)</p>${repTable(r)}`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+  if ($("repWa")) $("repWa").onclick = () => confirm(`Send the ${repMonth} summary to the WhatsApp alert numbers?`)
+    && act(() => api("/api/report/whatsapp", { month: repMonth }), "Report queued for WhatsApp");
+  load();
 };
 
 // Bug Finder: crashes and freezes of every app on every device, newest first.
@@ -2261,7 +2535,7 @@ VIEWS.bug = async (id, first) => {
 // Honest status of every feature on the roadmap.
 // Accounts and what each one may see / do (administrators only).
 const MODULE_NAMES = { overview: "Overview", devices: "Devices & control", sites: "Sites", alerts: "Alerts", tasks: "Scheduled tasks",
-  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)" };
+  apps: "Apps & files", enroll: "Enroll devices", activity: "Activity log", team: "Technical Team & tickets", assistant: "Max (AI assistant)", bugs: "Bug Finder", barrier: "Barrier control (Remote Command Centre)", reports: "Reports" };
 // ---------------- Barrier control (Remote Command Centre): two live cameras and the open buttons of one site ----------------
 // The server holds the MQTT broker login and the camera addresses; the page only sees names, states and results.
 // Boom barrier: post, striped arm (.arm lifts on hover / while sending), base
@@ -2438,6 +2712,11 @@ VIEWS.config = (arg, first) => {
       <div class="pad" style="padding-bottom:0"><p class="meta" style="margin:0">What each model's relay does. A device with its own verified relay setup (device page) keeps that. Only change these after testing on a real device: a wrong value can leave a door open.</p></div>
       <div class="table-wrap"><table><thead><tr><th>Model</th><th>Relay</th><th>Relay file</th><th>ON</th><th>OFF</th><th>Root</th><th>Readable</th><th>Pulse (s)</th><th>Follows maintenance</th><th></th></tr></thead>
         <tbody id="cfgRelay">${(S.models || []).map(relayRow).join("")}</tbody></table></div></div>
+    <div class="card"><h3>🎫 Offline auto-ticket</h3><div class="pad">
+      <div class="row"><label class="chip"><input type="checkbox" id="cfgAuto" ${S.ticketSettings?.autoTickets ? "checked" : ""}>Create a Technical Team ticket when an onsite device stays offline</label>
+        <span class="meta">for more than</span><input type="number" id="cfgAfter" min="0" max="1440" value="${esc(S.ticketSettings?.ticketAfterMin ?? 10)}" style="width:80px">
+        <span class="meta">minutes after its offline alert</span><button class="btn primary" id="cfgAutoSave">Save</button></div>
+      <p class="meta">One ticket per outage; if the device goes offline again while its ticket is open, the ticket gets a note instead. Priority and auto-assign are in Technical Team › Settings.</p></div></div>
     <div class="card"><h3>💬 WhatsApp alerts<span class="grow"></span><button class="btn" id="cfgWaEdit">Edit numbers</button></h3>
       <div class="pad"><div class="chips" id="cfgWa">${cfgWa()}</div>
         <p class="meta">These numbers get a WhatsApp message when a device goes offline, its battery is low or the app crashes, and when it is back online.</p></div></div>
@@ -2453,6 +2732,7 @@ VIEWS.config = (arg, first) => {
   $("cfgMaintOn").onclick = () => { const t = target(); if (!count(t)) return toast("No devices there", true); maintenance(t, true, Math.max(2, count(t))); };
   $("cfgMaintOff").onclick = () => maintenance(target(), false, count(target()));
   $("cfgWaEdit").onclick = () => whatsappForm();
+  $("cfgAutoSave").onclick = () => act(() => api("/api/team-settings", { ...S.ticketSettings, autoTickets: $("cfgAuto").checked, ticketAfterMin: $("cfgAfter").value }), "Offline auto-ticket saved");
   $("maxSave").onclick = () => act(() => api("/api/assistant/settings", { enabled: $("maxOn").checked, model: $("maxModel").value, dailyLimit: $("maxDaily").value }), "Max settings saved");
   // Maintenance image: shrunk to 1920 px JPEG here, sent as the request body.
   $("cfgImg").onchange = () => {
@@ -2510,6 +2790,7 @@ VIEWS.users = (arg, first) => {
         <td class="wrap" style="max-width:220px">${esc(siteText(x))}</td><td class="wrap meta" style="max-width:320px">${esc(modText(x))}</td>
         <td class="meta">${x.lastLogin ? ago(x.lastLogin) : "never"}</td>
         <td><div class="row"><button class="btn" data-u="edit" data-name="${esc(x.username)}">Edit</button>
+          <button class="btn ${x.twoFactor ? "" : "ghost"}" data-u="2fa" data-name="${esc(x.username)}" title="Two-factor sign-in with an authenticator app">${x.twoFactor ? "🔐 2FA on" : "2FA off"}</button>
           <button class="btn ghost danger" data-u="del" data-name="${esc(x.username)}">Delete</button></div></td></tr>`).join("")}
       </tbody></table></div></div>`;
   $("view").onclick = e => {
@@ -2518,10 +2799,32 @@ VIEWS.users = (arg, first) => {
     const x = users.find(u => u.username === b.dataset.name);
     if (b.dataset.u === "add") userForm();
     if (b.dataset.u === "edit" && x) userForm(x);
+    if (b.dataset.u === "2fa" && x) twoFactorForm(x);
     if (b.dataset.u === "del" && x && confirm(`Delete the account "${x.username}"? They are signed out right away.`))
       act(() => api("/api/users/delete", { username: x.username }), "Account deleted");
   };
 };
+
+// Two-factor sign-in for one account: scan the QR code with an authenticator app (Google / Microsoft Authenticator, Authy),
+// then type its code to switch it on. Turning it off is for a lost phone.
+async function twoFactorForm(x) {
+  if (x.twoFactor) {
+    if (confirm(`Turn off two-factor sign-in for "${x.username}"? They then sign in with the password only.`))
+      act(() => api("/api/users/2fa", { username: x.username, action: "off" }), "Two-factor sign-in turned off");
+    return;
+  }
+  let r;
+  try { r = await api("/api/users/2fa", { username: x.username, action: "start" }); } catch (e) { return toast("Failed: " + e.message, true); }
+  const qr = qrcode(0, "M");
+  qr.addData(r.uri);
+  qr.make();
+  dialog(`<h2>Two-factor sign-in for ${esc(x.username)}</h2>
+    <p class="meta">On ${esc(x.name || x.username)}'s phone, open an authenticator app (Google Authenticator, Microsoft Authenticator or Authy) and scan this code.</p>
+    <div class="qr" style="max-width:220px;margin:8px auto">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
+    <p class="meta">Can't scan? Type this key in the app: <code style="user-select:all">${esc(r.secret.match(/.{1,4}/g).join(" "))}</code></p>
+    <label>Then type the 6-digit code the app shows</label><input id="tfCode" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" style="width:140px">`,
+    "Turn on", () => act(() => api("/api/users/2fa", { username: x.username, action: "confirm", code: $("tfCode").value }), "Two-factor sign-in is on. From now on they sign in with the password plus a code."));
+}
 
 function userForm(x) {
   const all = !x || (x.sites || []).includes("*"), mods = x ? x.modules || [] : ["overview", "devices", "alerts"];

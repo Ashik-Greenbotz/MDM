@@ -90,7 +90,7 @@ The F10 (Android 9) has its relay at `/sys/class/telpoio/relay_en`, which only r
 - Access: the **Barrier control** page permission in Users & access, plus the site. Only admins see **⚙ Setup…**: cameras (name + address), barriers (label, MQTT topic, command payload) and the **MQTT broker** (host, port, username, password; the password is write-only and kept on the server). The same barrier can't be sent another command for 5 s.
 - Cameras stream through the portal, so their address and password never reach the browser: HTTP MJPEG, JPEG snapshot (Basic login), or **RTSP** (`rtsp://user:pass@host:port/...`, e.g. Dahua DVRs): the server converts RTSP to MJPEG with ffmpeg (~5 frames/s, 960 px; in the Docker image; `FFMPEG=path` on a PC). Use the camera's sub-stream (`subtype=1`) to keep the server load low. An unreachable camera shows "Camera not reachable".
 - Adam Park (16 Oct 2026): DVR `adampark.dvrdns.org` ports 8082 (Shelford, channel 23) and 8081 (Adam Road, channel 22); commands on topic `VA/63/` with status `visitor_entry` / `resident` on the vendor's shared broker `159.65.152.75:1883`. Set up on the local portal only; which button opens which barrier is still to be confirmed with the vendor. Production needs the same entered in ⚙ Setup on mdm.gbotz.site.
-- Broker: runs on the cloud VM (docker compose service `mqtt`, Mosquitto), not on any office PC. To turn it on, edit the VM `.env`: `COMPOSE_PROFILES=ssh,mqtt`, `MQTT_USER`, `MQTT_PASSWORD`, `MQTT_URL=mqtt://mqtt:1883`; open TCP 8883 in the VM firewall; then `docker compose up -d`. Controllers connect to `mqtts://mdm.gbotz.site:8883` (TLS with the site's own certificate) with that login. The login is only in the server environment, never in the browser.
+- Broker: normally the barrier vendor's broker, entered in **⚙ Setup…** (one broker for all sites; the server's `MQTT_URL` / `MQTT_USER` / `MQTT_PASSWORD` override it if set). The portal only **sends** commands: the controllers don't reply, so there is no confirmation or barrier state; watch the camera. Optional own broker on the cloud VM (compose service `mqtt`, Mosquitto, TLS 8883): VM `.env` `COMPOSE_PROFILES=ssh,mqtt`, `MQTT_USER`, `MQTT_PASSWORD`, `MQTT_URL=mqtt://mqtt:1883`, open TCP 8883, `docker compose up -d`.
 - Code: `functions/mqtt.js` (small built-in MQTT client, no npm packages), `/api/barrier*` in `functions/server.js`, `VIEWS.barrier` in `dashboard/index.html`.
 
 ## Technical team and tickets
@@ -156,6 +156,13 @@ Ask in words (or tap the microphone: the browser's speech recognition, Chrome / 
 - **Devices**: a waiting Device ID ("Not linked yet") has a **🗑 Remove** button.
 - **Remote control**: the mouse wheel scrolls the device (a swipe at the pointer).
 - **App 10.22 / 10.23** (built, not yet installed on tablets): light animations (home tiles slide in, press effect, status pulse while offline, clock fade, maintenance fade) and the ticket-system switch.
+
+## Portal Batch B (17 Oct 2026, dev 125cc56, portal only)
+- **Reports** (new page, module `reports` in Users & access): pick a month to see each site's devices, **uptime %** and downtime hours (the time devices were not checking in, taken from offline alerts), offline / other alerts, and tickets opened, resolved, resolved on time and still open at month end. **⬇ CSV**, **🖨 Print** (a clean printable page), and **💬 Send on WhatsApp** (admins; a summary to the alert numbers).
+- **Two-factor sign-in** (optional per account): Users & access → **2FA off** button → scan the QR code with Google / Microsoft Authenticator or Authy, then type the code to turn it on. After the right password, the sign-in page asks for the 6-digit code. Lost phone: an admin clicks **🔐 2FA on** to turn it off. The main `ADMIN_USER` login has no 2FA, so nobody can be locked out.
+- **Activity log**: filter by **type** and by **user** (who sent the command / changed the setting), and **⬇ CSV** export of the whole log (up to 5000 entries).
+- **Device health score**: Devices has a **Health** column (0–100, worked out every hour from the health history) with warnings such as "Storage full in about 26 days", "Running 8 °C hotter than last week", "Battery dropped to 12 % in the last day", or RAM / CPU busy all day. There is also a **Health warnings** tile and filter.
+- **Configuration → 🎫 Offline auto-ticket**: turn the automatic Technical Team ticket on or off and set how many minutes after the offline alert it is created. This is the same setting as Technical Team → Settings.
 
 ## Sign-in page
 `dashboard/login.html`: no Enter or button press needed. The password is checked by itself 0.5 s after you stop typing (Enter or a click checks at once). After a wrong password the button turns red and flies around the whole screen on two jet flames (the flames point away from where it is going) and shoots at the pointer. The right password turns it green ("🚀 Welcome!") and it takes off before the portal opens (about 2 s). The server still locks an IP out for a minute after 5 wrong tries.
@@ -251,7 +258,7 @@ Android only installs an app update signed with the **same key** as the app alre
 ### Built apps (not in git, they contain device keys)
 | Path | What |
 |---|---|
-| `final apk/mdmkiosk app.apk` | Latest app 10.18. One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. Also upload it on the portal's Apps & files and click **Use for QR**, so Add device links to it. |
+| `final apk/mdmkiosk app.apk` (= `final apk/Kiosk.apk`) | Latest app **10.23**, signed with the production key (`7478efb4...`). One APK for both servers: pick Production or Debug in setup. `setup-tablet.bat` installs this one. `OLD 10.18 wrong key - do not use.apk` is signed with another PC's key: tablets that get it can't take portal updates. |
 | `Cloud APK/Kiosk app v10.18.apk` | Same build, 10.18. `Kiosk app v10.12.apk` is the previous one. |
 | `Kiosk app cloud.apk`, `Kiosk app local.apk`, `Kiosk app phase2.apk` | Older builds. |
 

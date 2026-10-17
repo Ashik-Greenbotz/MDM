@@ -60,8 +60,23 @@ function liveWait(L, who, ms, res) {
   });
 }
 const liveWake = (L, who) => L.wait[who].slice().forEach(f => f());
+// Remote shell (Android): same idea. The tablet's `sh` output piles up in `out` (last 100 KB; `base` = how much was
+// dropped before it), typed lines wait in `inputs`. Ends LIVE_IDLE_MS after the terminal window closes.
+const TERM = {}; // id -> { out, base, inputs, seen, wait, started, by }
+// A finished session is saved as a text file listed on the device page (last 20), then forgotten.
+async function termSave(id, T) {
+  if (!T || TERM[id] !== T) return;
+  delete TERM[id];
+  const d = devices[id];
+  if (!d || !T.out.trim()) return;
+  await store.write(`shell/${id}/${T.started}.txt`, Buffer.from(`Remote SSH on ${label(d)} (${d.code}) by ${T.by || "?"}, ${new Date(T.started).toISOString()}\n${T.base ? "(start cut off)\n" : ""}\n${T.out.replace(/^sh: (can.t find: tty fd|warning: won.t have full job control).*\n/gm, "")}`));
+  (d.shellLogs ||= []).push({ at: T.started, by: T.by || "", size: T.out.length });
+  if (d.shellLogs.length > 20) d.shellLogs.shift(); // ponytail: older files stay in storage; prune them if space matters
+  log(id, "ssh", `Remote SSH session by ${T.by || "?"} saved (${Math.ceil(T.out.length / 1024)} KB)`);
+  dirty = true;
+}
 const COMMANDS = {
-  "android-kiosk": ["unlock", "lock", "singleapp", "apps", "relay", ...ANDROID],
+  "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "run", "apps", "relay", ...ANDROID],
   android: ANDROID,
   telpo: ANDROID,
   windows: ["reboot", "shutdown", "lockscreen", "logoff", "message", "screenshot", "run", "file", "logs", "sshon", "sshoff", "remote"],
@@ -178,7 +193,7 @@ const same = (a, b) => {
 // ---- portal accounts ----
 // The ADMIN_USER / ADMIN_PASSWORD account is always a full admin (can't be locked out). More accounts live in portal.users:
 // { username, name, hash, admin, sites: ["*"] | [site names], modules: [MODULES...], readOnly, disabled, createdAt }
-const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs", "barrier"];
+const MODULES = ["overview", "devices", "sites", "alerts", "tasks", "apps", "enroll", "activity", "team", "assistant", "bugs", "barrier", "reports"];
 const ROOT = { username: ADMIN_USER, name: "Administrator", admin: true, root: true };
 const hashPw = (pw, salt = crypto.randomBytes(16).toString("hex")) => salt + ":" + crypto.scryptSync(String(pw), salt, 32).toString("hex");
 const checkPw = (pw, stored) => typeof stored === "string" && same(hashPw(pw, stored.split(":")[0]), stored);
@@ -186,7 +201,19 @@ const allSites = u => u.admin || (u.sites || []).includes("*");
 const sees = (u, d) => !!d && (allSites(u) || (u.sites || []).includes(d.group || "")); // "No site" devices: all-sites accounts only
 const siteOk = (u, g) => allSites(u) || (!!g && (u.sites || []).includes(g));
 const can = (u, ...mods) => u.admin || mods.some(m => (u.modules || []).includes(m));
-const publicUser = ({ hash, ...u }) => u;
+const publicUser = ({ hash, totp, totpNew, ...u }) => ({ ...u, twoFactor: !!totp });
+// Two-factor sign-in (TOTP, RFC 6238): 6-digit codes from an authenticator app, a new one every 30 s. The secret is base32.
+// One step either side is accepted for clock drift. ponytail: a code can be reused within its 90 s window; remember the last step per account if that matters.
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const b32 = buf => [...buf].map(b => b.toString(2).padStart(8, "0")).join("").match(/.{1,5}/g).map(x => B32[parseInt(x.padEnd(5, "0"), 2)]).join("");
+const unb32 = s => Buffer.from(s.split("").map(c => B32.indexOf(c).toString(2).padStart(5, "0")).join("").match(/.{8}/g).map(x => parseInt(x, 2)));
+function totp(secret, step) {
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(step));
+  const h = crypto.createHmac("sha1", unb32(secret)).update(msg).digest(), o = h[19] & 15;
+  return String((h.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, "0");
+}
+const totpOk = (secret, code, t = Date.now()) => [-1, 0, 1].some(k => same(totp(secret, Math.floor(t / 30000) + k), String(code || "").replace(/\s/g, "")));
 
 // Login sessions: random token in an HttpOnly cookie -> { exp, user } (user null = the ADMIN_USER account). Lost on restart.
 // The cookie must be called __session: Firebase Hosting drops every other cookie.
@@ -352,10 +379,38 @@ async function sendFile(res, key, name) {
 }
 
 // Fields a device may set about itself.
-const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
+const REPORT_FIELDS = ["type", "patch", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
   "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
+// Health score 0-100 from the hourly averages (historyH rows: [time, ...HEALTH]) with warnings that look ahead:
+// storage filling up, running hotter than last week, battery running flat, RAM / CPU busy all day. Worked out once an hour.
+// ponytail: no battery-ageing estimate; the app would have to report charge capacity for that.
+function healthScore(d) {
+  const H = d.historyH || [], col = k => 1 + HEALTH.indexOf(k), last = H.slice(-24), week = H.slice(-7 * 24, -24);
+  const vals = (rows, k) => rows.map(r => r[col(k)]).filter(x => x != null);
+  const avg = (rows, k) => { const v = vals(rows, k); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const disk = d.disk ?? avg(last, "disk"), t24 = avg(last, "temp"), tWeek = avg(week, "temp");
+  if (disk == null && t24 == null && !last.length) return null;
+  let score = 100;
+  const warn = [];
+  if (disk != null) {
+    score -= Math.max(0, disk - 70);
+    const old = H.slice(-7 * 24).find(r => r[col("disk")] != null), days = old ? (Date.now() - old[0]) / 864e5 : 0;
+    const rate = days >= 1 ? (disk - old[col("disk")]) / days : 0; // % per day
+    if (rate > 0.05 && (100 - disk) / rate < 30) { warn.push(`Storage full in about ${Math.max(1, Math.round((100 - disk) / rate))} days`); score -= 15; }
+  }
+  if (t24 != null) {
+    score -= Math.max(0, t24 - 50) * 2;
+    if (tWeek != null && t24 - tWeek >= 5) { warn.push(`Running ${Math.round(t24 - tWeek)}°C hotter than last week`); score -= 10; }
+    else if (t24 >= 60) warn.push(`Hot: ${Math.round(t24)}°C on average today`);
+  }
+  const bMin = Math.min(...vals(last, "battery")), r24 = avg(last, "ram"), c24 = avg(last, "cpu");
+  if (bMin < LOW_BATTERY) { warn.push(`Battery dropped to ${Math.round(bMin)}% in the last day`); score -= 15; }
+  if (r24 >= 85) { warn.push(`RAM ${Math.round(r24)}% used on average today`); score -= 10; }
+  if (c24 >= 80) { warn.push(`CPU ${Math.round(c24)}% busy on average today`); score -= 10; }
+  return { score: Math.max(0, Math.min(100, Math.round(score))), warn, at: Date.now() };
+}
 
 // Queues a command for every device in the list that supports it. Returns how many got it.
 function queue(list, cmd, by) {
@@ -368,6 +423,8 @@ function queue(list, cmd, by) {
       const L = LIVE[d.id];
       if (L && Date.now() - (L.at || 0) < 5000) L.seen = Date.now(); else LIVE[d.id] = liveNew();
     }
+    // reopening keeps the same session (and its scrollback), so a tablet still running the shell just carries on
+    if (cmd.type === "term") (TERM[d.id] ||= { ...liveNew(), out: "", base: 0, started: Date.now(), by }).seen = Date.now();
     if (d.queue.length > 20) d.queue.shift();
     log(d.id, "command", `${cmd.type}${cmd.name ? " " + cmd.name : ""} queued${by ? " by " + by : ""}`);
     n++;
@@ -393,6 +450,20 @@ function pick(target = {}) {
   if (target.group != null) return all.filter(d => (d.group || "") === target.group);
   if (target.type) return all.filter(d => typeOf(d) === target.type);
   return target.all ? all : [];
+}
+
+// Tablet settings (brightness %, volume %, night screen off/on, system updates). null / "" = leave as it is.
+const SETTING_KEYS = ["brightness", "volume", "screenOff", "screenOn", "updates"];
+function cleanSettings(b = {}) {
+  const pct = v => v === null || v === undefined || v === "" ? null : Math.min(100, Math.max(0, Math.round(Number(v)) || 0));
+  const hm = v => /^\d\d:\d\d$/.test(v || "") ? v : "";
+  return { brightness: pct(b.brightness), volume: pct(b.volume), screenOff: hm(b.screenOff), screenOn: hm(b.screenOn),
+    updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "" };
+}
+// What a tablet uses: its own values, else its site's.
+function settingsOf(d) {
+  const site = portal.sites.find(x => x.name === d.group)?.settings || {}, own = d.settings || {}, set = v => v === "" ? null : v;
+  return Object.fromEntries(SETTING_KEYS.map(k => [k, set(own[k]) ?? set(site[k]) ?? null]));
 }
 
 function commandFrom(body) {
@@ -531,6 +602,61 @@ function waRemind() {
     waQueue("reminder", d, a, a.waReminders);
   }
 }
+
+// ---- monthly report per site: uptime (from offline alerts), alerts by kind, tickets opened / resolved / on time ----
+// Month boundaries are in TIME_ZONE. Downtime counts from when the device stopped checking in (the alert comes OFFLINE_ALERT_MS later).
+// ponytail: only the last 1000 resolved alerts are kept (checkAlerts), so a big fleet's older months lose downtime; keep more if needed.
+function monthStart(y, m) { // m is 0-based and may be 12
+  const t = Date.UTC(y, m, 1), at = z => new Date(new Date(t).toLocaleString("en-US", { timeZone: z }));
+  return t - (at(TIME_ZONE) - at("UTC"));
+}
+function report(u, month) {
+  const [y, mo] = month.split("-").map(Number), from = monthStart(y, mo - 1), to = Math.min(monthStart(y, mo), Date.now());
+  const rows = new Map(), row = site => rows.get(site) || rows.set(site, { site, devices: 0, span: 0, down: 0, alerts: {}, opened: 0, resolved: 0, onTime: 0, open: 0 }).get(site);
+  // days of the month so far (ponytail: 24 h steps from the month start, off by an hour on DST days in zones that have them)
+  const days = [];
+  for (let t = from; t < to; t += 864e5) days.push({ at: t, span: 0, down: 0 });
+  const perDay = (s0, e0, k) => { for (const x of days) { const a = Math.max(s0, x.at), b = Math.min(e0, x.at + 864e5); if (b > a) x[k] += b - a; } };
+  const offline = new Map();
+  for (const a of portal.alerts) {
+    const d = devices[a.deviceId];
+    if (!d || !sees(u, d)) continue;
+    if (a.kind === "offline") offline.set(d.id, [...(offline.get(d.id) || []), a]);
+    if (a.at >= from && a.at < to) { const r = row(d.group || ""); r.alerts[a.kind] = (r.alerts[a.kind] || 0) + 1; }
+  }
+  for (const d of Object.values(devices).filter(d => sees(u, d))) {
+    const r = row(d.group || ""), start = Math.max(from, d.firstSeen || from);
+    r.devices++;
+    if (start >= to) continue;
+    r.span += to - start;
+    perDay(start, to, "span");
+    for (const a of offline.get(d.id) || []) {
+      const s0 = Math.max(start, a.at - OFFLINE_ALERT_MS), e0 = Math.min(to, a.resolvedAt || Date.now());
+      if (e0 > s0) { r.down += e0 - s0; perDay(s0, e0, "down"); }
+    }
+  }
+  for (const t of portal.tickets) {
+    if (!(allSites(u) || siteOk(u, t.site))) continue;
+    const r = row(t.site || "");
+    if (t.createdAt >= from && t.createdAt < to) r.opened++;
+    if (t.resolvedAt >= from && t.resolvedAt < to) { r.resolved++; if (t.resolvedAt <= t.due) r.onTime++; }
+    if (t.createdAt < to && !(t.resolvedAt < to) && !(t.closedAt < to)) r.open++;
+  }
+  const done = r => ({ ...r, uptime: r.span ? Math.round(1000 * (1 - Math.min(r.down, r.span) / r.span)) / 10 : null, downH: Math.round(r.down / 36e5 * 10) / 10,
+    alertsTotal: Object.values(r.alerts).reduce((a, b) => a + b, 0) });
+  const sites = [...rows.values()].sort((a, b) => (a.site ? b.site ? a.site.localeCompare(b.site) : -1 : 1));
+  const total = { site: "All sites", devices: 0, span: 0, down: 0, alerts: {}, opened: 0, resolved: 0, onTime: 0, open: 0 };
+  for (const r of sites) {
+    for (const k of ["devices", "span", "down", "opened", "resolved", "onTime", "open"]) total[k] += r[k];
+    for (const [k, n] of Object.entries(r.alerts)) total.alerts[k] = (total.alerts[k] || 0) + n;
+  }
+  return { month, from, to, sites: sites.map(done), total: done(total),
+    days: days.map(x => ({ at: x.at, downH: Math.round(x.down / 36e5 * 10) / 10, uptime: x.span ? Math.round(1000 * (1 - Math.min(x.down, x.span) / x.span)) / 10 : null })) };
+}
+const reportText = r => `📊 MONTHLY REPORT ${r.month}\n\nUptime: ${r.total.uptime ?? "-"}% · Devices: ${r.total.devices} · Alerts: ${r.total.alertsTotal}\n\n` +
+  `Tickets: ${r.total.opened} opened, ${r.total.resolved} resolved (${r.total.onTime} on time), ${r.total.open} open at month end\n\n` +
+  r.sites.slice(0, 30).map(s => `• ${s.site || "No site"}: ${s.uptime ?? "-"}% up, ${s.alertsTotal} alerts, ${s.opened} tickets`).join("\n") +
+  (r.sites.length > 30 ? `\n…and ${r.sites.length - 30} more sites. Open Reports in the portal for the full list.` : "");
 
 // ---- alerts: opened when a condition starts, resolved when it ends (crashes stay until acknowledged) ----
 // idx: optional map of open alerts by "deviceId|kind" (checkAlerts passes one so 1000 devices don't each scan every alert)
@@ -1398,6 +1524,7 @@ const ready = (async () => {
     if (d.history || d.historyH) return histDirty.add(d.id); // older devices.json had it inline: moved out on the next save
     try { Object.assign(d, JSON.parse(await store.read(histKey(d.id)))); } catch {}
   }));
+  for (const d of Object.values(devices)) d.score = healthScore(d);
   // The WireGuard VPN was removed (remote control replaces it): forget its keys and peers.
   if (portal.vpnHub || portal.vpnAdmins) { delete portal.vpnHub; delete portal.vpnAdmins; dirty = true; }
   for (const d of Object.values(devices)) if ("vpn" in d || "vpnKey" in d || "vpnUp" in d) { delete d.vpn; delete d.vpnKey; delete d.vpnUp; dirty = true; }
@@ -1484,6 +1611,7 @@ async function handler(req, res) {
             return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null;
           })]);
           if (d.historyH.length > HOURLY_KEEP) d.historyH.shift();
+          d.score = healthScore(d);
         }
       }
       delete d.command; // old single-command format
@@ -1507,7 +1635,7 @@ async function handler(req, res) {
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,
-        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false });
+        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false, settings: settingsOf(d) });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -1605,6 +1733,25 @@ async function handler(req, res) {
       L.inputs = [];
       return send(res, 200, { inputs });
     }
+    // Remote shell, device side: POST = shell output; GET /input waits up to 15 s for typed lines.
+    if (p === "/api/term" || p === "/api/term/input") {
+      if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
+      const id = String(req.headers["x-device-id"] || ""), T = TERM[id];
+      const over = () => !devices[id] || !T || TERM[id] !== T || Date.now() - T.seen > LIVE_IDLE_MS;
+      if (over()) { await termSave(id, T); return send(res, 200, { stop: true }); }
+      if (req.method === "POST") {
+        T.out += (await readBody(req, 1024 * 1024)).toString("utf8");
+        if (T.out.length > 200000) { T.base += T.out.length - 100000; T.out = T.out.slice(-100000); }
+        liveWake(T, "viewers");
+        return send(res, 200, { ok: true });
+      }
+      if (!T.inputs.length) await liveWait(T, "device", 15000, res);
+      if (res.destroyed) return;
+      if (over()) { await termSave(id, T); return send(res, 200, { stop: true }); }
+      const inputs = T.inputs;
+      T.inputs = [];
+      return send(res, 200, { inputs });
+    }
     // Technical team tablet (device key + X-Device-Id of a tech device assigned to a technician). It acts as that technician:
     // only their tickets, only the "tech" status moves (never closing), notes, photos and their availability.
     if (p.startsWith("/api/tech/")) {
@@ -1681,6 +1828,10 @@ async function handler(req, res) {
       if (user === undefined) {
         loginFailed(ip);
         return send(res, 401, { error: acct?.disabled ? "This account is disabled" : "Wrong username or password" });
+      }
+      if (acct?.totp && user && !totpOk(acct.totp, body.code)) { // right password, two-factor on: the code is the second step
+        if (body.code) loginFailed(ip);
+        return send(res, 401, { need2fa: true, error: body.code ? "Wrong code, try the newest one" : "Enter the 6-digit code from your authenticator app" });
       }
       failures.delete(ip);
       const sid = crypto.randomBytes(32).toString("hex");
@@ -1775,7 +1926,20 @@ async function handler(req, res) {
       const dev = url.searchParams.get("device");
       // events without a device (sites, uploads...) and those of removed devices: all-sites accounts only
       const list = portal.events.filter(e => (!dev || e.deviceId === dev) && (allSites(u) || sees(u, devices[e.deviceId])));
-      return send(res, 200, { events: list.slice(-1000).reverse() });
+      return send(res, 200, { events: list.slice(url.searchParams.get("all") ? 0 : -1000).reverse() });
+    }
+    // ---- Reports: monthly numbers per site; admins can send the summary to the WhatsApp alert numbers ----
+    if (p === "/api/report" || p === "/api/report/whatsapp") {
+      if (!can(u, "reports")) return deny();
+      const month = String(url.searchParams.get("month") || body.month || "");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return send(res, 400, { error: "Month must look like 2026-10" });
+      const r = report(u, month);
+      if (req.method === "GET") return send(res, 200, r);
+      if (!u.admin) return deny("Only admins send the report on WhatsApp");
+      if (!portal.whatsapp.length) return send(res, 400, { error: "No WhatsApp numbers yet (Configuration page)" });
+      waPush(`report:${month}:${Date.now()}`, null, "report", portal.whatsapp, reportText(r));
+      log(null, "whatsapp", `Monthly report ${month} queued for WhatsApp by ${by}`);
+      return ok();
     }
     // ---- Configuration page (admins only) ----
     if (p === "/api/config/maintenance-image") {
@@ -1840,6 +2004,35 @@ async function handler(req, res) {
         L.inputs.push(a === "tap" ? { a, x: n(body.x), y: n(body.y) } : a === "swipe" ? { a, x: n(body.x), y: n(body.y), x2: n(body.x2), y2: n(body.y2) } : { a });
         if (L.inputs.length > 20) L.inputs.shift();
         liveWake(L, "device");
+        return send(res, 200, { ok: true });
+      }
+    }
+    // Remote shell, portal side (admins): GET ?from=<n> waits up to 10 s for output past n; POST { data } types into it.
+    // A saved Remote SSH session (admins).
+    m = /^\/api\/devices\/([\w-]+)\/shell\/(\d+)$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]], buf = u.admin && d && await store.read(`shell/${d.id}/${m[2]}.txt`);
+      if (!buf) return send(res, 404, { error: "not found" });
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Content-Disposition": disposition(`${label(d)}-ssh-${m[2]}.txt`) });
+      return res.end(buf);
+    }
+    m = /^\/api\/devices\/([\w-]+)\/term$/.exec(p);
+    if (m) {
+      const d = devices[m[1]], T = TERM[m[1]];
+      if (!u.admin || !d) return deny("Only admins can run commands on devices");
+      if (!T) return send(res, 404, { error: "no shell session, open Remote SSH again" });
+      T.seen = Date.now();
+      if (req.method === "GET") {
+        const from = Math.max(Number(url.searchParams.get("from")) || 0, T.base), end = () => T.base + T.out.length;
+        if (end() <= from) await liveWait(T, "viewers", 10000, res);
+        if (res.destroyed) return;
+        T.seen = Date.now();
+        return send(res, 200, { to: end(), data: T.out.slice(Math.max(0, from - T.base)) });
+      }
+      if (req.method === "POST") {
+        T.inputs.push(String(body.data ?? "").slice(0, 4000));
+        if (T.inputs.length > 50) T.inputs.shift();
+        liveWake(T, "device");
         return send(res, 200, { ok: true });
       }
     }
@@ -1924,7 +2117,7 @@ async function handler(req, res) {
         return ok();
       }
       if (m[2] === "command") {
-        if (body.type === "run" && !u.admin) return deny("Only admins can run commands on devices");
+        if ((body.type === "run" || body.type === "term") && !u.admin) return deny("Only admins can run commands on devices");
         const cmd = commandFrom(body);
         if (cmd.type === "relay" && relayProfile(d).relay === "no") return send(res, 400, { error: `${d.deviceModel} has no relay` });
         if (!queue([d], cmd, by)) return send(res, 400, { error: `${typeOf(d)} devices can't do ${cmd.type}` });
@@ -1951,7 +2144,7 @@ async function handler(req, res) {
       if (!can(u, "devices", "sites")) return deny();
       const list = mine(pick(body.target));
       if (!list.length) return send(res, 400, { error: "no devices selected" });
-      if (body.action === "command" && body.type === "run" && !u.admin) return deny("Only admins can run commands on devices");
+      if (body.action === "command" && (body.type === "run" || body.type === "term") && !u.admin) return deny("Only admins can run commands on devices");
       if (body.action === "command") return ok({ count: queue(list, commandFrom(body), by + " (bulk)") });
       if (body.action === "ssh") {
         for (const d of list) setSsh(d, !!body.on, by + " (bulk)");
@@ -2047,6 +2240,22 @@ async function handler(req, res) {
       if (site) return send(res, 400, { error: "a site with that name already exists" });
       portal.sites.push({ name, ...fields, createdAt: Date.now() });
       log(null, "site", `Site "${name}" added`);
+      return ok();
+    }
+    // Tablet settings: one device's own values, or a site's defaults (admins).
+    m = /^\/api\/devices\/([\w-]+)\/settings$/.exec(p);
+    if (req.method === "POST" && m) {
+      const d = devices[m[1]];
+      if (!d || !can(u, "devices") || !sees(u, d)) return deny();
+      d.settings = cleanSettings(body);
+      log(d.id, "settings", `Tablet settings of ${label(d)} changed by ${by}`);
+      return ok();
+    }
+    if (req.method === "POST" && p === "/api/sites/settings") {
+      const site = portal.sites.find(x => x.name === body.name);
+      if (!site || !u.admin) return deny();
+      site.settings = cleanSettings(body.settings);
+      log(null, "site", `Tablet settings of site "${site.name}" changed by ${by}`);
       return ok();
     }
     if (req.method === "POST" && p === "/api/sites/delete") {
@@ -2421,6 +2630,32 @@ async function handler(req, res) {
       if (portal.users.length === before) return send(res, 404, { error: "no such account" });
       log(null, "user", `Account "${body.username}" deleted by ${by}`);
       return ok();
+    }
+    // Two-factor sign-in: start (new secret for the QR code; the same one again until confirmed), confirm with a code, off.
+    if (req.method === "POST" && p === "/api/users/2fa") {
+      if (!u.admin) return deny();
+      const acct = portal.users.find(x => x.username === body.username);
+      if (!acct) return send(res, 404, { error: "no such account" });
+      if (body.action === "start") {
+        acct.totpNew ||= b32(crypto.randomBytes(20));
+        dirty = true;
+        const issuer = encodeURIComponent("Interlock MDM");
+        return send(res, 200, { secret: acct.totpNew, uri: `otpauth://totp/${issuer}:${encodeURIComponent(acct.username)}?secret=${acct.totpNew}&issuer=${issuer}` });
+      }
+      if (body.action === "confirm") {
+        if (!acct.totpNew || !totpOk(acct.totpNew, body.code)) return send(res, 400, { error: "That code is wrong. Check the phone's clock and type the newest code." });
+        acct.totp = acct.totpNew;
+        delete acct.totpNew;
+        log(null, "user", `Two-factor sign-in turned on for "${acct.username}" by ${by}`);
+        return ok();
+      }
+      if (body.action === "off") {
+        delete acct.totp;
+        delete acct.totpNew;
+        log(null, "user", `Two-factor sign-in turned off for "${acct.username}" by ${by}`);
+        return ok();
+      }
+      return send(res, 400, { error: "unknown action" });
     }
     send(res, 404, { error: "not found" });
   } catch (e) {
