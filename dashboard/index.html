@@ -2176,7 +2176,7 @@ VIEWS.apps = (arg, first) => {
     };
   }
   $("aRows").innerHTML = S.apps.slice().reverse().map(a => `<tr><td class="name">${esc(a.label)}</td>
-      <td class="click" data-x="notes" data-id="${a.id}" title="View / edit the release notes" style="max-width:260px">${a.notes ? esc(a.notes.split("\n")[0].slice(0, 70)) + (a.notes.length > 70 || a.notes.includes("\n") ? "…" : "") : `<span class="meta">+ Add notes</span>`}
+      <td class="click" data-x="notes" data-id="${a.id}" title="View / edit the release notes" style="max-width:260px;min-width:160px;white-space:normal;overflow-wrap:anywhere">${a.notes ? esc(a.notes.split("\n")[0].slice(0, 70)) + (a.notes.length > 70 || a.notes.includes("\n") ? "…" : "") : `<span class="meta">+ Add notes</span>`}
         ${a.by ? `<div class="meta">by ${esc(a.by)}</div>` : ""}</td><td>${fmtSize(a.size)}</td><td class="meta">${ago(a.at)}</td>
       <td>${S.kioskApp === a.id ? `<span class="pill ok">Used for QR enrollment</span>` : `<button class="btn ghost" data-x="kiosk" data-kind="apps" data-id="${a.id}">Use for QR</button>`}</td>
       <td><div class="row"><button class="btn primary" data-x="send" data-kind="apps" data-id="${a.id}">Install on devices…</button>
