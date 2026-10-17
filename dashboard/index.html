@@ -926,7 +926,7 @@ VIEWS.devices = (arg, first) => {
         <div id="bulk"></div>
         <div class="table-wrap"><table>
           <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>ID</th><th>Device</th><th>Site</th><th>Status</th><th>State</th>
-            <th>Battery</th><th>Health</th><th>Last seen</th><th></th></tr></thead>
+            <th>Battery</th><th>Last seen</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table><div class="empty" id="empty" hidden></div></div>
       </div>`;
     $("q").oninput = e => { filters.q = e.target.value; VIEWS.devices(); };
@@ -952,7 +952,7 @@ VIEWS.devices = (arg, first) => {
     (filters.status || filters.type ? "" : S.pending.filter(x => !filters.group || (filters.group === "__none" ? !x.group : x.group === filters.group))
       .filter(x => !q2() || [x.code, x.name, x.group].some(v => String(v || "").toLowerCase().includes(q2()))).map(x => `<tr class="pending">
       <td></td><td><span class="code">${esc(x.code)}</span></td><td><div class="name">${esc(x.name || "New device")}</div><div class="meta">Waiting: type ${esc(x.code)} on the device (admin menu → Link device ID)</div></td>
-      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="4"></td>
+      <td>${esc(x.group || "–")}</td><td><span class="pill neutral">Not linked yet</span></td><td colspan="3"></td>
       <td><button class="btn danger" data-unpend="${esc(x.code)}" title="Remove this waiting Device ID">🗑 Remove</button></td></tr>`).join(""));
   $("empty").hidden = list.length > 0 || $("rows").children.length > 0;
   $("empty").textContent = S.devices.length ? "No devices match these filters." : "No devices yet. Add one on the Enroll devices page.";
@@ -966,7 +966,7 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
       <td title="${esc(Object.entries(d.info || {}).map(([k, v]) => k + ": " + v).join("\n"))}"><div class="name">${esc(label(d))}</div><div class="meta"><span class="type">${esc(TYPES[d.type] || d.type)}</span>${esc(d.model)}${d.serial ? " · " + esc(d.serial) : ""}</div>
         ${d.os || d.uptime != null ? `<div class="meta">${esc([d.os, d.uptime != null && "up " + fmtUptime(d.uptime)].filter(Boolean).join(" · "))}</div>` : ""}</td>
       ${showSite ? `<td>${d.group ? esc(d.group) : `<span class="meta">–</span>`}</td>` : ""}
-      <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td><td>${scoreCell(d)}</td>
+      <td>${statusPill(d)}</td><td>${stateCell(d)}</td><td>${batt(d)}</td>
       <td title="${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : ""}">${ago(d.lastSeen)}</td>
       <td><div class="row">${d.type === "android-kiosk" ? `<button class="btn primary" data-cmd="unlock">Unlock</button><button class="btn" data-cmd="lock">Lock</button>` : ""}
         ${(S.commands[d.type] || []).includes("live") ? `<button class="btn ghost" data-cmd="live" title="Remote control" aria-label="Remote control">🖥</button>` : ""}
@@ -974,13 +974,6 @@ const devRow = (d, showSite) => `<tr class="click ${picked.has(d.id) ? "sel" : "
 // Public (internet) address the portal saw the device's check-in from; null on the same LAN as the portal.
 const pubIp = d => { const ip = String(d.ip || "").replace(/^::ffff:/, ""); return !ip || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|fe80:|f[cd])/i.test(ip) ? null : ip; };
 const q2 = () => filters.q.toLowerCase();
-// Health score from the server (worked out hourly from the health history): 0-100 plus look-ahead warnings.
-const scoreCell = d => {
-  const s = d.score;
-  if (s?.score == null) return `<span class="meta">–</span>`;
-  return `<span class="pill ${s.score < 50 ? "bad" : s.score < 80 || s.warn.length ? "warn" : "ok"}" title="${esc(s.warn.join("\n") || "No warnings")}">${s.score}${s.warn.length ? " ⚠" : ""}</span>`
-    + (s.warn.length ? `<div class="meta" style="max-width:180px;white-space:normal">${esc(s.warn[0])}</div>` : "");
-};
 // The address a device on the LAN uses for this portal (not "localhost" when the admin is on the server PC itself).
 const portalUrl = () => /^(localhost|127\.)/.test(location.hostname) && S.lan ? `http://${S.lan}${location.port ? ":" + location.port : ""}` : location.origin;
 // Install steps per device type. Tablets get a Device ID; PCs and IoT register themselves on their first check-in.
