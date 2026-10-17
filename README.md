@@ -157,6 +157,13 @@ Ask in words (or tap the microphone: the browser's speech recognition, Chrome / 
 - **Remote control**: the mouse wheel scrolls the device (a swipe at the pointer).
 - **App 10.22 / 10.23** (built, not yet installed on tablets): light animations (home tiles slide in, press effect, status pulse while offline, clock fade, maintenance fade) and the ticket-system switch.
 
+## Portal Batch B (17 Oct 2026, dev 125cc56, portal only)
+- **Reports** (new page, module `reports` in Users & access): pick a month to see each site's devices, **uptime %** and downtime hours (the time devices were not checking in, taken from offline alerts), offline / other alerts, and tickets opened, resolved, resolved on time and still open at month end. **⬇ CSV**, **🖨 Print** (a clean printable page), and **💬 Send on WhatsApp** (admins; a summary to the alert numbers).
+- **Two-factor sign-in** (optional per account): Users & access → **2FA off** button → scan the QR code with Google / Microsoft Authenticator or Authy, then type the code to turn it on. After the right password, the sign-in page asks for the 6-digit code. Lost phone: an admin clicks **🔐 2FA on** to turn it off. The main `ADMIN_USER` login has no 2FA, so nobody can be locked out.
+- **Activity log**: filter by **type** and by **user** (who sent the command / changed the setting), and **⬇ CSV** export of the whole log (up to 5000 entries).
+- **Device health score**: Devices has a **Health** column (0–100, worked out every hour from the health history) with warnings such as "Storage full in about 26 days", "Running 8 °C hotter than last week", "Battery dropped to 12 % in the last day", or RAM / CPU busy all day. There is also a **Health warnings** tile and filter.
+- **Configuration → 🎫 Offline auto-ticket**: turn the automatic Technical Team ticket on or off and set how many minutes after the offline alert it is created. This is the same setting as Technical Team → Settings.
+
 ## Sign-in page
 `dashboard/login.html`: no Enter or button press needed. The password is checked by itself 0.5 s after you stop typing (Enter or a click checks at once). After a wrong password the button turns red and flies around the whole screen on two jet flames (the flames point away from where it is going) and shoots at the pointer. The right password turns it green ("🚀 Welcome!") and it takes off before the portal opens (about 2 s). The server still locks an IP out for a minute after 5 wrong tries.
 
