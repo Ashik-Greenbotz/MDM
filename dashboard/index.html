@@ -1219,6 +1219,8 @@ async function screenshot(d, send = true) {
 const XTERM = "https://cdn.jsdelivr.net/npm/@xterm/";
 const loadScript = src => new Promise((ok, bad) => document.head.append(Object.assign(document.createElement("script"), { src, onload: ok, onerror: () => bad(new Error("Couldn't load the terminal (no internet?)")) })));
 const termFrom = {}; // device id -> where Clear was pressed, so reopening starts there
+const QUICK = [["IP address", "ip -4 addr show wlan0"], ["Battery", "dumpsys battery | head -12"], ["Disk", "df -h /data /sdcard"],
+  ["Wi-Fi", "dumpsys wifi | grep -m 2 mWifiInfo"], ["Apps", "pm list packages -3"], ["Uptime", "uptime"], ["⟳ Reboot", "reboot"]];
 async function shellView(d) {
   const dl = $("shotDlg"), base = `/api/devices/${encodeURIComponent(d.id)}/term`;
   shotTimers.forEach(clearInterval);
@@ -1226,12 +1228,20 @@ async function shellView(d) {
   let open = true, term = null, from = 0;
   dl.innerHTML = `<h2>⌨ ${esc(label(d))} <span class="code">${esc(d.code || "")}</span>
     <input id="xtFind" type="search" placeholder="🔍 Search output (Enter = next, Shift+Enter = previous)" aria-label="Search the terminal output"></h2><div class="xt" id="xt"></div>
+    <div class="row" style="margin-top:8px;gap:6px">${QUICK.map(([t, c]) => `<button class="btn" data-q="${esc(c)}" title="${esc(c)}">${t}</button>`).join("")}</div>
     <div class="foot"><span class="meta">Rooted tablets (Telpo) open as <b>root</b>, full system control. Others run with the kiosk app's rights only. Ctrl+C = fresh shell.</span>
       <span class="grow"></span><button class="btn" data-k="clear">Clear</button><button class="btn" data-k="close">Close</button></div>`;
   dl.classList.add("term");
   dl.onclose = () => { open = false; dl.classList.remove("term"); term?.dispose(); };
   dl.onclick = e => {
     const k = e.target.closest("[data-k]")?.dataset.k;
+    const q = e.target.closest("[data-q]")?.dataset.q;
+    if (q && term) {
+      if (q === "reboot" && !confirm(`Reboot ${label(d)} now? It is offline for about a minute.`)) return;
+      term.write(q + "\r\n");
+      api(base, { data: q + "\n" }).catch(err => toast(err.message, true));
+      return term.focus();
+    }
     if (k === "clear") { term?.clear(); termFrom[d.id] = from; term?.focus(); } // stays cleared when reopened
     else if (k) dl.close();
   };
@@ -1474,6 +1484,34 @@ function askGroup(what, cur, done) {
     "Move", () => done($("gName").value));
 }
 
+// Tablet settings: a site's defaults, or one tablet's own values (empty = use the site's / leave as it is).
+const UPDATES = { "": "Leave as it is", auto: "Install automatically", night: "Install only at night (1–5 am)", postpone: "Postpone (up to 30 days)" };
+function settingsText(own = {}, site = {}) {
+  const v = k => own?.[k] !== null && own?.[k] !== undefined && own?.[k] !== "" ? own[k] : site?.[k] !== null && site?.[k] !== "" ? site?.[k] : null;
+  const parts = [v("brightness") != null && `brightness ${v("brightness")}%`, v("volume") != null && `volume ${v("volume")}%`,
+    v("screenOff") && v("screenOn") && `screen off ${v("screenOff")}–${v("screenOn")}`, v("updates") && `updates: ${UPDATES[v("updates")].toLowerCase()}`].filter(Boolean);
+  return parts.join(" · ") || "Not set";
+}
+function tabletSettings(d, site) {
+  const s = (d ? d.settings : site.settings) || {}, base = d ? siteOf(d.group)?.settings || {} : {};
+  const ph = k => base[k] !== null && base[k] !== undefined && base[k] !== "" ? `site: ${base[k]}` : "leave as it is";
+  dialog(`<h2>⚙ Tablet settings · ${esc(d ? label(d) : site.name)}</h2>
+    <p class="meta">${d ? "This tablet only. Empty fields use the site's settings." : "Every tablet at this site, unless a tablet has its own value. Empty = leave as it is."}</p>
+    <div class="grid">
+      <label for="stB">Brightness %</label><input type="number" id="stB" min="0" max="100" value="${s.brightness ?? ""}" placeholder="${ph("brightness")}">
+      <label for="stV">Volume %</label><input type="number" id="stV" min="0" max="100" value="${s.volume ?? ""}" placeholder="${ph("volume")}">
+      <label for="stOff">Screen off at</label><input type="time" id="stOff" value="${s.screenOff || ""}">
+      <label for="stOn">Screen on at</label><input type="time" id="stOn" value="${s.screenOn || ""}">
+      <label for="stU">System updates</label><select id="stU">${options(Object.entries(UPDATES))}</select>
+    </div><p class="meta">Night mode: the screen turns off at the first time and back on at the second (both needed). ${d && base.screenOff ? `Site: ${base.screenOff}–${base.screenOn}.` : ""}</p>`,
+    "Save", () => {
+      const num = id => $(id).value === "" ? null : Number($(id).value);
+      const v = { brightness: num("stB"), volume: num("stV"), screenOff: $("stOff").value, screenOn: $("stOn").value, updates: $("stU").value };
+      act(() => d ? api(`/api/devices/${encodeURIComponent(d.id)}/settings`, v) : api("/api/sites/settings", { name: site.name, settings: v }),
+        "Tablet settings saved; tablets apply them on their next check-in");
+    });
+  $("stU").value = s.updates || "";
+}
 VIEWS.device = async (id, first) => {
   const d = dev(id);
   if (!d) { $("view").innerHTML = `<p class="empty">Device not found. <a href="#/devices">Back to devices</a></p>`; return; }
@@ -1483,7 +1521,7 @@ VIEWS.device = async (id, first) => {
     "Device model": d.type === "android-kiosk" && (d.deviceModel || "Not set (Model… to choose)"),
     Usage: d.type === "android-kiosk" && (d.usage === "tech" ? "Technical team device" + (d.techName ? " · " + d.techName : " · no technician yet") : "Onsite device"),
     "App pinning": d.type === "android-kiosk" && (d.singleApp ? "📌 " + appName(d, d.singleApp) : "Not pinned"), Status: isOnline(d) ? "Online" : "Offline · last seen " + ago(d.lastSeen),
-    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Device IP (LAN)": d.localIp, "Public IP": pubIp(d) || (d.ip && "Same network as the portal"),
+    Model: d.model, Serial: d.serial, System: d.os, "App version": d.appVersion, "Security patch": d.patch, "Tablet settings": d.type === "android-kiosk" && settingsText(d.settings, siteOf(d.group)?.settings), "Device IP (LAN)": d.localIp, "Public IP": pubIp(d) || (d.ip && "Same network as the portal"),
     Uptime: d.uptime != null && fmtUptime(d.uptime), Battery: d.battery != null && d.battery + "%" + (d.charging ? " (charging)" : ""),
     Temperature: d.temp != null && d.temp + " °C", "Wi-Fi signal": d.signal != null && d.signal + " dBm",
     Location: d.lat != null && `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)} (±${Math.round(d.accuracy || 0)} m, ${ago(d.locationTime)})`,
@@ -1495,7 +1533,7 @@ VIEWS.device = async (id, first) => {
       <p><a href="#/devices">← All devices</a></p>
       <div class="row" style="margin-bottom:12px"><h2 id="dTitle" style="margin:0"></h2><span id="dPill"></span><span class="grow" style="flex:1"></span>
         <button class="btn" data-a="rename">Rename</button><button class="btn" data-a="group">Site…</button><button class="btn" data-a="model" id="dModelBtn">Model…</button>
-        <button class="btn" data-a="map">🗺 Map</button><button class="btn danger" data-a="delete">Remove</button></div>
+        <button class="btn" data-a="map">🗺 Map</button><button class="btn" data-a="settings" id="dSetBtn">⚙ Tablet settings…</button><button class="btn danger" data-a="delete">Remove</button></div>
       <div class="card" id="dUpdCard" hidden><div class="pad row"><span id="dUpdText"></span><span class="grow" style="flex:1"></span><button class="btn primary" id="dUpdBtn">⬆ Update to latest version</button></div></div>
       <div class="card"><h3>Actions</h3><div class="pad row" id="dCmds"></div></div>
       <div class="card"><h3>Performance<span class="grow"></span><span class="meta" id="dPerfAt"></span></h3><div class="gauges" id="dPerf"></div></div>
@@ -1530,7 +1568,7 @@ VIEWS.device = async (id, first) => {
       <div class="card"><h3>Device logs<span class="grow"></span><button class="btn" id="dLogBtn">Request new logs</button><button class="btn" id="dLogDl">⬇ Download latest</button></h3>
         <div class="pad row">Saved logs from <input type="datetime-local" id="dFrom"> to <input type="datetime-local" id="dTo">
           <button class="btn" id="dRange">⬇ Download</button><span class="meta" id="dDays"></span></div>
-        <pre class="log" id="dLogs">Loading…</pre></div>`;
+        <pre class="log" id="dLogs">Loading…</pre><p class="meta pad" id="dShellLogs" hidden style="margin:0"></p></div>`;
     $("view").onclick = e => {
       if (e.target.id === "dShot") return screenshot(dev(id), false);
       if (e.target.id === "dRelaySetup") return relaySetup(dev(id));
@@ -1544,6 +1582,7 @@ VIEWS.device = async (id, first) => {
       if (cp) return navigator.clipboard.writeText($(cp.dataset.copy).textContent).then(() => toast("Copied"));
       const b = e.target.closest("[data-a],[data-cmd]");
       if (!b) return;
+      if (b.dataset.a === "settings") return tabletSettings(dev(id));
       if (b.dataset.cmd) command([dev(id)], b.dataset.cmd); else deviceAction(dev(id), b.dataset.a);
     };
     $("dUpdBtn").onclick = () => {
@@ -1568,10 +1607,13 @@ VIEWS.device = async (id, first) => {
         .then(() => { delete $("dApps").dataset.edited; });
     };
   }
+  $("dShellLogs").hidden = !me().admin || !d.shellLogs?.length;
+  if (!$("dShellLogs").hidden) $("dShellLogs").innerHTML = "Remote SSH recordings: " + d.shellLogs.slice().reverse()
+    .map(x => `<a href="/api/devices/${encodeURIComponent(d.id)}/shell/${x.at}">${esc(new Date(x.at).toLocaleString())} · ${esc(x.by)}</a>`).join(" · ");
   const apps = d.type === "android-kiosk" ? d.launcherApps || [] : [];
   $("dAppsCard").hidden = !apps.length;
   const rp = d.relayProfile || { relay: "unknown" }, ri = d.relayInfo || {};
-  $("dModelBtn").hidden = d.type !== "android-kiosk";
+  $("dModelBtn").hidden = $("dSetBtn").hidden = d.type !== "android-kiosk";
   const upd = d.type === "android-kiosk" && latestKioskApp(), uv = upd && verOf(upd.label);
   // Only when an update is waiting; up to date shows just the App version row in Details.
   $("dUpdCard").hidden = !(upd && (!uv || !d.appVersion || cmpVer(d.appVersion, uv) < 0));
@@ -1835,7 +1877,7 @@ VIEWS.site = async (name, first) => {
     $("view").innerHTML = `
       <p><a href="#/sites">← All sites</a></p>
       <div class="row" style="margin-bottom:4px;gap:12px">${siteLogo(site, true)}<h2 style="margin:0">${esc(name)}</h2><span class="grow" style="flex:1"></span>
-        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
+        ${me().admin ? `<button class="btn" data-s="edit">Edit site</button><button class="btn" data-s="settings">⚙ Tablet settings…</button>` : ""}<button class="btn" data-s="addDev">Add devices</button><button class="btn" data-s="map">🗺 Map</button>${canOpen("barrier") ? `<a class="btn primary" href="#/barrier/${encodeURIComponent(name)}">🚧 Barrier Control</a>` : ""}${me().admin ? `<button class="btn ghost danger" data-s="del">Delete site</button>` : ""}</div>
       <p class="lead" id="sInfo"></p>
       <div class="stats" id="sStats"></div>
       <div class="cols">
@@ -1862,6 +1904,7 @@ VIEWS.site = async (name, first) => {
       if (r) location.hash = "#/device/" + encodeURIComponent(r.dataset.dev);
       if (b?.dataset.s === "edit") siteForm(siteOf(name));
       if (b?.dataset.s === "addDev") addDevicesToSite(name);
+      if (b?.dataset.s === "settings") tabletSettings(null, siteOf(name));
       if (b?.dataset.s === "map") openMap(mine());
       if (b?.dataset.s === "del" && confirm(`Delete site "${name}"? Its devices stay in the portal with no site.`)) {
         act(() => api("/api/sites/delete", { name }), "Site deleted").then(() => { location.hash = "#/sites"; });

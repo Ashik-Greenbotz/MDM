@@ -75,6 +75,7 @@ public class KioskActivity extends Activity {
     private boolean online;
     private boolean remoteUnlockPending;
     static final String EXTRA_REMOTE_UNLOCK = "remote_unlock";
+    static final String EXTRA_WAKE = "wake"; // night mode ended: this screen turns the display back on
     // "kiosk" locks the device to this app; "monitor" only reports to the dashboard (phones, Telpo terminals).
     static final String PREF_MODE = "mode";
     // App pinning: package that runs full screen; the kiosk screen only shows briefly to reopen it.
@@ -147,6 +148,7 @@ public class KioskActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        wakeIfAsked(getIntent());
         dpm = getSystemService(DevicePolicyManager.class);
         admin = new ComponentName(this, AdminReceiver.class);
         findViewById(R.id.corner).setOnClickListener(v -> onCornerTap());
@@ -870,6 +872,13 @@ public class KioskActivity extends Activity {
                 .show();
     }
 
+    // Android 14+ ignores wake locks that turn the screen on, so the morning wake-up comes through this screen.
+    private void wakeIfAsked(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(EXTRA_WAKE, false)) return;
+        setTurnScreenOn(true);
+        handler.postDelayed(() -> setTurnScreenOn(false), 3000); // only this once, not on every later resume
+    }
+
     // Also used by the portal's "Pin app" / "Unpin app" commands.
     static void setSingleApp(Context ctx, String pkg) {
         String old = ctx.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_SINGLE_APP, "");
@@ -897,6 +906,7 @@ public class KioskActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        wakeIfAsked(intent);
         // onResume runs after this and would lock again, so skip it once.
         if (intent.getBooleanExtra(EXTRA_REMOTE_UNLOCK, false)) {
             remoteUnlockPending = true;

@@ -62,7 +62,19 @@ function liveWait(L, who, ms, res) {
 const liveWake = (L, who) => L.wait[who].slice().forEach(f => f());
 // Remote shell (Android): same idea. The tablet's `sh` output piles up in `out` (last 100 KB; `base` = how much was
 // dropped before it), typed lines wait in `inputs`. Ends LIVE_IDLE_MS after the terminal window closes.
-const TERM = {}; // id -> { out, base, inputs, seen, wait }
+const TERM = {}; // id -> { out, base, inputs, seen, wait, started, by }
+// A finished session is saved as a text file listed on the device page (last 20), then forgotten.
+async function termSave(id, T) {
+  if (!T || TERM[id] !== T) return;
+  delete TERM[id];
+  const d = devices[id];
+  if (!d || !T.out.trim()) return;
+  await store.write(`shell/${id}/${T.started}.txt`, Buffer.from(`Remote SSH on ${label(d)} (${d.code}) by ${T.by || "?"}, ${new Date(T.started).toISOString()}\n${T.base ? "(start cut off)\n" : ""}\n${T.out.replace(/^sh: (can.t find: tty fd|warning: won.t have full job control).*\n/gm, "")}`));
+  (d.shellLogs ||= []).push({ at: T.started, by: T.by || "", size: T.out.length });
+  if (d.shellLogs.length > 20) d.shellLogs.shift(); // ponytail: older files stay in storage; prune them if space matters
+  log(id, "ssh", `Remote SSH session by ${T.by || "?"} saved (${Math.ceil(T.out.length / 1024)} KB)`);
+  dirty = true;
+}
 const COMMANDS = {
   "android-kiosk": ["unlock", "lock", "singleapp", "restartapp", "term", "apps", "relay", ...ANDROID],
   android: ANDROID,
@@ -367,7 +379,7 @@ async function sendFile(res, key, name) {
 }
 
 // Fields a device may set about itself.
-const REPORT_FIELDS = ["type", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
+const REPORT_FIELDS = ["type", "patch", "deviceName", "model", "serial", "battery", "charging", "kioskLocked",
   "lat", "lng", "accuracy", "locationTime", "appVersion", "os", "uptime", "localIp", "info",
   "cpu", "ram", "disk", "temp", "signal", "mode", "singleApp", "launcherApps", "allowedApps", "relay", "relayInfo", "sshUp", "bugAccess"];
 const HEALTH = ["battery", "cpu", "ram", "disk", "temp"];
@@ -412,7 +424,7 @@ function queue(list, cmd, by) {
       if (L && Date.now() - (L.at || 0) < 5000) L.seen = Date.now(); else LIVE[d.id] = liveNew();
     }
     // reopening keeps the same session (and its scrollback), so a tablet still running the shell just carries on
-    if (cmd.type === "term") (TERM[d.id] ||= { ...liveNew(), out: "", base: 0 }).seen = Date.now();
+    if (cmd.type === "term") (TERM[d.id] ||= { ...liveNew(), out: "", base: 0, started: Date.now(), by }).seen = Date.now();
     if (d.queue.length > 20) d.queue.shift();
     log(d.id, "command", `${cmd.type}${cmd.name ? " " + cmd.name : ""} queued${by ? " by " + by : ""}`);
     n++;
@@ -438,6 +450,20 @@ function pick(target = {}) {
   if (target.group != null) return all.filter(d => (d.group || "") === target.group);
   if (target.type) return all.filter(d => typeOf(d) === target.type);
   return target.all ? all : [];
+}
+
+// Tablet settings (brightness %, volume %, night screen off/on, system updates). null / "" = leave as it is.
+const SETTING_KEYS = ["brightness", "volume", "screenOff", "screenOn", "updates"];
+function cleanSettings(b = {}) {
+  const pct = v => v === null || v === undefined || v === "" ? null : Math.min(100, Math.max(0, Math.round(Number(v)) || 0));
+  const hm = v => /^\d\d:\d\d$/.test(v || "") ? v : "";
+  return { brightness: pct(b.brightness), volume: pct(b.volume), screenOff: hm(b.screenOff), screenOn: hm(b.screenOn),
+    updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "" };
+}
+// What a tablet uses: its own values, else its site's.
+function settingsOf(d) {
+  const site = portal.sites.find(x => x.name === d.group)?.settings || {}, own = d.settings || {}, set = v => v === "" ? null : v;
+  return Object.fromEntries(SETTING_KEYS.map(k => [k, set(own[k]) ?? set(site[k]) ?? null]));
 }
 
 function commandFrom(body) {
@@ -1600,7 +1626,7 @@ async function handler(req, res) {
       const relayCfg = rp.relay === "yes" ? { iface: rp.iface, on: rp.on, off: rp.off, root: !!rp.root } : rp.relay === "no" ? { none: true } : null;
       const agentUpdate = d.type === "windows" && AGENT_VERSION > (Number(body.agentVersion) || 1);
       return send(res, 200, { command, code: d.code, timeZone: TIME_ZONE, maintenance: !!d.maintenance, maintImage: maintVersion(), announcement, ssh, agentUpdate,
-        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false });
+        config, relayCfg, relayLink: d.relayLink !== false && rp.maintLink !== false, settings: settingsOf(d) });
     }
     // Device side of "Add device": the admin typed a 4-digit ID on the device.
     if (req.method === "POST" && p === "/api/link") {
@@ -1703,7 +1729,7 @@ async function handler(req, res) {
       if (!isDevice(req)) return send(res, 401, { error: "bad device key" });
       const id = String(req.headers["x-device-id"] || ""), T = TERM[id];
       const over = () => !devices[id] || !T || TERM[id] !== T || Date.now() - T.seen > LIVE_IDLE_MS;
-      if (over()) return send(res, 200, { stop: true });
+      if (over()) { await termSave(id, T); return send(res, 200, { stop: true }); }
       if (req.method === "POST") {
         T.out += (await readBody(req, 1024 * 1024)).toString("utf8");
         if (T.out.length > 200000) { T.base += T.out.length - 100000; T.out = T.out.slice(-100000); }
@@ -1712,7 +1738,7 @@ async function handler(req, res) {
       }
       if (!T.inputs.length) await liveWait(T, "device", 15000, res);
       if (res.destroyed) return;
-      if (over()) return send(res, 200, { stop: true });
+      if (over()) { await termSave(id, T); return send(res, 200, { stop: true }); }
       const inputs = T.inputs;
       T.inputs = [];
       return send(res, 200, { inputs });
@@ -1973,6 +1999,14 @@ async function handler(req, res) {
       }
     }
     // Remote shell, portal side (admins): GET ?from=<n> waits up to 10 s for output past n; POST { data } types into it.
+    // A saved Remote SSH session (admins).
+    m = /^\/api\/devices\/([\w-]+)\/shell\/(\d+)$/.exec(p);
+    if (req.method === "GET" && m) {
+      const d = devices[m[1]], buf = u.admin && d && await store.read(`shell/${d.id}/${m[2]}.txt`);
+      if (!buf) return send(res, 404, { error: "not found" });
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Content-Disposition": disposition(`${label(d)}-ssh-${m[2]}.txt`) });
+      return res.end(buf);
+    }
     m = /^\/api\/devices\/([\w-]+)\/term$/.exec(p);
     if (m) {
       const d = devices[m[1]], T = TERM[m[1]];
@@ -2197,6 +2231,22 @@ async function handler(req, res) {
       if (site) return send(res, 400, { error: "a site with that name already exists" });
       portal.sites.push({ name, ...fields, createdAt: Date.now() });
       log(null, "site", `Site "${name}" added`);
+      return ok();
+    }
+    // Tablet settings: one device's own values, or a site's defaults (admins).
+    m = /^\/api\/devices\/([\w-]+)\/settings$/.exec(p);
+    if (req.method === "POST" && m) {
+      const d = devices[m[1]];
+      if (!d || !can(u, "devices") || !sees(u, d)) return deny();
+      d.settings = cleanSettings(body);
+      log(d.id, "settings", `Tablet settings of ${label(d)} changed by ${by}`);
+      return ok();
+    }
+    if (req.method === "POST" && p === "/api/sites/settings") {
+      const site = portal.sites.find(x => x.name === body.name);
+      if (!site || !u.admin) return deny();
+      site.settings = cleanSettings(body.settings);
+      log(null, "site", `Tablet settings of site "${site.name}" changed by ${by}`);
       return ok();
     }
     if (req.method === "POST" && p === "/api/sites/delete") {

@@ -11,6 +11,7 @@
 
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Wi-Fi picker on the Offline label -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />

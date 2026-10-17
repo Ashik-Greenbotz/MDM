@@ -334,6 +334,7 @@ public class DeviceService extends Service {
             JSONArray apps = launcherApps();
             if (!apps.toString().equals(sentApps)) d.put("launcherApps", apps);
             d.put("os", "Android " + Build.VERSION.RELEASE);
+            d.put("patch", Build.VERSION.SECURITY_PATCH);
             d.put("deviceName", Settings.Global.getString(getContentResolver(), Settings.Global.DEVICE_NAME));
             d.put("model", Build.MODEL);
             try {
@@ -371,6 +372,7 @@ public class DeviceService extends Service {
             String code = reply.optString("code");
             if (!code.isEmpty() && !code.equals(prefs.getString(PREF_CODE, ""))) prefs.edit().putString(PREF_CODE, code).apply();
             applyConfig(prefs, reply, configDirty, sentModel, sentUsage);
+            if (reply.has("settings")) applySettings(reply.optJSONObject("settings"));
             flushTechOutbox();
             boolean maint = reply.optBoolean("maintenance");
             if (maint != prefs.getBoolean(PREF_MAINTENANCE, false)) {
@@ -410,6 +412,72 @@ public class DeviceService extends Service {
             Log.w(TAG, "report failed: " + e);
             setServerOk(getSharedPreferences("kiosk", MODE_PRIVATE), false);
         }
+    }
+
+    // ---- tablet settings from the portal (the site's, or this tablet's own): brightness, volume, system updates are
+    // applied when they change; the night window (screen off / on) is checked on every check-in.
+    private String appliedSettings = "";
+    private Boolean wasNight;
+
+    private void applySettings(JSONObject s) {
+        if (s == null) s = new JSONObject();
+        DevicePolicyManager dpm = getSystemService(DevicePolicyManager.class);
+        ComponentName admin = new ComponentName(this, AdminReceiver.class);
+        if (!s.toString().equals(appliedSettings)) {
+            boolean first = appliedSettings.isEmpty();
+            appliedSettings = s.toString();
+            try {
+                if (!s.isNull("brightness")) {
+                    dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS_MODE, "0");
+                    dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS, String.valueOf(Math.round(s.optInt("brightness") * 2.55f)));
+                }
+                if (!s.isNull("volume")) {
+                    AudioManager am = getSystemService(AudioManager.class);
+                    int[] streams = {AudioManager.STREAM_MUSIC, AudioManager.STREAM_RING, AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM, AudioManager.STREAM_ALARM};
+                    for (int st : streams) {
+                        try {
+                            am.setStreamVolume(st, Math.round(am.getStreamMaxVolume(st) * s.optInt("volume") / 100f), 0);
+                        } catch (SecurityException ignored) { // ring / notification while Do Not Disturb is on
+                        }
+                    }
+                }
+                String u = s.optString("updates");
+                dpm.setSystemUpdatePolicy(admin, u.equals("auto") ? android.app.admin.SystemUpdatePolicy.createAutomaticInstallPolicy()
+                        : u.equals("night") ? android.app.admin.SystemUpdatePolicy.createWindowedInstallPolicy(60, 300)
+                        : u.equals("postpone") ? android.app.admin.SystemUpdatePolicy.createPostponeInstallPolicy() : null);
+                if (!first) event(this, "Tablet settings applied");
+            } catch (SecurityException e) {
+                event(this, "Tablet settings need device owner");
+            }
+        }
+        // Night mode: screen off once when the window starts, back on once when it ends.
+        boolean night = inWindow(s.optString("screenOff"), s.optString("screenOn"));
+        if (wasNight != null && night != wasNight) {
+            if (night) {
+                try {
+                    dpm.lockNow();
+                } catch (SecurityException ignored) {
+                }
+            } else {
+                android.os.PowerManager pm = getSystemService(android.os.PowerManager.class);
+                @SuppressWarnings("deprecation") android.os.PowerManager.WakeLock wl = pm.newWakeLock(
+                        android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP, "kiosk:morning");
+                wl.acquire(3000);
+                if (!KioskActivity.monitorOnly(this)) handler.post(() -> startActivity(new Intent(this, KioskActivity.class)
+                        .putExtra(KioskActivity.EXTRA_WAKE, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+            }
+        }
+        wasNight = night;
+    }
+
+    // "22:00".."07:00" also works across midnight. Both times needed.
+    private static boolean inWindow(String off, String on) {
+        if (!off.matches("\\d\\d:\\d\\d") || !on.matches("\\d\\d:\\d\\d") || off.equals(on)) return false;
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        int m = c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE);
+        int a = Integer.parseInt(off.substring(0, 2)) * 60 + Integer.parseInt(off.substring(3));
+        int b = Integer.parseInt(on.substring(0, 2)) * 60 + Integer.parseInt(on.substring(3));
+        return a < b ? m >= a && m < b : m >= a || m < b;
     }
 
     static final String PREF_CONFIG_DIRTY = "config_dirty", PREF_TECH_NAME = "tech_name";
