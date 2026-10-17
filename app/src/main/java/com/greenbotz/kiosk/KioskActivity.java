@@ -129,10 +129,12 @@ public class KioskActivity extends Activity {
 
     static Context themed(Context base) {
         String t = base.getSharedPreferences("kiosk", MODE_PRIVATE).getString(PREF_THEME, "auto");
-        if (t.equals("auto")) return base;
+        String lang = base.getSharedPreferences("kiosk", MODE_PRIVATE).getString(DeviceService.PREF_LANG, "");
+        if (t.equals("auto") && lang.isEmpty()) return base;
         android.content.res.Configuration c = new android.content.res.Configuration(base.getResources().getConfiguration());
-        c.uiMode = (c.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+        if (!t.equals("auto")) c.uiMode = (c.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 | (t.equals("dark") ? android.content.res.Configuration.UI_MODE_NIGHT_YES : android.content.res.Configuration.UI_MODE_NIGHT_NO);
+        if (!lang.isEmpty()) c.setLocale(java.util.Locale.forLanguageTag(lang));
         return base.createConfigurationContext(c);
     }
 
@@ -298,7 +300,7 @@ public class KioskActivity extends Activity {
             banner.setVisibility(View.GONE);
             return;
         }
-        banner.setText("\uD83D\uDCCC Opening " + appLabel(prefs().getString(PREF_SINGLE_APP, "")) + "…");
+        banner.setText(getString(R.string.opening_app, appLabel(prefs().getString(PREF_SINGLE_APP, ""))));
         banner.setVisibility(View.VISIBLE);
         handler.postDelayed(openSingleApp, SINGLE_APP_DELAY_MS);
     }

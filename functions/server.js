@@ -453,12 +453,13 @@ function pick(target = {}) {
 }
 
 // Tablet settings (brightness %, volume %, night screen off/on, system updates). null / "" = leave as it is.
-const SETTING_KEYS = ["brightness", "volume", "screenOff", "screenOn", "updates"];
+const SETTING_KEYS = ["brightness", "volume", "screenOff", "screenOn", "updates", "language"];
 function cleanSettings(b = {}) {
   const pct = v => v === null || v === undefined || v === "" ? null : Math.min(100, Math.max(0, Math.round(Number(v)) || 0));
   const hm = v => /^\d\d:\d\d$/.test(v || "") ? v : "";
   return { brightness: pct(b.brightness), volume: pct(b.volume), screenOff: hm(b.screenOff), screenOn: hm(b.screenOn),
-    updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "" };
+    updates: ["auto", "night", "postpone"].includes(b.updates) ? b.updates : "",
+    language: ["en", "zh-CN", "ms", "ta"].includes(b.language) ? b.language : "" };
 }
 // Digital signage for a device: its site's playlist, as image URLs, when enabled.
 function signageOf(d) {

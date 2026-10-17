@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lost_title">Peranti hilang</string>
+    <string name="lost_default">Peranti ini hilang. Sila pulangkan.</string>
+    <string name="opening_app">📌 Membuka %s…</string>
+</resources>

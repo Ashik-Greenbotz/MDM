@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- User-facing kiosk strings. Translations live in values-zh-rCN / values-ms / values-ta.
+     The language is pushed per site or per device from the portal (Tablet settings → Language). -->
+<resources>
+    <string name="lost_title">Lost device</string>
+    <string name="lost_default">This device is lost. Please return it.</string>
+    <string name="opening_app">📌 Opening %s…</string>
+</resources>

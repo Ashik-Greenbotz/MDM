@@ -1530,6 +1530,7 @@ function askGroup(what, cur, done) {
 
 // Tablet settings: a site's defaults, or one tablet's own values (empty = use the site's / leave as it is).
 const UPDATES = { "": "Leave as it is", auto: "Install automatically", night: "Install only at night (1–5 am)", postpone: "Postpone (up to 30 days)" };
+const LANGS = { "": "Device default", en: "English", "zh-CN": "中文", ms: "Bahasa Melayu", ta: "தமிழ்" };
 function settingsText(own = {}, site = {}) {
   const v = k => own?.[k] !== null && own?.[k] !== undefined && own?.[k] !== "" ? own[k] : site?.[k] !== null && site?.[k] !== "" ? site?.[k] : null;
   const parts = [v("brightness") != null && `brightness ${v("brightness")}%`, v("volume") != null && `volume ${v("volume")}%`,
@@ -1623,14 +1624,16 @@ function tabletSettings(d, site) {
       <label for="stOff">Screen off at</label><input type="time" id="stOff" value="${s.screenOff || ""}">
       <label for="stOn">Screen on at</label><input type="time" id="stOn" value="${s.screenOn || ""}">
       <label for="stU">System updates</label><select id="stU">${options(Object.entries(UPDATES))}</select>
+      <label for="stL">Language</label><select id="stL">${options(Object.entries(LANGS))}</select>
     </div><p class="meta">Night mode: the screen turns off at the first time and back on at the second (both needed). ${d && base.screenOff ? `Site: ${base.screenOff}–${base.screenOn}.` : ""}</p>`,
     "Save", () => {
       const num = id => $(id).value === "" ? null : Number($(id).value);
-      const v = { brightness: num("stB"), volume: num("stV"), screenOff: $("stOff").value, screenOn: $("stOn").value, updates: $("stU").value };
+      const v = { brightness: num("stB"), volume: num("stV"), screenOff: $("stOff").value, screenOn: $("stOn").value, updates: $("stU").value, language: $("stL").value };
       act(() => d ? api(`/api/devices/${encodeURIComponent(d.id)}/settings`, v) : api("/api/sites/settings", { name: site.name, settings: v }),
         "Tablet settings saved; tablets apply them on their next check-in");
     });
   $("stU").value = s.updates || "";
+  $("stL").value = s.language || "";
 }
 VIEWS.device = async (id, first) => {
   const d = dev(id);

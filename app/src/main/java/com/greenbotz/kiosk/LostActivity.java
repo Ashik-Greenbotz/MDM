@@ -26,13 +26,18 @@ public class LostActivity extends Activity {
         String json = getSharedPreferences("kiosk", MODE_PRIVATE).getString(DeviceService.PREF_LOST, "");
         try {
             org.json.JSONObject o = new org.json.JSONObject(json);
-            msg.setText(o.optString("message", "This device is lost. Please return it."));
+            msg.setText(o.optString("message", getString(R.string.lost_default)));
             String ph = o.optString("phone", "");
             phone.setText(ph.isEmpty() ? "" : "📞  " + ph);
             phone.setVisibility(ph.isEmpty() ? View.GONE : View.VISIBLE);
         } catch (org.json.JSONException e) {
-            msg.setText("This device is lost. Please return it.");
+            msg.setText(getString(R.string.lost_default));
         }
+    }
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(KioskActivity.themed(base));
     }
 
     @Override
@@ -46,7 +51,7 @@ public class LostActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Lost device");
+        title.setText(getString(R.string.lost_title));
         title.setTextColor(0xFFFFFFFF);
         title.setTextSize(34);
         title.setGravity(Gravity.CENTER);

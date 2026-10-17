@@ -72,6 +72,7 @@ public class DeviceService extends Service {
     static final String PREF_MAINTENANCE = "maintenance";
     static final String PREF_LOST = "lost"; // JSON {message, phone}; empty = not lost
     static final String PREF_SIGNAGE = "signage"; // JSON {urls, seconds, idleMin, enabled}; empty = off
+    static final String PREF_LANG = "language"; // BCP-47 tag (en, zh-CN, ms, ta); empty = device default
     static final String PREF_MAINT_IMG = "maint_img"; // version (portal time) of files/maintenance.jpg; 0 = built-in image
     static final String PREF_SERVER_OK = "server_ok", PREF_ACKS = "acks";
     // Set by MaintenanceActivity so we only relaunch it when it is not already on screen.
@@ -457,6 +458,13 @@ public class DeviceService extends Service {
                 dpm.setSystemUpdatePolicy(admin, u.equals("auto") ? android.app.admin.SystemUpdatePolicy.createAutomaticInstallPolicy()
                         : u.equals("night") ? android.app.admin.SystemUpdatePolicy.createWindowedInstallPolicy(60, 300)
                         : u.equals("postpone") ? android.app.admin.SystemUpdatePolicy.createPostponeInstallPolicy() : null);
+                String lang = s.optString("language");
+                SharedPreferences sp = getSharedPreferences("kiosk", MODE_PRIVATE);
+                if (!lang.equals(sp.getString(PREF_LANG, ""))) {
+                    sp.edit().putString(PREF_LANG, lang).commit();
+                    if (!KioskActivity.monitorOnly(this)) handler.post(() -> startActivity(new Intent(this, KioskActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+                }
                 if (!first) event(this, "Tablet settings applied");
             } catch (SecurityException e) {
                 event(this, "Tablet settings need device owner");
